@@ -6,6 +6,7 @@ from urllib.parse import quote
 import httpx
 
 from app.core.config import Settings, get_settings
+from app.core.tls import build_tls_verify
 
 
 # Fields the Proxmox API includes on GET /cluster/backup/{id} but rejects as
@@ -67,7 +68,7 @@ class ProxmoxClient:
         with httpx.Client(
             base_url=self.settings.pve_api_url.rstrip("/") + "/",
             headers=self.headers,
-            verify=self.settings.pve_verify_ssl,
+            verify=build_tls_verify(self.settings.pve_verify_ssl, self.settings.pve_fingerprint),
             timeout=20.0,
         ) as client:
             response = client.request(method, path.lstrip("/"), data=data)

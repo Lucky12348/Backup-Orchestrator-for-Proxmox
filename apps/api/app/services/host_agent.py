@@ -179,7 +179,17 @@ def get_host_agent_client() -> HostAgentClient:
 
 
 def get_pbs_agent_client() -> HostAgentClient:
+    """Client for "the PBS side".
+
+    PBS_MODE=agent → HTTP client of the PBS root agent (legacy path).
+    PBS_MODE=api   → PBSApiBackend: same interface and payloads, driven by the
+    PBS REST API (see app/services/pbs_api_backend.py).
+    """
     settings = get_settings()
+    if settings.pbs_mode == "api":
+        from app.services.pbs_api_backend import PBSApiBackend
+
+        return PBSApiBackend(settings)  # type: ignore[return-value]
     return _build_agent_client(
         settings,
         base_url=settings.pbs_agent_base_url,

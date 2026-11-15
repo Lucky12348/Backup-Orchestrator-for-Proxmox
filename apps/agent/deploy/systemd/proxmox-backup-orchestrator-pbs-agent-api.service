@@ -7,6 +7,8 @@ After=network-online.target
 Type=simple
 User=root
 WorkingDirectory=/opt/proxmox-backup-orchestrator-agent
+# Serve only the pbs routes; AGENT_ROLE in the .env (loaded below) overrides it.
+Environment=AGENT_ROLE=pbs
 EnvironmentFile=/opt/proxmox-backup-orchestrator-agent/.env
 ExecStart=/opt/proxmox-backup-orchestrator-agent/.venv/bin/python -m agent.main serve
 Restart=on-failure

@@ -90,7 +90,7 @@ For POSIX shells, a matching helper is available at `infra/scripts/bootstrap.sh`
 
 ## Seed Data
 
-In development, the API creates tables automatically and seeds a small demo dataset on startup if the database is empty.
+The API creates tables automatically. A small demo dataset is seeded on startup only when `DEV_SEED=true` and the database is empty (never by default, whatever `APP_ENV` is).
 
 The seeded data currently includes:
 
@@ -390,4 +390,4 @@ make bootstrap
 docker compose --env-file .env -f infra/docker/docker-compose.yml up --build
 ```
 
-Once the stack is running, open `http://localhost:5173`.
+Once the stack is running, open `http://localhost:8000` (the API serves the UI; set `AUTH_COOKIE_SECURE=false` for plain-HTTP local use). `http://localhost:5173` is only the Vite dev server started with `npm run dev`.

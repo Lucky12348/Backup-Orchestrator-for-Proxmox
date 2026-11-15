@@ -119,6 +119,11 @@ class AgentSettings:
     # without a manual `systemctl restart`. Empty means "not configured" and
     # the restart step is skipped with a clear error in the maintenance log.
     http_service_name: str = os.getenv("AGENT_HTTP_SERVICE_NAME", "")
+    # "host" (Proxmox VE host: QEMU USB passthrough, spin-down, ntfy engine) or
+    # "pbs" (PBS VM: disk preparation, export, eject). Only the routes of that
+    # role are served (see agent.server.ROUTE_ROLES). Empty = every route, the
+    # legacy behaviour, logged as a warning at startup.
+    role: str = os.getenv("AGENT_ROLE", "").strip().lower()
 
 
 class ExternalExportProgress:

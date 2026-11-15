@@ -14,6 +14,8 @@ from app.api.routes import (
     overview,
     planning,
     proxmox,
+    settings,
+    setup,
     system,
     vms,
 )
@@ -22,6 +24,7 @@ from app.auth import get_current_user, router as auth_router
 
 public_router = APIRouter(prefix="/api/v1")
 public_router.include_router(auth_router)
+public_router.include_router(setup.public_router)
 public_router.include_router(agent.router)
 public_router.include_router(external_backups.public_callback_router)
 
@@ -31,6 +34,8 @@ protected_router = APIRouter(
 )
 
 protected_router.include_router(overview.router)
+protected_router.include_router(setup.router)
+protected_router.include_router(settings.router)
 protected_router.include_router(agent.status_router)
 protected_router.include_router(assets.router)
 protected_router.include_router(vms.router)

@@ -1,46 +1,39 @@
-"""Single-user JWT authentication for local PBO deployments."""
+"""Session authentication for the operator UI.
+
+* Accounts live in the `users` table (see app/services/users.py).
+* Login sets a signed JWT in an HttpOnly, SameSite=Strict cookie (Secure unless
+  AUTH_COOKIE_SECURE=false). The browser never sees the token, so it cannot be
+  read by injected scripts; SameSite=Strict keeps it off cross-site requests.
+* There is no switch to disable authentication.
+"""
 
 from __future__ import annotations
 
-import os
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from threading import Lock
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.security import OAuth2PasswordRequestForm
 from jose import JWTError, jwt
-from passlib.hash import bcrypt
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
+from app.core.security import get_secret_key, validate_secret_key
+from app.db.session import get_db
+from app.services.users import authenticate, get_user
 
-AUTH_ENABLED: bool = os.getenv("AUTH_ENABLED", "true").strip().lower() not in {
-    "false",
-    "0",
-    "no",
-}
-AUTH_USERNAME: str = os.getenv("AUTH_USERNAME", "admin")
-AUTH_PASSWORD_HASH: str = os.getenv("AUTH_PASSWORD_HASH", "")
-_INSECURE_DEFAULT_SECRET_KEY = "change-me-in-production-use-a-long-random-string"
-AUTH_SECRET_KEY: str = os.getenv("AUTH_SECRET_KEY", _INSECURE_DEFAULT_SECRET_KEY)
-AUTH_ALGORITHM: str = "HS256"
-MAX_AUTH_TOKEN_EXPIRE_MINUTES: int = 180
-AUTH_TOKEN_EXPIRE_MINUTES: int = min(
-    int(os.getenv("AUTH_TOKEN_EXPIRE_MINUTES", str(MAX_AUTH_TOKEN_EXPIRE_MINUTES))),
-    MAX_AUTH_TOKEN_EXPIRE_MINUTES,
-)
+SESSION_COOKIE_NAME = "pbo_session"
+AUTH_ALGORITHM = "HS256"
+MAX_AUTH_TOKEN_EXPIRE_MINUTES = 180
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-oauth2_scheme = OAuth2PasswordBearer(
-    tokenUrl="/api/v1/auth/token",
-    auto_error=False,
-)
 
-# Lightweight in-process login lockout. Single-user deployments run one uvicorn
-# worker (see infra/docker/api.Dockerfile), so a module-level dict is sufficient
-# to slow down brute-force attempts against the single admin account.
+# Lightweight in-process login lockout. Deployments run one uvicorn worker, so
+# a module-level dict is enough to slow down brute force on the admin account.
 LOGIN_MAX_ATTEMPTS = 5
 LOGIN_WINDOW_SECONDS = 300
 _login_attempts_lock = Lock()
@@ -73,118 +66,107 @@ def _register_failed_login(key: str) -> None:
         _prune_attempts(key, now).append(now)
 
 
-class Token(BaseModel):
-    access_token: str
-    token_type: str
+def reset_login_attempts() -> None:
+    with _login_attempts_lock:
+        _login_attempts.clear()
 
 
-class TokenData(BaseModel):
-    username: str | None = None
+class SessionInfo(BaseModel):
+    username: str
+    expires_at: datetime | None = None
 
 
 def validate_auth_settings() -> None:
-    """Fail startup early when authentication is enabled but incomplete."""
-    if not AUTH_ENABLED:
-        return
-
-    password_hash = AUTH_PASSWORD_HASH.strip()
-    if not password_hash:
-        raise RuntimeError(
-            "AUTH_ENABLED=true but AUTH_PASSWORD_HASH is empty. "
-            "Generate one with: py scripts/generate_password_hash.py"
-        )
-
-    if len(password_hash) < 50 or not password_hash.startswith("$2"):
-        raise RuntimeError(
-            "AUTH_PASSWORD_HASH does not look like a complete bcrypt hash. "
-            "It must start with '$2' and be at least 50 characters long. "
-            "If this value is in a docker-compose .env file, escape every '$' as '$$'."
-        )
-
-    if AUTH_SECRET_KEY == _INSECURE_DEFAULT_SECRET_KEY:
-        raise RuntimeError(
-            "AUTH_ENABLED=true but AUTH_SECRET_KEY was left at its insecure default. "
-            "Anyone who reads the source code can forge a valid admin JWT with it. "
-            "Generate one with: openssl rand -hex 32"
-        )
-
-    if len(AUTH_SECRET_KEY) < 32:
-        raise RuntimeError(
-            "AUTH_SECRET_KEY is too short (must be at least 32 characters). "
-            "Generate one with: openssl rand -hex 32"
-        )
+    """Fail startup early when the signing/encryption key is unsafe."""
+    validate_secret_key()
 
 
-def _verify_password(plain: str, hashed: str) -> bool:
-    """Verify a plain password against a bcrypt hash."""
-    if not hashed:
-        return False
-    try:
-        return bcrypt.verify(plain, hashed)
-    except Exception:
-        return False
+def _token_lifetime() -> timedelta:
+    minutes = get_settings().auth_token_expire_minutes
+    return timedelta(minutes=max(5, min(int(minutes), MAX_AUTH_TOKEN_EXPIRE_MINUTES)))
 
 
-def _create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
-    to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=15))
-    to_encode["exp"] = expire
-    return jwt.encode(to_encode, AUTH_SECRET_KEY, algorithm=AUTH_ALGORITHM)
+def _create_access_token(username: str, lifetime: timedelta) -> tuple[str, datetime]:
+    expires_at = datetime.now(timezone.utc) + lifetime
+    token = jwt.encode({"sub": username, "exp": expires_at}, get_secret_key(), algorithm=AUTH_ALGORITHM)
+    return token, expires_at
+
+
+def start_session(response: Response, username: str) -> SessionInfo:
+    lifetime = _token_lifetime()
+    token, expires_at = _create_access_token(username, lifetime)
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=token,
+        max_age=int(lifetime.total_seconds()),
+        httponly=True,
+        secure=get_settings().auth_cookie_secure,
+        samesite="strict",
+        path="/",
+    )
+    return SessionInfo(username=username, expires_at=expires_at)
+
+
+def end_session(response: Response) -> None:
+    response.delete_cookie(
+        key=SESSION_COOKIE_NAME,
+        path="/",
+        httponly=True,
+        secure=get_settings().auth_cookie_secure,
+        samesite="strict",
+    )
 
 
 credentials_exception = HTTPException(
     status_code=status.HTTP_401_UNAUTHORIZED,
-    detail="Could not validate credentials",
-    headers={"WWW-Authenticate": "Bearer"},
+    detail="Not authenticated",
 )
 
 
-async def get_current_user(token: Annotated[str | None, Depends(oauth2_scheme)]) -> str:
-    """Validate the Bearer JWT and return the username."""
-    if not AUTH_ENABLED:
-        return AUTH_USERNAME
-
-    if token is None:
+def get_current_user(request: Request, db: Annotated[Session, Depends(get_db)]) -> str:
+    """Validate the session cookie and return the username of an existing account."""
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    if not token:
         raise credentials_exception
-
     try:
-        payload = jwt.decode(token, AUTH_SECRET_KEY, algorithms=[AUTH_ALGORITHM])
-        username: str | None = payload.get("sub")
-        if username is None:
-            raise credentials_exception
-        return username
+        payload = jwt.decode(token, get_secret_key(), algorithms=[AUTH_ALGORITHM])
     except JWTError:
+        raise credentials_exception from None
+    username = payload.get("sub")
+    if not isinstance(username, str) or get_user(db, username) is None:
         raise credentials_exception
+    return username
 
 
 CurrentUser = Annotated[str, Depends(get_current_user)]
 
 
-@router.post("/token", response_model=Token)
-async def login(request: Request, form_data: Annotated[OAuth2PasswordRequestForm, Depends()]) -> Token:
-    """Exchange username and password for a JWT Bearer token."""
-    invalid_exc = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Incorrect username or password",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-
-    if not AUTH_ENABLED:
-        token = _create_access_token(
-            {"sub": form_data.username},
-            timedelta(minutes=AUTH_TOKEN_EXPIRE_MINUTES),
-        )
-        return Token(access_token=token, token_type="bearer")
-
+@router.post("/token", response_model=SessionInfo)
+def login(
+    request: Request,
+    response: Response,
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+    db: Annotated[Session, Depends(get_db)],
+) -> SessionInfo:
+    """Check username/password and open a cookie session."""
     client_key = _login_client_key(request)
     _assert_login_not_locked_out(client_key)
 
-    if form_data.username != AUTH_USERNAME or not _verify_password(form_data.password, AUTH_PASSWORD_HASH):
+    user = authenticate(db, form_data.username, form_data.password)
+    if user is None:
         _register_failed_login(client_key)
-        raise invalid_exc
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password")
 
-    token = _create_access_token(
-        {"sub": form_data.username},
-        timedelta(minutes=AUTH_TOKEN_EXPIRE_MINUTES),
-    )
-    return Token(access_token=token, token_type="bearer")
+    return start_session(response, user.username)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(response: Response) -> Response:
+    end_session(response)
+    response.status_code = status.HTTP_204_NO_CONTENT
+    return response
+
+
+@router.get("/me", response_model=SessionInfo)
+def me(username: CurrentUser) -> SessionInfo:
+    return SessionInfo(username=username)

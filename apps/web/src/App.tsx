@@ -5,6 +5,7 @@ import { Route, Routes } from "react-router-dom";
 import { getExternalBackupPreview, AUTH_EXPIRED_EVENT } from "./api";
 import { AuthProvider, useAuth } from "./AuthContext";
 import { LoginPage } from "./pages/LoginPage";
+import { SetupPage } from "./pages/SetupPage";
 import { AppShell } from "./components/AppShell";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { ErrorBanner } from "./components/ErrorBanner";
@@ -42,7 +43,7 @@ function getStoredLanguage(): Language {
 
 // Inner app — rendered only when authenticated
 function AuthenticatedApp() {
-  const { logout } = useAuth();
+  const { markSessionExpired } = useAuth();
   const [language, setLanguage] = useState<Language>(() => getStoredLanguage());
   const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
   // Read at confirm-time by handleExternalBackupRequest; a ref (not state) so
@@ -51,10 +52,10 @@ function AuthenticatedApp() {
 
   // Listen for auth-expired events from api.ts
   useEffect(() => {
-    const handler = () => logout();
+    const handler = () => markSessionExpired();
     window.addEventListener(AUTH_EXPIRED_EVENT, handler);
     return () => window.removeEventListener(AUTH_EXPIRED_EVENT, handler);
-  }, [logout]);
+  }, [markSessionExpired]);
 
   const {
     data,
@@ -347,11 +348,21 @@ export default function App() {
 }
 
 function AppInner() {
-  const { isAuthenticated } = useAuth();
+  const { status } = useAuth();
   // We need t for LoginPage — use default language here
   const t = translations["fr"];
 
-  if (!isAuthenticated) {
+  if (status === "loading") {
+    return (
+      <div className="centered-shell">
+        <LoadingBlock label={t.loading} />
+      </div>
+    );
+  }
+  if (status === "needs-setup") {
+    return <SetupPage t={t} />;
+  }
+  if (status !== "authenticated") {
     return <LoginPage t={t} />;
   }
 

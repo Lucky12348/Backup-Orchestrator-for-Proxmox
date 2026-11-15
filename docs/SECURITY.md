@@ -6,23 +6,27 @@ Do not use `code_secret`.
 
 ## Authentication Variables
 
-The Web UI and API use a single local admin account:
+Authentication cannot be disabled. The administrator account lives in the
+`users` table (bcrypt hash) and is created on the first-run screen
+(`POST /api/v1/setup/admin`, refused once an account exists). A legacy
+`AUTH_USERNAME` / `AUTH_PASSWORD_HASH` pair in `.env` is imported once on the
+first start of an upgraded install.
+
+Sessions are a signed JWT in an `HttpOnly; Secure; SameSite=Strict` cookie
+(`pbo_session`): page scripts cannot read it and cross-site requests do not
+carry it. Lifetime: `AUTH_TOKEN_EXPIRE_MINUTES` setting (max 180).
 
 ```env
-AUTH_ENABLED=true
-AUTH_USERNAME=admin
-AUTH_PASSWORD_HASH=$$2b$$12$$...
-AUTH_SECRET_KEY=<random>
-AUTH_TOKEN_EXPIRE_MINUTES=180
+AUTH_SECRET_KEY=<random>     # signs sessions + derives the settings encryption key
+AUTH_COOKIE_SECURE=true      # false only for plain-HTTP access on a trusted LAN
 ```
 
-Generate the password hash:
+Proxmox/PBS API tokens, agent tokens and the ntfy password are stored in the
+`app_settings` table, encrypted (Fernet, key derived from `AUTH_SECRET_KEY`
+with HKDF-SHA256), and never returned by the API. Rotating `AUTH_SECRET_KEY`
+makes them unreadable: re-enter them afterwards.
 
-```bash
-python scripts/generate_password_hash.py
-```
-
-Docker Compose `.env` files must escape every bcrypt `$` as `$$`.
+The UI is served by the API (same origin), so CORS is disabled.
 
 Generate `AUTH_SECRET_KEY`:
 
@@ -224,11 +228,11 @@ PBS agent:
 JWT/login rotation:
 
 1. Generate a new `AUTH_SECRET_KEY`.
-2. Optionally regenerate `AUTH_PASSWORD_HASH`.
-3. Restart the API.
-4. Log in again.
+2. Restart the API.
+3. Log in again.
+4. Re-enter the stored secrets (Proxmox/PBS API token secrets, agent tokens, ntfy password): they were encrypted with a key derived from the old `AUTH_SECRET_KEY` and are now ignored (logged as unreadable).
 
-Changing `AUTH_SECRET_KEY` invalidates existing sessions.
+Changing `AUTH_SECRET_KEY` invalidates existing sessions and stored secrets.
 
 ## Known Risks and Limits
 
@@ -241,9 +245,9 @@ Changing `AUTH_SECRET_KEY` invalidates existing sessions.
 
 ## Troubleshooting
 
-**Login is incorrect due to malformed `AUTH_PASSWORD_HASH`**
+**Legacy `AUTH_PASSWORD_HASH` not imported on upgrade**
 
-Check that the runtime value starts with `$2` inside the API container. The Compose file should contain `$$2b$$12$$...`; Compose converts that to `$2b$12$...` for the container.
+It is imported once, only if it is a complete bcrypt hash. Check that the runtime value starts with `$2` inside the API container. The Compose file should contain `$$2b$$12$$...`; Compose converts that to `$2b$12$...` for the container.
 
 **`code_secret` still works**
 

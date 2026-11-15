@@ -48,18 +48,11 @@ cp .env.example .env
 chmod 600 .env
 ```
 
-Edit `.env` and keep only the app VM values active for Docker Compose. Required app variables:
+Edit `.env` and keep only the app VM bootstrap values active for Docker Compose:
 
 ```env
 APP_ENV=production
 API_PORT=8000
-WEB_PORT=5173
-WEB_ALLOWED_HOSTS=extbackup.sofianechaoui.fr,localhost,127.0.0.1,192.168.1.103
-FRONTEND_ORIGIN=http://<app-vm-ip>:5173
-FRONTEND_ORIGIN_ALT=http://<app-vm-ip>
-AUTO_SYNC_ENABLED=true
-PROXMOX_SYNC_INTERVAL_SECONDS=60
-PBS_SYNC_INTERVAL_SECONDS=60
 MAINTENANCE_TIMEOUT_SECONDS=300
 APP_MAINTENANCE_AGENT_BASE_URL=http://host.docker.internal:8092
 APP_MAINTENANCE_AGENT_HOST=127.0.0.1
@@ -74,44 +67,23 @@ POSTGRES_USER=pbo
 POSTGRES_PASSWORD=<random>
 DATABASE_URL=postgresql+psycopg://pbo:<random>@db:5432/proxmox_backup_orchestrator
 
-AUTH_ENABLED=true
-AUTH_USERNAME=admin
-AUTH_PASSWORD_HASH=<compose-safe-bcrypt-hash>
 AUTH_SECRET_KEY=<random>
-AUTH_TOKEN_EXPIRE_MINUTES=180
-
-PVE_API_URL=https://<proxmox-host>:8006/api2/json
-PVE_API_TOKEN_ID=root@pam!pbo-api
-PVE_API_TOKEN_SECRET=<secret>
-PVE_VERIFY_SSL=false
-PVE_NODE_NAME=<node-name>
-
-PBS_API_URL=https://<pbs-vm>:8007/api2/json
-PBS_TOKEN_ID=root@pam!pbo-pbs
-PBS_TOKEN_SECRET=<secret>
-PBS_VERIFY_SSL=false
-PBS_DATASTORE=<your-source-datastore>
-
-PBS_EXECUTION_VM_ID=<pbs-vm-id>
-PBS_EXECUTION_VM_NODE=<node-name>
-
-HOST_AGENT_BASE_URL=http://<proxmox-host>:8090
-HOST_AGENT_TOKEN=<host-agent-token>
-PBS_AGENT_BASE_URL=http://<pbs-vm>:8091
-PBS_AGENT_TOKEN=<pbs-agent-token>
+# Session cookie is Secure: keep true behind HTTPS. false only for plain HTTP on a trusted LAN.
+AUTH_COOKIE_SECURE=true
 ```
 
-Generate the admin login hash from the repository root:
+Proxmox VE, PBS, agent URLs/tokens and ntfy are **not** environment variables
+anymore: they are stored in the database (secrets encrypted with a key derived
+from `AUTH_SECRET_KEY`) and set from the first-run setup (API:
+`/api/v1/setup/proxmox`, `/api/v1/setup/pbs`, `/api/v1/settings`). The
+administrator account is created on the first-run screen.
 
-```bash
-python scripts/generate_password_hash.py
-```
-
-Paste the printed `AUTH_PASSWORD_HASH=...` value into `.env`. In Docker Compose `.env` files, every bcrypt `$` must be escaped as `$$`:
-
-```env
-AUTH_PASSWORD_HASH=$$2b$$12$$...
-```
+Upgrading an install that still has those values in `.env`
+(`PVE_*`, `PBS_*`, `HOST_AGENT_*`, `PBS_AGENT_*`, `NTFY_*`, `NOTIFY_ON_*`,
+`AUTH_USERNAME` / `AUTH_PASSWORD_HASH`…): they are imported into the database
+**once**, on the first start, then ignored. See the commented block in
+`.env.example`. A legacy `AUTH_PASSWORD_HASH` must still be Compose-escaped
+(`$$2b$$12$$...`) to be imported.
 
 Generate JWT and agent tokens:
 
@@ -153,21 +125,20 @@ docker compose --env-file .env -f infra/docker/docker-compose.yml ps
 Login and protected API check:
 
 ```bash
-TOKEN="$(
-  curl -sS -X POST http://127.0.0.1:8000/api/v1/auth/token \
-    -H "Content-Type: application/x-www-form-urlencoded" \
-    --data-urlencode "username=<admin-username>" \
-    --data-urlencode "password=<admin-password>" \
-  | jq -r .access_token
-)"
+# First run only: create the administrator (or use the first-run screen in the UI).
+curl -sS -c /tmp/pbo.cookies -X POST https://<app-host>/api/v1/setup/admin \
+  -H "Content-Type: application/json" \
+  -d '{"username": "<admin-username>", "password": "<admin-password>"}'
 
-curl -H "Authorization: Bearer ${TOKEN}" \
-  http://127.0.0.1:8000/api/v1/disks/preferred
+# Later logins (session = HttpOnly cookie, kept in the cookie jar):
+curl -sS -c /tmp/pbo.cookies -X POST https://<app-host>/api/v1/auth/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  --data-urlencode "username=<admin-username>" \
+  --data-urlencode "password=<admin-password>"
+curl -sS -b /tmp/pbo.cookies https://<app-host>/api/v1/disks/preferred
 ```
 
-Expected result: the login request returns an access token, and the preferred disks request returns a JSON array. An empty array is valid before any preferred disk has been saved.
-
-Install `jq` first if it is not available, or copy the `access_token` from the login response manually.
+Expected result: the login request returns `{"username": ...}` and sets the session cookie; the preferred disks request returns a JSON array (empty is valid before any preferred disk has been saved).
 
 ## 3. Install the Proxmox Host Agent
 
@@ -295,16 +266,12 @@ On PBS, configure `nftables` to allow TCP `8091` from `<app-vm-ip>` only. See [S
 From the app VM:
 
 ```bash
-TOKEN="$(
-  curl -sS -X POST http://127.0.0.1:8000/api/v1/auth/token \
-    -H "Content-Type: application/x-www-form-urlencoded" \
-    --data-urlencode "username=<admin-username>" \
-    --data-urlencode "password=<admin-password>" \
-  | jq -r .access_token
-)"
-
-curl -H "Authorization: Bearer ${TOKEN}" \
-  http://127.0.0.1:8000/api/v1/disks/preferred
+# The session is an HttpOnly cookie: keep it in a cookie jar.
+curl -sS -c /tmp/pbo.cookies -X POST https://<app-host>/api/v1/auth/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  --data-urlencode "username=<admin-username>" \
+  --data-urlencode "password=<admin-password>"
+curl -sS -b /tmp/pbo.cookies https://<app-host>/api/v1/disks/preferred
 curl -H "X-Agent-Token: <host-agent-token>" http://<proxmox-host>:8090/health
 curl -H "X-Agent-Token: <pbs-agent-token>" http://<pbs-vm>:8091/health
 ```
@@ -312,20 +279,28 @@ curl -H "X-Agent-Token: <pbs-agent-token>" http://<pbs-vm>:8091/health
 Open the UI:
 
 ```text
-http://<app-vm-ip>:5173
+https://<app-host>/        # TLS reverse proxy in front of port 8000 (recommended)
+http://<app-vm-ip>:8000    # plain HTTP: only with AUTH_COOKIE_SECURE=false
 ```
 
-Log in with `AUTH_USERNAME` and the password used to generate `AUTH_PASSWORD_HASH`.
+The API serves the web UI on the same port (`8000`); there is no separate web
+container anymore. On a fresh database the first screen creates the
+administrator account.
 
 ## Troubleshooting
 
-**Login is incorrect due to malformed `AUTH_PASSWORD_HASH`**
+**Login succeeds but the UI goes straight back to the login screen**
 
-If Docker Compose receives an unescaped bcrypt hash, it may interpolate `$2b`, `$12`, or later segments. The API then receives a truncated hash and login fails. Regenerate the hash and paste the Compose-safe value with `$$`.
+The session cookie is `Secure`; browsers drop it over plain `http://<ip>`. Use
+HTTPS (reverse proxy) or set `AUTH_COOKIE_SECURE=false` on a trusted LAN.
+
+**Legacy `AUTH_PASSWORD_HASH` was not imported (upgrade)**
+
+If Docker Compose receives an unescaped bcrypt hash, it may interpolate `$2b`, `$12`, or later segments; the API then sees a truncated hash, logs a warning and does not import it. Either fix the value with `$$` escaping before the first start, or create the administrator from the first-run screen.
 
 **`code_secret` still works**
 
-Remove it from every environment file, shell profile, service override, and secret store. This deployment uses `AUTH_PASSWORD_HASH`, `AUTH_SECRET_KEY`, and agent tokens. Restart the app and both agents after cleanup.
+Remove it from every environment file, shell profile, service override, and secret store. This deployment uses database accounts, `AUTH_SECRET_KEY`, and agent tokens. Restart the app and both agents after cleanup.
 
 **Agent health returns 401**
 

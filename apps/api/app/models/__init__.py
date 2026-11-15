@@ -1,5 +1,6 @@
 from app.models.activity_event import ActivityEvent
 from app.models.agent_heartbeat import AgentHeartbeat
+from app.models.app_setting import AppSetting
 from app.models.asset_ignore import AssetIgnore
 from app.models.backup_run import BackupRun, BackupRunStatus
 from app.models.disk_assignment import DiskAssignment
@@ -14,11 +15,13 @@ from app.models.scheduled_backup import (
     ScheduledBackupRunStatus,
     ScheduledBackupStartMode,
 )
+from app.models.user import User
 from app.models.virtual_machine import VMType, VirtualMachine
 
 __all__ = [
     "ActivityEvent",
     "AgentHeartbeat",
+    "AppSetting",
     "AssetIgnore",
     "BackupRun",
     "BackupRunStatus",
@@ -34,6 +37,7 @@ __all__ = [
     "ScheduledBackupRun",
     "ScheduledBackupRunStatus",
     "ScheduledBackupStartMode",
+    "User",
     "VMType",
     "VirtualMachine",
 ]

@@ -16,8 +16,8 @@ set -a
 set +a
 
 API_PORT=${API_PORT:-8000}
-WEB_PORT=${WEB_PORT:-5173}
+
 
 echo "Environment file found: $ENV_FILE"
 echo "API: http://localhost:$API_PORT/health"
-echo "Web: http://localhost:$WEB_PORT"
+echo "Web UI (served by the API): http://localhost:$API_PORT"

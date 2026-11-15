@@ -21,8 +21,8 @@ Get-Content $envFile | ForEach-Object {
 }
 
 $apiPort = if ($values.ContainsKey("API_PORT")) { $values["API_PORT"] } else { "8000" }
-$webPort = if ($values.ContainsKey("WEB_PORT")) { $values["WEB_PORT"] } else { "5173" }
+
 
 Write-Host "Environment file found: $envFile"
 Write-Host "API: http://localhost:$apiPort/health"
-Write-Host "Web: http://localhost:$webPort"
+Write-Host "Web UI (served by the API): http://localhost:$apiPort"

@@ -10,23 +10,29 @@ FastAPI backend for orchestration, state tracking, and integrations.
 
 ## Authentication
 
-When `AUTH_ENABLED=true`, configure a single admin user:
+Authentication cannot be disabled. Accounts live in the `users` table; on an
+empty database `GET /api/v1/setup/status` reports `needs_setup: true` and
+`POST /api/v1/setup/admin` creates the first administrator (refused afterwards).
+Login (`POST /api/v1/auth/token`) sets an `HttpOnly; Secure; SameSite=Strict`
+session cookie; `GET /api/v1/auth/me` and `POST /api/v1/auth/logout` complete the flow.
+
+Environment (bootstrap only):
 
 ```env
-AUTH_ENABLED=true
-AUTH_USERNAME=admin
-AUTH_PASSWORD_HASH=$$2b$$12$$replace-with-generated-bcrypt-hash
-AUTH_SECRET_KEY=replace-with-random-secret
-AUTH_TOKEN_EXPIRE_MINUTES=180
+AUTH_SECRET_KEY=replace-with-random-secret   # openssl rand -hex 32
+AUTH_COOKIE_SECURE=true                       # false only for plain-HTTP LAN access
+DEV_SEED=false                                # demo data only when true
 ```
 
-Generate the hash from the repository root:
+Operator settings (Proxmox/PBS/agents/ntfy…) are stored in `app_settings`
+(secrets encrypted) and managed through `/api/v1/setup/*` and `/api/v1/settings`.
+A legacy `.env` with those keys (and `AUTH_USERNAME`/`AUTH_PASSWORD_HASH`) is
+imported once on first start.
 
-```powershell
-py scripts/generate_password_hash.py
-```
-
-The script prints a Docker Compose-safe `AUTH_PASSWORD_HASH=<hash>` line. In a docker-compose `.env` file, bcrypt hashes must escape every `$` as `$$`; otherwise Compose interpolates the value and the API may receive a truncated hash such as `$2b$12`.
+Schema: tables `users` and `app_settings` are managed by Alembic
+(`app/db/migrations`, applied automatically at startup; `alembic revision`
+from this directory for new migrations). Older tables are still created by
+`app/db/init.py`.
 
 Bcrypt passwords are limited to 72 bytes after UTF-8 encoding. The API pins `bcrypt<5` because `passlib==1.7.4` is not compatible with bcrypt 5.x.
 

@@ -51,8 +51,8 @@ PBS VM root agent
 
 Operationally important defaults:
 
-- App VM API: `8000`
-- App VM web UI: `5173`
+- App VM API + web UI (same origin, the API serves the built UI): `8000`
+- Vite dev server (local development only): `5173`
 - App maintenance agent: `8092`
 - Proxmox host agent: `8090`
 - PBS agent: `8091`
@@ -134,7 +134,7 @@ even though `env_file: ../../.env` loaded them correctly one line earlier.
 py scripts/generate_password_hash.py
 ```
 
-The script prints a Compose-safe `AUTH_PASSWORD_HASH=...` line. Keep the doubled `$` characters intact when copying into `.env`.
+Fresh installs do not need it: the administrator is created on the first-run screen. The script is only for pre-seeding a legacy `AUTH_PASSWORD_HASH`, imported once into the `users` table on first start; it prints a Compose-safe line, keep the doubled `$` characters intact when copying into `.env`.
 
 ## Production And Operations Docs
 

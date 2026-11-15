@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -162,17 +161,20 @@ def validate_notification_settings(settings: Settings | None = None) -> None:
 
     missing = [
         name
-        for name in ("NTFY_BASE_URL", "NTFY_TOPIC")
-        if not (os.getenv(name) or "").strip()
+        for name, value in (
+            ("NTFY_BASE_URL", current_settings.ntfy_base_url),
+            ("NTFY_TOPIC", current_settings.ntfy_topic),
+        )
+        if not (value or "").strip()
     ]
     if missing:
         raise RuntimeError(
-            "Notifications are enabled but required environment values are missing: "
+            "Notifications are enabled but required settings are missing: "
             + ", ".join(missing)
         )
 
-    username_set = bool((os.getenv("NTFY_USERNAME") or "").strip())
-    password_set = bool((os.getenv("NTFY_PASSWORD") or "").strip())
+    username_set = bool((current_settings.ntfy_username or "").strip())
+    password_set = bool((current_settings.ntfy_password or "").strip())
     if username_set != password_set:
         raise RuntimeError(
             "Notifications auth is partially configured: set both NTFY_USERNAME and NTFY_PASSWORD, or neither."

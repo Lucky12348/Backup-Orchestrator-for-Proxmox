@@ -9,15 +9,16 @@ For asset ignore rules and existing Proxmox backup job selection management, see
 Open the Web UI:
 
 ```text
-http://<app-vm-ip>:5173
+https://<app-host>/        # TLS reverse proxy in front of the API port 8000
 ```
 
-Log in with:
+The API serves the UI on port `8000` (no separate web container). On a fresh
+database the first screen creates the administrator account; afterwards, log
+in with that account. Upgraded installs keep their former
+`AUTH_USERNAME` / `AUTH_PASSWORD_HASH` login (imported once at first start).
 
-- username: `AUTH_USERNAME`
-- password: the password used when generating `AUTH_PASSWORD_HASH`
-
-If login fails after a fresh deploy, check the `AUTH_PASSWORD_HASH` troubleshooting section below before resetting anything.
+If login succeeds but you land back on the login screen, see the
+`AUTH_COOKIE_SECURE` troubleshooting entry below.
 
 ## Run an External Backup
 
@@ -102,9 +103,14 @@ journalctl -u proxmox-backup-orchestrator-pbs-agent-http.service -n 200 --no-pag
 
 ## Troubleshooting
 
-**Login is incorrect due to malformed `AUTH_PASSWORD_HASH`**
+**Login loops back to the login screen (`AUTH_COOKIE_SECURE`)**
 
-In Docker Compose `.env` files, bcrypt `$` characters must be escaped as `$$`. A valid Compose value looks like:
+The session cookie is `Secure` and is dropped by browsers on plain `http://<ip>`.
+Serve the UI over HTTPS, or set `AUTH_COOKIE_SECURE=false` on a trusted LAN.
+
+**Legacy `AUTH_PASSWORD_HASH` not imported on upgrade**
+
+It is only imported (once) if it is a complete bcrypt hash. In Docker Compose `.env` files, bcrypt `$` characters must be escaped as `$$`. A valid Compose value looks like:
 
 ```env
 AUTH_PASSWORD_HASH=$$2b$$12$$...

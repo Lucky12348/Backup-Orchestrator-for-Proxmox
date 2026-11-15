@@ -1,6 +1,30 @@
+"""Application settings.
+
+Two kinds of values live on the `Settings` dataclass:
+
+* **Bootstrap / environment values** (database URL, secret key, app env…) are
+  read from the process environment once, at import time.
+* **Operator values** (Proxmox/PBS endpoints and tokens, agent URLs and tokens,
+  ntfy, sync intervals…) are stored in the `app_settings` table and edited
+  through the setup wizard / `/api/v1/settings`. Their dataclass defaults below
+  are static: the environment is only consulted once, on first start, to
+  import an existing `.env` into the database
+  (see `app.services.settings_service.import_settings_from_env`).
+
+`get_settings()` returns the environment values overlaid with the stored
+operator values once the settings store has been activated at startup. Before
+that (and in unit tests) it returns the environment-only base.
+"""
+
+import logging
 import os
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, replace
 from functools import lru_cache
+from threading import Lock
+from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def parse_bool(value: str | None, default: bool = False) -> bool:
@@ -20,92 +44,142 @@ def normalize_database_url(database_url: str) -> str:
 @dataclass(frozen=True)
 class Settings:
     app_name: str = "Proxmox Backup Orchestrator API"
-    app_env: str = os.getenv("APP_ENV", "development")
-    api_port: int = int(os.getenv("API_PORT", "8000"))
+
+    # --- Bootstrap values: environment only -------------------------------
+    app_env: str = os.getenv("APP_ENV", "production")
     database_url: str = normalize_database_url(
         os.getenv(
             "DATABASE_URL",
             "postgresql+psycopg://postgres:postgres@db:5432/proxmox_backup_orchestrator",
         )
     )
-    frontend_origin: str = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
-    frontend_origin_alt: str = os.getenv("FRONTEND_ORIGIN_ALT", "http://127.0.0.1:5173")
-    notifications_enabled: bool = parse_bool(os.getenv("NOTIFICATIONS_ENABLED"), default=False)
-    ntfy_base_url: str = os.getenv("NTFY_BASE_URL", "https://ntfy.sh")
-    ntfy_topic: str = os.getenv("NTFY_TOPIC", "")
-    ntfy_username: str = os.getenv("NTFY_USERNAME", "")
-    ntfy_password: str = os.getenv("NTFY_PASSWORD", "")
-    notify_on_backup_success: bool = parse_bool(os.getenv("NOTIFY_ON_BACKUP_SUCCESS"), default=True)
-    notify_on_backup_failure: bool = parse_bool(os.getenv("NOTIFY_ON_BACKUP_FAILURE"), default=True)
-    notify_on_disk_eject_ready: bool = parse_bool(os.getenv("NOTIFY_ON_DISK_EJECT_READY"), default=True)
-    notify_on_update_result: bool = parse_bool(os.getenv("NOTIFY_ON_UPDATE_RESULT"), default=True)
-    notify_on_agent_degraded: bool = parse_bool(os.getenv("NOTIFY_ON_AGENT_DEGRADED"), default=True)
-    notify_on_low_coverage: bool = parse_bool(os.getenv("NOTIFY_ON_LOW_COVERAGE"), default=True)
-    notify_on_disk_new_detected: bool = parse_bool(os.getenv("NOTIFY_ON_DISK_NEW_DETECTED"), default=True)
-    notify_on_disk_known_detected: bool = parse_bool(os.getenv("NOTIFY_ON_DISK_KNOWN_DETECTED"), default=True)
-    notify_on_planned_disk_detected: bool = parse_bool(os.getenv("NOTIFY_ON_PLANNED_DISK_DETECTED"), default=True)
-    notify_on_planned_backup_reminder: bool = parse_bool(os.getenv("NOTIFY_ON_PLANNED_BACKUP_REMINDER"), default=True)
-    notify_on_planned_backup_started: bool = parse_bool(os.getenv("NOTIFY_ON_PLANNED_BACKUP_STARTED"), default=True)
-    notify_on_planned_confirmation_required: bool = parse_bool(os.getenv("NOTIFY_ON_PLANNED_CONFIRMATION_REQUIRED"), default=True)
-    notify_on_planned_backup_missed: bool = parse_bool(os.getenv("NOTIFY_ON_PLANNED_BACKUP_MISSED"), default=True)
-    low_coverage_threshold_percent: float = float(os.getenv("LOW_COVERAGE_THRESHOLD_PERCENT", "100"))
+    # Demo data (fake VMs/disks/runs) is only created when explicitly requested.
+    dev_seed: bool = parse_bool(os.getenv("DEV_SEED"), default=False)
+    # Session cookie `Secure` flag. Keep true unless the UI is reached over plain
+    # HTTP on a non-localhost address (browsers drop Secure cookies there).
+    auth_cookie_secure: bool = parse_bool(os.getenv("AUTH_COOKIE_SECURE"), default=True)
+    # Built web UI served by the API (same origin). Empty = auto-detect.
+    web_dist_dir: str = os.getenv("WEB_DIST_DIR", "")
     planning_scheduler_enabled: bool = parse_bool(os.getenv("PLANNING_SCHEDULER_ENABLED"), default=True)
     planning_scheduler_interval_seconds: int = int(os.getenv("PLANNING_SCHEDULER_INTERVAL_SECONDS", "60"))
-    disk_detection_notify_cooldown_seconds: int = int(os.getenv("DISK_DETECTION_NOTIFY_COOLDOWN_SECONDS", "1800"))
-    pve_api_url: str = os.getenv(
-        "PVE_API_URL",
-        "https://proxmox.example.local:8006/api2/json",
-    )
-    pve_api_token_id: str = os.getenv("PVE_API_TOKEN_ID", "")
-    pve_api_token_secret: str = os.getenv("PVE_API_TOKEN_SECRET", "")
-    pve_verify_ssl: bool = parse_bool(os.getenv("PVE_VERIFY_SSL"), default=False)
-    pve_node_name: str = os.getenv("PVE_NODE_NAME", "proxmox")
-    pbs_execution_vm_id: int = int(os.getenv("PBS_EXECUTION_VM_ID", "100"))
-    pbs_execution_vm_node: str = os.getenv("PBS_EXECUTION_VM_NODE", os.getenv("PVE_NODE_NAME", "proxmox"))
-    pbs_api_url: str = os.getenv(
-        "PBS_API_URL",
-        "https://pbs.example.local:8007/api2/json",
-    )
-    pbs_token_id: str = os.getenv("PBS_TOKEN_ID", "")
-    pbs_token_secret: str = os.getenv("PBS_TOKEN_SECRET", "")
-    pbs_verify_ssl: bool = parse_bool(os.getenv("PBS_VERIFY_SSL"), default=False)
-    # Source PBS datastore name, chosen by the operator. No default name is
-    # assumed: empty means "not configured" and is reported as such.
-    pbs_datastore: str = os.getenv("PBS_DATASTORE", "").strip()
-    host_agent_base_url: str = os.getenv("HOST_AGENT_BASE_URL", "http://proxmox-host:8081")
-    host_agent_token: str = os.getenv("HOST_AGENT_TOKEN", "")
-    host_agent_timeout_seconds: float = float(os.getenv("HOST_AGENT_TIMEOUT_SECONDS", "7200"))
-    pbs_agent_base_url: str = os.getenv("PBS_AGENT_BASE_URL", "http://pbs-host:8081")
-    pbs_agent_token: str = os.getenv("PBS_AGENT_TOKEN", "")
-    pbs_agent_timeout_seconds: float = float(os.getenv("PBS_AGENT_TIMEOUT_SECONDS", "7200"))
-    external_backup_callback_base_url: str = os.getenv(
-        "EXTERNAL_BACKUP_CALLBACK_BASE_URL",
-        "http://api:8000/api/v1",
-    )
+    # Legacy loop-image coexistence mode, kept as an operator escape hatch.
     external_backup_legacy_coexistence_enabled: bool = parse_bool(
         os.getenv("EXTERNAL_BACKUP_LEGACY_COEXISTENCE_ENABLED"),
         default=False,
     )
-    external_loop_datastore_size_gb: int = int(os.getenv("AGENT_LOOP_DATASTORE_SIZE_GB", "500"))
-    external_backup_stale_warning_seconds: int = int(os.getenv("EXTERNAL_BACKUP_STALE_WARNING_SECONDS", "900"))
-    agent_stale_after_minutes: int = int(os.getenv("AGENT_STALE_AFTER_MINUTES", "10"))
-    show_seed_disks: bool = parse_bool(os.getenv("SHOW_SEED_DISKS"), default=False)
-    auto_sync_enabled: bool = parse_bool(os.getenv("AUTO_SYNC_ENABLED"), default=True)
-    proxmox_sync_interval_seconds: int = int(os.getenv("PROXMOX_SYNC_INTERVAL_SECONDS", "60"))
-    pbs_sync_interval_seconds: int = int(os.getenv("PBS_SYNC_INTERVAL_SECONDS", "60"))
+    # Docker-era app maintenance agent (git pull + compose rebuild).
     maintenance_timeout_seconds: float = float(os.getenv("MAINTENANCE_TIMEOUT_SECONDS", "120"))
     app_maintenance_agent_base_url: str = os.getenv(
         "APP_MAINTENANCE_AGENT_BASE_URL",
         "http://127.0.0.1:8092",
     )
     app_maintenance_agent_token: str = os.getenv("APP_MAINTENANCE_AGENT_TOKEN", "")
-    agent_repo_path: str = os.getenv("AGENT_REPO_PATH", os.getcwd())
+
+    # --- Operator values: stored in `app_settings` ---------------------------
+    # Keep this block in sync with SETTING_SPECS in app/services/settings_service.py.
+    auth_token_expire_minutes: int = 180
+    notifications_enabled: bool = False
+    ntfy_base_url: str = "https://ntfy.sh"
+    ntfy_topic: str = ""
+    ntfy_username: str = ""
+    ntfy_password: str = ""
+    notify_on_backup_success: bool = True
+    notify_on_backup_failure: bool = True
+    notify_on_disk_eject_ready: bool = True
+    notify_on_update_result: bool = True
+    notify_on_agent_degraded: bool = True
+    notify_on_low_coverage: bool = True
+    notify_on_disk_new_detected: bool = True
+    notify_on_disk_known_detected: bool = True
+    notify_on_planned_disk_detected: bool = True
+    notify_on_planned_backup_reminder: bool = True
+    notify_on_planned_backup_started: bool = True
+    notify_on_planned_confirmation_required: bool = True
+    notify_on_planned_backup_missed: bool = True
+    low_coverage_threshold_percent: float = 100.0
+    disk_detection_notify_cooldown_seconds: int = 1800
+    pve_api_url: str = ""
+    pve_api_token_id: str = ""
+    pve_api_token_secret: str = ""
+    pve_verify_ssl: bool = False
+    pve_fingerprint: str = ""
+    pve_node_name: str = "proxmox"
+    pbs_execution_vm_id: int = 100
+    pbs_execution_vm_node: str = "proxmox"
+    pbs_api_url: str = ""
+    pbs_token_id: str = ""
+    pbs_token_secret: str = ""
+    pbs_verify_ssl: bool = False
+    pbs_fingerprint: str = ""
+    # Source PBS datastore name, chosen by the operator. No default name is
+    # assumed: empty means "not configured" and is reported as such.
+    pbs_datastore: str = ""
+    # How removable-disk datastores are driven on PBS: "api" (PBS REST API,
+    # PBS >= 3.3, no root agent on PBS) or "agent" (legacy PBS root agent).
+    # Fresh installs store "api", upgraded installs "agent" (see
+    # settings_service.ensure_pbs_mode). The static fallback stays "agent" so a
+    # settings-store outage never silently switches the execution path.
+    pbs_mode: str = "agent"
+    pbs_task_timeout_seconds: float = 7200.0
+    pbs_eject_timeout_seconds: float = 1800.0
+    host_agent_base_url: str = ""
+    host_agent_token: str = ""
+    host_agent_timeout_seconds: float = 7200.0
+    pbs_agent_base_url: str = ""
+    pbs_agent_token: str = ""
+    pbs_agent_timeout_seconds: float = 7200.0
+    # Previous default kept on purpose (Docker service name); the PBS agent
+    # must actually reach this URL, so operators set it in the settings.
+    external_backup_callback_base_url: str = "http://api:8000/api/v1"
+    external_loop_datastore_size_gb: int = 500
+    agent_stale_after_minutes: int = 10
+    auto_sync_enabled: bool = True
+    proxmox_sync_interval_seconds: int = 60
+    pbs_sync_interval_seconds: int = 60
 
     @property
-    def cors_origins(self) -> list[str]:
-        return [self.frontend_origin, self.frontend_origin_alt]
+    def show_seed_disks(self) -> bool:
+        return self.dev_seed
 
 
 @lru_cache(maxsize=1)
-def get_settings() -> Settings:
+def get_env_settings() -> Settings:
+    """Environment-only settings (no database access). Safe at import time."""
     return Settings()
+
+
+_overlay_loader: Callable[[], dict[str, Any]] | None = None
+_merged_settings: Settings | None = None
+_merged_lock = Lock()
+
+
+def set_settings_overlay_loader(loader: Callable[[], dict[str, Any]] | None) -> None:
+    """Install (or remove) the function returning stored operator values."""
+    global _overlay_loader
+    with _merged_lock:
+        _overlay_loader = loader
+    invalidate_settings_cache()
+
+
+def invalidate_settings_cache() -> None:
+    global _merged_settings
+    with _merged_lock:
+        _merged_settings = None
+
+
+def get_settings() -> Settings:
+    global _merged_settings
+    base = get_env_settings()
+    with _merged_lock:
+        loader = _overlay_loader
+        if loader is None:
+            return base
+        if _merged_settings is not None:
+            return _merged_settings
+        try:
+            overrides = loader()
+        except Exception as exc:  # database unreachable: degrade, do not cache
+            logger.warning("Stored settings unavailable, using defaults: %s", exc)
+            return base
+        _merged_settings = replace(base, **overrides)
+        return _merged_settings

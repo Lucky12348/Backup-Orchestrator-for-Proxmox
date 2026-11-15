@@ -75,3 +75,11 @@ jobs:
 
       - name: Tests
         run: npm test
+
+  docker:
+    name: docker image (api + web)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: docker build -f infra/docker/api.Dockerfile -t pbo-api:ci .

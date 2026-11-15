@@ -9,9 +9,15 @@ from unittest import TestCase
 from unittest.mock import patch
 
 from pydantic import ValidationError
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 
+import app.models  # noqa: F401  (register tables on Base.metadata)
 from app.api.routes.integrations_pbs import DATASTORE_NOT_CONFIGURED_MESSAGE, get_pbs_status
 from app.core.config import get_settings
+from app.db.base import Base
+from app.services.settings_service import effective_settings, import_settings_from_env
 from app.schemas.planning import ScheduledBackupEventCreate, ScheduledBackupEventUpdate
 
 API_ROOT = Path(__file__).resolve().parents[1]
@@ -36,8 +42,17 @@ class PbsDatastoreDefaultTests(TestCase):
     def test_no_datastore_name_is_assumed_when_unset(self):
         self.assertEqual(self._settings_value(None), "''")
 
+    def test_environment_is_not_read_directly_anymore(self):
+        # PBS_DATASTORE is a database-backed setting: the environment only seeds
+        # it once at startup (see test below), Settings() never reads it.
+        self.assertEqual(self._settings_value("store8to"), "''")
+
     def test_operator_chooses_the_datastore_name(self):
-        self.assertEqual(self._settings_value(" store8to "), "'store8to'")
+        engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+        Base.metadata.create_all(engine)
+        with Session(engine) as db:
+            import_settings_from_env(db, {"PBS_DATASTORE": " store8to "})
+            self.assertEqual(effective_settings(db).pbs_datastore, "store8to")
 
 
 class PbsStatusDatastoreTests(TestCase):

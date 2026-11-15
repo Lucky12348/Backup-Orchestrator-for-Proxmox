@@ -19,7 +19,7 @@ Understand the backend shape before editing:
 - Services in `apps/api/app/services/` hold most orchestration logic.
 - Models in `apps/api/app/models/` define persisted state.
 - Schemas in `apps/api/app/schemas/` define request and response contracts.
-- The app starts tables and non-production seeding from `apps/api/app/main.py`.
+- The app creates tables, applies Alembic migrations (users, app_settings), imports a legacy .env once and seeds demo data only with `DEV_SEED=true`, all from `apps/api/app/main.py`.
 
 Follow the main execution chain for external backup work:
 

@@ -1,4 +1,3 @@
-import { getStoredToken } from "./AuthContext";
 import type {
   ActivityEvent,
   AgentStatus,
@@ -48,17 +47,15 @@ const API_BASE_PATH = "/api/v1";
 export const AUTH_EXPIRED_EVENT = "pbo:auth-expired";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = getStoredToken();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(init?.headers as Record<string, string> ?? {}),
   };
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
 
+  // The session is an HttpOnly cookie sent automatically on same-origin requests.
   const response = await fetch(`${API_BASE_PATH}${path}`, {
     ...init,
+    credentials: "same-origin",
     headers,
   });
 

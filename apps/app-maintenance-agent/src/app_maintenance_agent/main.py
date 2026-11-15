@@ -241,9 +241,11 @@ def _run(repo: Path, command: list[str], timeout_seconds: float) -> dict[str, An
 
 
 def _compose_command(settings: Settings) -> list[str]:
+    # --remove-orphans: services dropped from the compose file (e.g. the former
+    # `web` container, now served by the API) are stopped instead of lingering.
     if shutil.which("docker-compose"):
-        return ["docker-compose", "--env-file", ".env", "-f", settings.compose_file, "up", "--build", "-d"]
-    return ["docker", "compose", "--env-file", ".env", "-f", settings.compose_file, "up", "--build", "-d"]
+        return ["docker-compose", "--env-file", ".env", "-f", settings.compose_file, "up", "--build", "-d", "--remove-orphans"]
+    return ["docker", "compose", "--env-file", ".env", "-f", settings.compose_file, "up", "--build", "-d", "--remove-orphans"]
 
 
 def _compose_config_command(settings: Settings) -> list[str]:

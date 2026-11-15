@@ -3,6 +3,7 @@ from datetime import datetime
 from sqlalchemy import inspect, select, text
 
 from app.db.base import Base
+from app.db.migrate import ALEMBIC_MANAGED_TABLES
 from app.db.session import SessionLocal, engine
 from app.models import (
     AssetIgnore,
@@ -22,8 +23,13 @@ from app.models import (
 )
 
 
+def legacy_tables() -> list:
+    """Tables still created by create_all (everything Alembic does not own)."""
+    return [table for name, table in Base.metadata.tables.items() if name not in ALEMBIC_MANAGED_TABLES]
+
+
 def create_tables() -> None:
-    Base.metadata.create_all(bind=engine)
+    Base.metadata.create_all(bind=engine, tables=legacy_tables())
     ensure_virtual_machine_schema()
     ensure_external_disk_schema()
     ensure_external_backup_run_schema()

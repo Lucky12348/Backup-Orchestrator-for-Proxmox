@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Response, status
+from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -71,9 +71,60 @@ def current_source_datastore_state(settings: AgentSettings) -> dict[str, Any]:
     return _source_datastore_state
 
 
+AGENT_ROLES = ("host", "pbs")
+_BOTH = frozenset(AGENT_ROLES)
+_HOST = frozenset({"host"})
+_PBS = frozenset({"pbs"})
+# Which role serves each route (§F of docs/PUBLIC_RELEASE_AUDIT.md): a stolen
+# PBS agent token can no longer drive `qm set` on the Proxmox host, and a host
+# token can no longer format disks through the PBS export endpoints.
+ROUTE_ROLES: dict[str, frozenset[str]] = {
+    "/health": _BOTH,
+    "/version": _BOTH,
+    "/capabilities": _BOTH,
+    "/maintenance/check": _BOTH,
+    "/maintenance/update": _BOTH,
+    # Used by the API through both clients (host: disk_preparation_agent, PBS: bridge).
+    "/prepare-disk": _BOTH,
+    "/qemu/usb/attach": _HOST,
+    "/qemu/usb/detach": _HOST,
+    "/qemu/config": _HOST,
+    "/disk/spin-down": _HOST,
+    "/notifications/templates": _HOST,
+    "/notifications/test": _HOST,
+    "/notifications/history": _HOST,
+    "/notifications/queue": _HOST,
+    "/prepare-external-datastore": _PBS,
+    "/prepare-dedicated-pbs-datastore": _PBS,
+    "/eject-dedicated-pbs-datastore": _PBS,
+    "/inspect-disk": _PBS,
+    "/filesystem-usage": _PBS,
+    "/run-external-export": _PBS,
+    "/cleanup-legacy-external-export-objects": _PBS,
+    "/external-export-objects/status": _PBS,
+    "/external-export-objects/cleanup": _PBS,
+}
+
+
+def validate_role(role: str) -> None:
+    if role and role not in AGENT_ROLES:
+        raise RuntimeError(f"AGENT_ROLE must be one of {', '.join(AGENT_ROLES)} (or empty), got {role!r}.")
+
+
+def route_allowed(path: str, role: str) -> bool:
+    """Unknown routes are only served when no role is configured (fail closed)."""
+    if not role:
+        return True
+    return role in ROUTE_ROLES.get(path, frozenset())
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    refresh_source_datastore_state(get_settings())
+    settings = get_settings()
+    validate_role(settings.role)
+    if not settings.role:
+        logger.warning("AGENT_ROLE is not set: every agent route (host and PBS) is served. Set AGENT_ROLE=host or pbs.")
+    refresh_source_datastore_state(settings)
     yield
 
 
@@ -175,6 +226,7 @@ def get_settings() -> AgentSettings:
 
 
 def require_agent_token(
+    request: Request,
     x_agent_token: str | None = Header(default=None),
     settings: AgentSettings = Depends(get_settings),
 ) -> None:
@@ -186,6 +238,14 @@ def require_agent_token(
         )
     if x_agent_token is None or not secrets.compare_digest(x_agent_token, expected):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid agent token.")
+    # Role check after authentication, so unauthenticated callers learn nothing.
+    route = request.scope.get("route")
+    path = getattr(route, "path", None) or request.url.path
+    if not route_allowed(path, settings.role):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"`{path}` is not served by this agent (AGENT_ROLE={settings.role}).",
+        )
 
 
 @app.get("/health")
@@ -203,7 +263,11 @@ def health(_: None = Depends(require_agent_token), settings: AgentSettings = Dep
 @app.get("/version")
 def version(_: None = Depends(require_agent_token), settings: AgentSettings = Depends(get_settings)) -> dict[str, Any]:
     return {
-        **version_payload(settings, [route.path for route in app.routes]),
+        **version_payload(
+            settings,
+            [route.path for route in app.routes if route.path in ROUTE_ROLES and route_allowed(route.path, settings.role)],
+        ),
+        "role": settings.role or "all",
         "started_at": SERVER_STARTED_AT,
     }
 

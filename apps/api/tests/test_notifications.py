@@ -72,32 +72,19 @@ class NotificationServiceTests(TestCase):
     def test_validate_requires_ntfy_values_when_enabled(self):
         settings = Settings(notifications_enabled=True, ntfy_base_url="", ntfy_topic="")
 
-        with (
-            patch.dict("app.services.notifications.os.environ", {"NOTIFICATIONS_ENABLED": "true"}, clear=True),
-            self.assertRaisesRegex(RuntimeError, "NTFY_BASE_URL, NTFY_TOPIC"),
-        ):
+        with self.assertRaisesRegex(RuntimeError, "NTFY_BASE_URL, NTFY_TOPIC"):
             validate_notification_settings(settings)
 
     def test_validate_requires_complete_auth_pair(self):
+        # Validation reads the (database-backed) settings, not the environment.
         settings = Settings(
             notifications_enabled=True,
             ntfy_base_url="https://ntfy.example.test",
             ntfy_topic="topic",
+            ntfy_username="pbo",
         )
 
-        with (
-            patch.dict(
-                "app.services.notifications.os.environ",
-                {
-                    "NOTIFICATIONS_ENABLED": "true",
-                    "NTFY_BASE_URL": "https://ntfy.example.test",
-                    "NTFY_TOPIC": "topic",
-                    "NTFY_USERNAME": "pbo",
-                },
-                clear=True,
-            ),
-            self.assertRaisesRegex(RuntimeError, "set both NTFY_USERNAME and NTFY_PASSWORD"),
-        ):
+        with self.assertRaisesRegex(RuntimeError, "set both NTFY_USERNAME and NTFY_PASSWORD"):
             validate_notification_settings(settings)
 
     def test_validate_warns_for_public_ntfy_in_production(self):

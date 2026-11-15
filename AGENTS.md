@@ -39,9 +39,11 @@ The same control plane also covers inventory sync, backup visibility, planning
 Current constraints (do not silently "fix" these — they are intentional unless a
 task asks you to change them):
 
-- Single-user, admin-driven product. Auth is one hardcoded account
-  (`AUTH_USERNAME` / `AUTH_PASSWORD_HASH` in env, see `apps/api/app/auth.py`), no
-  `users` table, no roles/permissions.
+- Single-admin, admin-driven product. Accounts live in the `users` table but
+  there are no roles/permissions: the first (and only) admin is created by
+  `POST /api/v1/setup/admin` (refused once an account exists) or imported once
+  from a legacy `AUTH_USERNAME` / `AUTH_PASSWORD_HASH`. Authentication cannot be
+  disabled (`AUTH_ENABLED` no longer exists). See "Configuration & auth model".
 - The backup flow is specialized for removable-media PBS replication, not a
   generic backup orchestrator.
 - Real privileged operations depend on the host and PBS agents running with
@@ -85,10 +87,89 @@ PBS VM root agent
   - safe eject / cleanup helpers
 ```
 
-Default ports: App VM API `8000`, web UI `5173`, app maintenance agent `8092`,
-Proxmox host agent `8090`, PBS agent `8091`. Agent ports are meant to be tightly
-firewalled — only the app VM should reach them — and every call is additionally
-protected with an `X-Agent-Token` header.
+Default ports: App VM API **and web UI** `8000` (the API serves the built
+`apps/web/dist` itself, same origin — no web container, no CORS), app
+maintenance agent `8092`, Proxmox host agent `8090`, PBS agent `8091`. `5173` is
+only the local Vite dev server (`npm run dev`, proxies `/api` to
+`localhost:8000`). Agent ports are meant to be tightly firewalled — only the app
+VM should reach them — and every call is additionally protected with an
+`X-Agent-Token` header.
+
+## Configuration & auth model (read before touching settings or auth)
+
+- **Two kinds of settings** on the `Settings` dataclass
+  (`apps/api/app/core/config.py`):
+  - *Bootstrap / env* (read from the environment only): `APP_ENV` (default
+    `production`), `DATABASE_URL`, `AUTH_SECRET_KEY`, `AUTH_COOKIE_SECURE`,
+    `DEV_SEED`, `WEB_DIST_DIR`, `PLANNING_SCHEDULER_*`,
+    `EXTERNAL_BACKUP_LEGACY_COEXISTENCE_ENABLED`, app-maintenance-agent vars.
+  - *Operator settings* (Proxmox/PBS URLs+tokens+fingerprints, PBS VM id/node,
+    PBS datastore, agent URLs/tokens/timeouts, callback URL, ntfy, `NOTIFY_ON_*`,
+    sync intervals, session lifetime): stored in the `app_settings` table. The
+    registry is `SETTING_SPECS` in `apps/api/app/services/settings_service.py`
+    — **adding one means a `Settings` field with a static default AND a spec
+    entry** (an import-time assert checks they match). Secrets are Fernet-
+    encrypted with a key derived (HKDF) from `AUTH_SECRET_KEY`
+    (`app/core/security.py`) and never returned by the API.
+- `get_settings()` = env base overlaid with stored values once
+  `activate_settings_store()` ran at startup; the cache is invalidated on every
+  write (`update_settings`). Code keeps reading `settings.<field>` — do **not**
+  add new `os.getenv` reads for operator settings. Unit tests that don't run the
+  lifespan get the env-only base, and keep patching `get_settings` per module.
+- A legacy `.env` holding operator keys is imported **once** on first start
+  (`import_settings_from_env`, marker row `meta.env_import_done`); afterwards
+  `.env` edits to those keys have no effect — change them via
+  `/api/v1/settings` or `/api/v1/setup/{proxmox,pbs}`.
+- Startup order (`apps/api/app/main.py` lifespan): validate `AUTH_SECRET_KEY`
+  → `create_tables()` (legacy tables) → Alembic `run_migrations()` (tables in
+  `ALEMBIC_MANAGED_TABLES`: `users`, `app_settings`) → env import + legacy admin
+  import → activate settings store → `DEV_SEED` demo data → scheduler.
+  New tables should be Alembic migrations in `apps/api/app/db/migrations/versions`.
+- Sessions: login (`POST /api/v1/auth/token`) and first-admin creation set an
+  `HttpOnly; SameSite=Strict` JWT cookie (`pbo_session`), `Secure` unless
+  `AUTH_COOKIE_SECURE=false`. No Bearer header, no token in JS storage.
+  `get_current_user` also checks the account still exists.
+- Public (no session) API surface: `/health`, `/api/v1/auth/{token,logout}`,
+  `/api/v1/setup/{status,admin}`, agent endpoints guarded by `X-Agent-Token`.
+  Everything else, including `/api/v1/setup/{proxmox,pbs}[/test]` and
+  `/api/v1/settings`, sits behind the session (`protected_router`).
+- TLS pinning (`app/core/tls.py`): `PVE_FINGERPRINT` / `PBS_FINGERPRINT` are
+  checked inside the TLS handshake of **every** request of `ProxmoxClient`,
+  `PBSClient` and the setup probes (`PinnedSSLContext.wrap_socket`), before
+  the token is sent. Any new httpx client towards PVE/PBS must use
+  `build_tls_verify(...)`, never a bare `verify=False`. Without CA nor pin the
+  setup probe only returns the fingerprint (`trust_required=true`).
+
+## PBS mode: agent vs API (read before touching disk/export/eject code)
+
+- `PBS_MODE` (database setting): `agent` = legacy PBS root agent;
+  `api` = PBS REST API (PBS ≥ 3.3, removable datastores). Fresh installs get
+  `api`, upgraded installs `agent` (`ensure_pbs_mode` at startup). The
+  `Settings` fallback is `agent`.
+- **Single switch point**: `get_pbs_agent_client()` (`services/host_agent.py`)
+  returns `PBSApiBackend` (`services/pbs_api_backend.py`) in API mode. The
+  backend implements the PBS-agent HTTP protocol (same paths, payloads and
+  `error_code`s) on top of `PBSClient`. Orchestration code
+  (`external_backup_execution.py`, `disk_handoff.py`, `disk_eject.py`) must
+  stay mode-agnostic: if it needs something new from "the PBS side", add the
+  agent endpoint AND the backend handler.
+- Destructive guards for API mode live in `services/pbs_guards.py` (pure
+  functions, exhaustively tested): approved disk, ≥ 32 GiB, no system/mounted
+  partition, no data filesystem without PBO marker, existing/active datastore
+  refused, explicit confirmation. PBO marker = datastore comment
+  `pbo:serial=<serial>`. Never call `wipe_disk` / `create_directory_datastore`
+  outside `PBSApiBackend._prepare_dedicated`.
+- Eject in API mode: idle check → `unmount` UPID followed to the end → only
+  then the host agent detaches USB. Timeout → `eject_not_finished` (disk stays
+  attached). Agent-prepared (fstab) datastores are `nonremovable` and refused
+  in API mode — migration plan in `docs/PBS_API.md`.
+- Endpoint/parameter reference and what was verified against the PBS 4.x
+  schema: `docs/PBS_API.md`. PBS datastore names are ≤ 32 chars
+  (`fit_datastore_name`).
+- Agents serve only their role's routes when `AGENT_ROLE=host|pbs` is set
+  (`ROUTE_ROLES` in `apps/agent/src/agent/server.py`, enforced in
+  `require_agent_token` after the token check). Adding an agent route means
+  adding it to `ROUTE_ROLES` (a test fails otherwise).
 
 ## Repository map
 
@@ -239,9 +320,13 @@ telling the user the wrong thing here has already caused a real production
 incident (a live deployment kept running old, unauthenticated agent code for
 hours because these gaps weren't obvious).
 
-- **App VM** (web/api/db): fully automatic. `git pull` + `docker compose up
-  --build -d` recreates the containers, and `create_tables()` applies
-  additive DB schema changes on API startup.
+- **App VM** (api+ui/db): `git pull` + `docker compose up --build -d
+  --remove-orphans` recreates the containers; `create_tables()` and the Alembic
+  migrations apply schema changes on API startup. Since the UI moved into the
+  API image, the old `web` container is removed by `--remove-orphans` and the UI
+  is on the API port `8000`: a reverse proxy that pointed at `5173` must be
+  repointed — tell the user, the button cannot do it. Plain-HTTP access also
+  needs `AUTH_COOKIE_SECURE=false` (Secure session cookie).
 - **Proxmox host agent / PBS agent**: `git pull --ff-only` in
   `AGENT_REPO_PATH`, then (if `AGENT_HTTP_SERVICE_NAME` is configured) a
   delayed self-restart of the agent's own `-http.service` — see
@@ -288,30 +373,50 @@ cd apps/web
 npm install
 npm run dev
 
-# Full stack via Docker Compose
+# Full stack via Docker Compose (UI + API on http://localhost:8000;
+# set AUTH_COOKIE_SECURE=false in .env for plain-HTTP local use)
 Copy-Item .env.example .env
 docker compose --env-file .env -f infra/docker/docker-compose.yml up --build
 
-# Admin password hash
+# Optional: legacy admin hash for a one-time import (fresh installs use the
+# first-run screen instead)
 py scripts/generate_password_hash.py
 ```
 
-The password-hash script prints a Compose-safe `AUTH_PASSWORD_HASH=...` line.
-Keep the doubled `$` characters intact when copying into `.env` — Compose env
-files need `$$` or the API receives a truncated hash and rejects login.
+Local dev needs `AUTH_SECRET_KEY` (≥ 32 chars) in the API environment or the
+API refuses to start; demo data needs `DEV_SEED=true`. When serving the UI from
+the API locally over `http://`, also set `AUTH_COOKIE_SECURE=false`
+(`npm run dev` on `localhost:5173` works as-is: browsers treat localhost as secure).
+
+The image (`infra/docker/api.Dockerfile`) is built from the **repository root**
+(multi-stage: builds `apps/web` then copies `dist` into the API image). A root
+`.dockerignore` keeps `.env`, `node_modules` and `.git` out of the context.
 
 ## Testing status (read before assuming coverage)
 
-Existing tests: 10 files under `apps/api/tests/`, 1 under
-`apps/agent/tests/` (`test_external_export.py`), 1 under
-`apps/app-maintenance-agent/tests/` (`test_env_preservation.py`), 1 under
-`apps/web/tests/` (`diskPlanning.test.ts`, written against Node's built-in
-`node:test` but **not wired to any npm script** — run it directly with
-`node --test` rather than assuming `npm run test` covers it).
+- `apps/api/tests/` (pytest, ~190 tests): includes `conftest.py` fixtures
+  (`client` = HTTPS TestClient on in-memory SQLite with `get_db` overridden,
+  lifespan NOT run), Phase-1 suites `test_auth_setup.py`,
+  `test_settings_service.py`, `test_setup_probe.py`, `test_migrations.py`,
+  `test_web_static.py`, and Phase-2 suites `test_pbs_api_mode.py` (full
+  prepare → sync → eject flow and guards against `tests/pbs_fake.py`, a
+  stateful fake PBS on `httpx.MockTransport` that follows the 4.x schema's
+  return types) and `test_tls_pinning.py` (real local TLS server with a
+  self-signed certificate).
+- `apps/agent/tests/` (6 files, incl. `test_agent_role.py`),
+  `apps/app-maintenance-agent/tests/` (1 file).
+- Nothing has been run against a real PBS in API mode yet: the fake follows the
+  documented schema; points the schema leaves open are marked [U] in
+  `docs/PBS_API.md`.
+- `apps/web/tests/` (3 files, `node:test`): `npm test` runs them (Node ≥ 22.18
+  executes the `.ts` files natively).
 
-No CI is configured (no `.github/workflows`). No e2e framework (no Playwright/
-Cypress) exists for the web app. Several routes/services have no dedicated test
-file — see `ROADMAP.md` for the list before claiming a change is "fully tested."
+CI: `.github/workflows/ci.yml` — ruff (blocking only on E9/F63/F7/F82; default
+rules reported), pytest for api/agent/app-maintenance-agent on Python 3.11 and
+3.13, web `npm ci` + build + tests, and a `docker build` of the API image.
+No e2e framework (no Playwright/Cypress) exists for the web app. Several
+routes/services have no dedicated test file — see `ROADMAP.md` before claiming
+a change is "fully tested."
 
 ## Safety notes
 

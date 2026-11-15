@@ -232,7 +232,7 @@ export function AppShell({ children, language, onLanguageChange, t }: AppShellPr
             <button
               aria-label={language === "fr" ? "Déconnexion" : "Log out"}
               className="icon-button"
-              onClick={logout}
+              onClick={() => void logout()}
               title={language === "fr" ? "Déconnexion" : "Log out"}
               type="button"
               style={{ width: 28, height: 28 }}
