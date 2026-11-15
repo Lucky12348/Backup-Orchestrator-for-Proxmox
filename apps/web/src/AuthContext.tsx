@@ -10,6 +10,9 @@ interface AuthContextValue {
   status: AuthStatus;
   username: string | null;
   isAuthenticated: boolean;
+  /** First-run wizard finished (null while loading). Until then every page leads to /setup. */
+  setupCompleted: boolean | null;
+  markSetupCompleted: () => void;
   login: (username: string, password: string) => Promise<void>;
   createAdmin: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -31,9 +34,21 @@ async function readError(response: Response, fallback: string): Promise<Error> {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>("loading");
   const [username, setUsername] = useState<string | null>(null);
+  const [setupCompleted, setSetupCompleted] = useState<boolean | null>(null);
+
+  const readSetupStatus = useCallback(async () => {
+    const setup = await fetch("/api/v1/setup/status", { credentials: "same-origin" });
+    const data = setup.ok
+      ? ((await setup.json()) as { needs_setup: boolean; setup_completed?: boolean })
+      : { needs_setup: false, setup_completed: true };
+    // Older API without the field: never trap the operator in the wizard.
+    setSetupCompleted(data.setup_completed ?? true);
+    return data;
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
+      const setupData = await readSetupStatus();
       const me = await fetch("/api/v1/auth/me", { credentials: "same-origin" });
       if (me.ok) {
         const data = (await me.json()) as { username: string };
@@ -41,15 +56,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setStatus("authenticated");
         return;
       }
-      const setup = await fetch("/api/v1/setup/status", { credentials: "same-origin" });
-      const setupData = setup.ok ? ((await setup.json()) as { needs_setup: boolean }) : { needs_setup: false };
       setUsername(null);
       setStatus(setupData.needs_setup ? "needs-setup" : "anonymous");
     } catch {
       setUsername(null);
       setStatus("anonymous");
     }
-  }, []);
+  }, [readSetupStatus]);
 
   useEffect(() => {
     void refresh();
@@ -67,9 +80,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     if (!response.ok) throw await readError(response, "Authentication failed");
     const data = (await response.json()) as { username: string };
+    await readSetupStatus().catch(() => setSetupCompleted(true));
     setUsername(data.username);
     setStatus("authenticated");
-  }, []);
+  }, [readSetupStatus]);
 
   const createAdmin = useCallback(async (user: string, password: string) => {
     const response = await fetch("/api/v1/setup/admin", {
@@ -85,6 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     if (!response.ok) throw await readError(response, "Account creation failed");
     const data = (await response.json()) as { username: string };
+    setSetupCompleted(false);
     setUsername(data.username);
     setStatus("authenticated");
   }, [refresh]);
@@ -98,6 +113,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const markSetupCompleted = useCallback(() => setSetupCompleted(true), []);
+
   const markSessionExpired = useCallback(() => {
     setUsername(null);
     setStatus("anonymous");
@@ -109,6 +126,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         status,
         username,
         isAuthenticated: status === "authenticated",
+        setupCompleted,
+        markSetupCompleted,
         login,
         createAdmin,
         logout,

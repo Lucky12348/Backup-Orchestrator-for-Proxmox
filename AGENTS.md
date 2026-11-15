@@ -125,7 +125,7 @@ should reach them — and every call is additionally protected with an
 - Startup order (`apps/api/app/main.py` lifespan): validate `AUTH_SECRET_KEY`
   → `create_tables()` (legacy tables) → Alembic `run_migrations()` (tables in
   `ALEMBIC_MANAGED_TABLES`: `users`, `app_settings`, `agents`,
-  `agent_pairing_codes`) → env import + legacy admin
+  `agent_pairing_codes`, `setup_progress`) → env import + legacy admin
   import → activate settings store → `DEV_SEED` demo data → scheduler.
   New tables should be Alembic migrations in `apps/api/app/db/migrations/versions`.
 - Sessions: login (`POST /api/v1/auth/token`) and first-admin creation set an
@@ -168,6 +168,43 @@ should reach them — and every call is additionally protected with an
   role stops being a callback credential. Static `.env` tokens keep working for
   roles without a registered agent (legacy).
 - One active agent per role: a new registration revokes the previous one.
+
+## First-run wizard (read before touching setup, auth redirects or the new UI)
+
+- `/setup` (web: `apps/web/src/setup/`, API: `routes/setup.py` +
+  `services/setup_wizard.py`): admin → host agent → Proxmox VE → PBS → done.
+  Until `setup_completed` (`GET /api/v1/setup/status`) is true, the UI
+  redirects every page to `/setup` (`setupRedirect` in `setup/logic.ts`). An
+  install with a stored PVE connection and no `setup_progress` row (upgrade)
+  counts as completed.
+- `setup_progress` (single row) stores the step and **non-secret** results;
+  `sanitize_progress_data` drops secret-looking keys. Tokens only go to
+  `app_settings` (encrypted).
+- PVE access: the host agent's `POST /pve/provision-access`
+  (`apps/agent/src/agent/pve_access.py`, host role) runs `pveum` to create
+  `pbo@pve`, role `PBO`, ACL `/` (user + token), and re-creates
+  `pbo@pve!pbo`; it returns the secret and the PVE certificate fingerprint
+  read locally (pinned, no TOFU). `PBO_PRIVILEGES` there and
+  `PVE_PRIVILEGES` in `setup_wizard.py` must match (a test checks it); every
+  privilege is justified in `docs/PERMISSIONS.md` — update it with any new
+  `ProxmoxClient` call.
+- PBS access: `POST /api/v1/setup/pbs/provision` (`services/pbs_provisioning.py`)
+  takes the root@pam password once (pydantic `SecretStr`), gets a ticket over
+  a connection pinned on the operator-confirmed fingerprint, creates
+  `pbo@pbs` + `pbo@pbs!pbo` and the `PBS_ACLS` (user + token), refuses
+  PBS < 3.3 before any change. The password must never reach a log, an error
+  message, an exception chain (`from None`) or the database (tests check all
+  four). Failed attempts are rate-limited (5 / 15 min / client).
+- New UI stack (Tailwind 3 + shadcn/ui on Radix + lucide-react + Geist) is
+  limited to the wizard: Tailwind only scans `src/setup` and
+  `src/components/ui`, every utility is scoped under `#pbo-wizard`
+  (`important`), preflight is off, rem values are converted to px, and there
+  is no autoprefixer — the legacy `styles.css` output must stay
+  byte-identical. Tokens are CSS variables in `src/setup/wizard.css` (dark +
+  light). The wizard is a lazy chunk (`App.tsx`). Avoid Radix components that
+  portal outside `#pbo-wizard` (Select, Dialog…) unless the portal container
+  is set inside it.
+- Command blocks for hosts have **no copy button** (uBlock "ClickFix").
 
 ## PBS mode: agent vs API (read before touching disk/export/eject code)
 
@@ -238,7 +275,9 @@ should reach them — and every call is additionally protected with an
   external backups → `apps/api/app/services/`.
 - Persistence or response-shape changes → `apps/api/app/models/` and
   `apps/api/app/schemas/`.
-- Screen-oriented work → `apps/web/src/pages/`.
+- Screen-oriented work → `apps/web/src/pages/` (legacy UI) and
+  `apps/web/src/setup/` (first-run wizard, Tailwind + shadcn/ui in
+  `apps/web/src/components/ui/`).
 - Frontend behavior/data fetching → `apps/web/src/components/` and
   `apps/web/src/api.ts`.
 - Disk discovery, USB passthrough, datastore preparation, export execution, safe
@@ -458,21 +497,26 @@ The image (`infra/docker/api.Dockerfile`) is built from the **repository root**
   self-signed certificate); Phase-3 suites `test_agent_pairing.py` (pairing,
   registration, token directions, overlay, agent pinning, install routes),
   `test_agent_install_script.py` (the Python helper embedded in `install.sh`
-  run for real against a local TLS server) and `test_calendar_feed.py`.
-- `apps/agent/tests/` (7 files, incl. `test_agent_role.py`,
-  `test_registered_agent.py`),
+  run for real against a local TLS server) and `test_calendar_feed.py`;
+  Phase-4 suite `test_setup_wizard.py` (progress/resume, PVE provisioning
+  through a fake agent, PBS provisioning against a fake PBS, password absent
+  from logs/responses/DB/tracebacks, rate limit, PBS < 3.3).
+- `apps/agent/tests/` (8 files, incl. `test_agent_role.py`,
+  `test_registered_agent.py`, `test_pve_access.py` with simulated `pveum`),
   `apps/app-maintenance-agent/tests/` (1 file).
 - Nothing has been run against a real PBS in API mode yet: the fake follows the
   documented schema; points the schema leaves open are marked [U] in
   `docs/PBS_API.md`. The install/update/agent shell scripts are only
   shellchecked: they have not been run on a real LXC / PVE host from CI.
-- `apps/web/tests/` (3 files, `node:test`): `npm test` runs them (Node ≥ 22.18
+- `apps/web/tests/` (4 files, `node:test`, incl. `setupWizard.test.ts`:
+  `/setup` redirect, resume, error messages): `npm test` runs them (Node ≥ 22.18
   executes the `.ts` files natively).
 
 CI: `.github/workflows/ci.yml` — ruff (blocking only on E9/F63/F7/F82; default
 rules reported), pytest for api/agent/app-maintenance-agent on Python 3.11 and
 3.13, web `npm ci` + build + tests, `shellcheck -x` on every tracked `*.sh`,
-and a `docker build` of the API image. `.github/workflows/release.yml` builds
+`scripts/ci/test-agent-install.sh` (URL check, `--uninstall`), and a
+`docker build` of the API image. `.github/workflows/release.yml` builds
 the release archive on `v*` tags.
 No e2e framework (no Playwright/Cypress) exists for the web app. Several
 routes/services have no dedicated test file — see `ROADMAP.md` before claiming

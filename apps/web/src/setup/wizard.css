@@ -1,0 +1,113 @@
+/*
+ * New UI layer (Tailwind + shadcn/ui), limited to the first-run wizard.
+ * Nothing here applies outside #pbo-wizard: no global preflight, every
+ * utility is scoped by `important: "#pbo-wizard"` (tailwind.config.js).
+ */
+@tailwind components;
+@tailwind utilities;
+
+/* Design tokens (RGB channels, used as rgb(var(--pbo-x) / alpha)). */
+#pbo-wizard,
+#pbo-wizard[data-theme="dark"] {
+  --pbo-bg: 9 9 11; /* #09090B */
+  --pbo-surface: 17 17 20; /* #111114 */
+  --pbo-subtle: 24 24 28; /* #18181C */
+  --pbo-border: 38 38 44; /* #26262C */
+  --pbo-fg: 250 250 250; /* #FAFAFA */
+  --pbo-muted: 161 161 170; /* #A1A1AA */
+  --pbo-faint: 139 139 148; /* #8B8B94 */
+  --pbo-accent: 124 108 255; /* #7C6CFF */
+  --pbo-accent-fg: 255 255 255;
+  --pbo-success: 34 197 94; /* #22C55E */
+  --pbo-warning: 245 158 11; /* #F59E0B */
+  --pbo-danger: 239 68 68; /* #EF4444 */
+  color-scheme: dark;
+}
+
+#pbo-wizard[data-theme="light"] {
+  --pbo-bg: 250 250 250; /* #FAFAFA */
+  --pbo-surface: 255 255 255; /* #FFFFFF */
+  --pbo-subtle: 244 244 245; /* #F4F4F5 */
+  --pbo-border: 228 228 231; /* #E4E4E7 */
+  --pbo-fg: 9 9 11; /* #09090B */
+  --pbo-muted: 82 82 91; /* #52525B */
+  --pbo-faint: 107 107 116; /* #6B6B74 */
+  --pbo-accent: 91 75 235; /* #5B4BEB */
+  --pbo-accent-fg: 255 255 255;
+  --pbo-success: 22 163 74; /* #16A34A */
+  --pbo-warning: 217 119 6; /* #D97706 */
+  --pbo-danger: 220 38 38; /* #DC2626 */
+  color-scheme: light;
+}
+
+/* Scoped reset (what Tailwind's preflight would do, inside the wizard only). */
+#pbo-wizard {
+  min-height: 100vh;
+  background: rgb(var(--pbo-bg));
+  color: rgb(var(--pbo-fg));
+  font-family: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "ss01", "cv11";
+}
+
+#pbo-wizard *,
+#pbo-wizard *::before,
+#pbo-wizard *::after {
+  box-sizing: border-box;
+  border-width: 0;
+  border-style: solid;
+  border-color: rgb(var(--pbo-border));
+}
+
+#pbo-wizard :is(h1, h2, h3, h4, p, pre, ol, ul, figure) {
+  margin: 0;
+}
+
+#pbo-wizard :is(ol, ul) {
+  list-style: none;
+  padding: 0;
+}
+
+#pbo-wizard :is(button, input, select, textarea) {
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  margin: 0;
+}
+
+#pbo-wizard button {
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+}
+
+#pbo-wizard button:disabled {
+  cursor: not-allowed;
+}
+
+#pbo-wizard :is(code, pre, kbd) {
+  font-family: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+#pbo-wizard svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+#pbo-wizard :focus-visible {
+  outline: 2px solid rgb(var(--pbo-accent));
+  outline-offset: 2px;
+}
+
+#pbo-wizard ::selection {
+  background: rgb(var(--pbo-accent) / 0.3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #pbo-wizard * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

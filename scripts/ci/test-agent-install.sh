@@ -38,6 +38,43 @@ if ! grep -q '^PBO_APP_URL="__PBO_APP_URL__"$' "${ROOT}/apps/api/app/agent_insta
   failures=$((failures + 1))
 fi
 
+# --uninstall: services stopped, files removed, pveum only with --purge-pve-access.
+# Commands are stubbed with functions and the paths point to a temporary dir.
+uninstall_case() {
+  local purge="$1" tmp calls
+  tmp="$(mktemp -d)"
+  calls="${tmp}/calls"
+  (
+    INSTALL_DIR="${tmp}/opt/pbo-agent"
+    CONF_DIR="${tmp}/etc/pbo-agent"
+    mkdir -p "${INSTALL_DIR}/venv" "${CONF_DIR}/tls"
+    require_root() { :; }
+    systemctl() { echo "systemctl $*" >>"${calls}"; }
+    pveum() { echo "pveum $*" >>"${calls}"; [[ "$1 $2" == "user list" ]] && echo '[{"userid":"pbo@pve"}]'; return 0; }
+    rm() { if [[ "$*" == *"/etc/systemd/system/"* ]]; then echo "rm $*" >>"${calls}"; else command rm "$@"; fi; }
+    UNINSTALL=1
+    PURGE_PVE_ACCESS="${purge}"
+    main --uninstall >/dev/null
+    [[ ! -e "${INSTALL_DIR}" && ! -e "${CONF_DIR}" ]] || { echo "FAIL  uninstall left files"; exit 1; }
+  ) || failures=$((failures + 1))
+  if ! grep -q "systemctl disable --now --quiet pbo-agent.service" "${calls}"; then
+    echo "FAIL  uninstall did not stop pbo-agent.service"
+    failures=$((failures + 1))
+  fi
+  if ((purge)) && ! grep -q "pveum user delete pbo@pve" "${calls}"; then
+    echo "FAIL  --purge-pve-access did not delete pbo@pve"
+    failures=$((failures + 1))
+  fi
+  if ((!purge)) && grep -q "pveum user delete" "${calls}"; then
+    echo "FAIL  --uninstall without --purge-pve-access deleted pbo@pve"
+    failures=$((failures + 1))
+  fi
+  command rm -rf "${tmp}"
+  echo "ok    uninstall (purge=${purge})"
+}
+uninstall_case 0
+uninstall_case 1
+
 if ((failures)); then
   echo "${failures} failure(s)"
   exit 1

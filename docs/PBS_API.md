@@ -68,17 +68,22 @@ Notes:
 - Task follow-up never stops a PBS task: on timeout the task keeps running on
   PBS and the run reports it.
 
-### Recommended PBS token
+### PBS token (created by the setup wizard)
 
-A dedicated user + token (privilege separation on) holding: `Sys.Audit` and
-`Sys.Modify` on `/system/disks`; `Sys.Audit` on `/system/tasks`;
-`Datastore.Allocate` on `/datastore` (create removable datastores);
-`Datastore.Modify` + `Datastore.Backup` on `/datastore` (target stores are
-created at runtime, so the ACL must be on the parent path); `Datastore.Read`/
-`Datastore.Audit` on the source datastore. Inventory sync (snapshots listing)
-needs `Datastore.Audit` on the source as before. Exact local-sync permissions
-on the *source* store are not spelled out by the schema [U] — validate with a
-first manual run.
+The wizard (step 4, `POST /api/v1/setup/pbs/provision`) creates `pbo@pbs` and
+the `pbo@pbs!pbo` token with the root@pam password typed once, and sets these
+ACLs for the user **and** the token (PBS has no custom roles; a token gets the
+intersection of its ACLs and its user's):
+
+| Path | Role | Covers |
+|---|---|---|
+| `/system/disks` | `Admin` | `Sys.Audit` + `Sys.Modify` (list, wipe, create removable datastore, mount/unmount) |
+| `/system/tasks` | `Audit` | `Sys.Audit` (follow tasks) |
+| `/datastore` | `DatastoreAdmin` | `Datastore.Allocate`/`Modify`/`Backup`/`Read`/`Audit` on every store (targets are created at runtime) |
+
+Reasons and the manual equivalent: [PERMISSIONS.md](PERMISSIONS.md). Exact
+local-sync permissions on the *source* store are not spelled out by the schema
+[U]: `DatastoreAdmin` on `/datastore` covers them.
 
 ## Flows
 
@@ -141,9 +146,9 @@ legacy `verify=false` behaviour in that case.
 | Proxmox host agent (root) | QEMU USB passthrough attach/detach (`qm set`), VM USB config, disk spin-down, disk discovery reports (timer), host ntfy engine, host disk preparation endpoint |
 | PBS agent | Only with `PBS_MODE=agent`: legacy (fstab) datastores, coexistence mode, PBS agent maintenance |
 
-The host agent is installed with one command shown by the app (pairing code,
-HTTPS with a pinned certificate in both directions, one token per direction):
-see [INSTALLATION.md](INSTALLATION.md#4-install-the-host-agent-one-line).
+The host agent is installed with the two commands shown by the setup wizard
+(pairing code, HTTPS with a pinned certificate in both directions, one token
+per direction): see [INSTALLATION.md](INSTALLATION.md#4-host-agent-what-the-install-command-does).
 
 Agents now serve only the routes of their role (`AGENT_ROLE=host|pbs`,
 see `apps/agent/src/agent/server.py:ROUTE_ROLES`); an empty role keeps the

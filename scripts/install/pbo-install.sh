@@ -414,7 +414,7 @@ pbo_install_main() {
   echo
   pbo_ok "Proxmox Backup Orchestrator $(cat "${PBO_DIR}/VERSION") is running."
   echo
-  echo "  Open https://${ip:-<container-ip>} to create the admin account."
+  echo "  Open https://${ip:-<container-ip>} to start the setup wizard."
   echo "  (self-signed certificate; SHA-256 fingerprint:"
   echo "   $(pbo_cert_fingerprint))"
   echo

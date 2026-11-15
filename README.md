@@ -15,9 +15,10 @@ curl -fsSLO https://raw.githubusercontent.com/Lucky12348/Backup-Orchestrator-for
 bash pbo-install.sh
 ```
 
-Open `https://<lxc-ip>`, create the admin account, then install the Proxmox
-host agent with the two commands shown in **Integrations → Agent
-installation**. Update with `update` inside the LXC. Full guide:
+Open `https://<lxc-ip>` and follow the setup wizard: admin account, host agent
+(two commands to run on the Proxmox host), then Proxmox VE and PBS are
+connected for you — no API token to create or copy
+([permissions](docs/PERMISSIONS.md)). Update with `update` inside the LXC. Full guide:
 [docs/INSTALLATION.md](docs/INSTALLATION.md). The Docker Compose app VM is the
 legacy path ([docs/INSTALLATION_DOCKER_LEGACY.md](docs/INSTALLATION_DOCKER_LEGACY.md)).
 
@@ -153,7 +154,7 @@ Fresh installs do not need it: the administrator is created on the first-run scr
 
 ## Production And Operations Docs
 
-- [Installation](docs/INSTALLATION.md) (LXC + one-line agent) — [legacy Docker](docs/INSTALLATION_DOCKER_LEGACY.md)
+- [Installation](docs/INSTALLATION.md) (LXC + setup wizard) — [API permissions](docs/PERMISSIONS.md) — [legacy Docker](docs/INSTALLATION_DOCKER_LEGACY.md)
 - [Operations](docs/OPERATIONS.md)
 - [Maintenance](docs/MAINTENANCE.md)
 - [Security](docs/SECURITY.md)

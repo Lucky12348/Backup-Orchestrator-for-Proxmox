@@ -16,10 +16,20 @@ def _create_admin(client):
 
 def test_status_reports_needs_setup_until_admin_exists(client):
     status = client.get("/api/v1/setup/status").json()
-    assert status == {"needs_setup": True, "proxmox_configured": False, "pbs_configured": False}
+    assert status == {
+        "needs_setup": True,
+        "proxmox_configured": False,
+        "pbs_configured": False,
+        "setup_completed": False,
+        "current_step": "admin",
+    }
 
     assert _create_admin(client).status_code == 201
-    assert client.get("/api/v1/setup/status").json()["needs_setup"] is False
+    status = client.get("/api/v1/setup/status").json()
+    assert status["needs_setup"] is False
+    # The wizard continues with the agent step until it is finished.
+    assert status["setup_completed"] is False
+    assert status["current_step"] == "agent"
 
 
 def test_first_admin_opens_a_hardened_cookie_session(client):

@@ -102,6 +102,25 @@ AGENT_SERVER_TOKEN=<pbs-agent-token>
 
 Never reuse these tokens for Proxmox API, PBS API, or the web login.
 
+## Proxmox VE and PBS API access (setup wizard)
+
+- **Dedicated identities, minimum privileges**: `pbo@pve!pbo` (custom role
+  `PBO`) and `pbo@pbs!pbo` (built-in roles on three paths). Every privilege is
+  justified in [PERMISSIONS.md](PERMISSIONS.md).
+- **PVE**: the token is created by the host agent with `pveum` (root on the
+  host); the agent returns the secret over the pinned app ↔ agent channel, with
+  the PVE certificate fingerprint read from `/etc/pve/local/` — the app pins
+  it without trust-on-first-use. The agent logs the steps, never the secret.
+- **PBS**: the operator compares the certificate fingerprint with *PBS ›
+  Dashboard › Show Fingerprint* and confirms it; only then is the root@pam
+  password sent, once, over a connection pinned on that fingerprint, to get a
+  PBS ticket. The password is never stored, logged, put in an error message or
+  chained in an exception (tested), and the endpoint allows 5 failures per
+  client per 15 minutes.
+- Re-running a step re-creates the token (the previous secret stops working).
+- Token secrets are stored Fernet-encrypted in `app_settings`; the wizard state
+  (`setup_progress`) only keeps non-secret results.
+
 ## Firewall Rules
 
 Agent HTTP ports must only be reachable from the app VM IP.

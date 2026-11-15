@@ -67,6 +67,8 @@ AGENT_CAPABILITIES = {
     "qemu-usb-detach",
     "disk-spin-down",
     "ntfy-notifications",
+    "pve-provision-access",
+    "pve-guest-addresses",
 }
 
 

@@ -1,12 +1,111 @@
+from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 
 
 class SetupStatusRead(BaseModel):
     needs_setup: bool
     proxmox_configured: bool
     pbs_configured: bool
+    # False until the first-run wizard is finished: the UI redirects to /setup.
+    setup_completed: bool = True
+    current_step: str = "done"
+
+
+class SetupProgressRead(BaseModel):
+    current_step: str
+    completed: bool
+    data: dict[str, Any] = {}
+    updated_at: datetime | None = None
+
+
+class SetupProgressUpdate(BaseModel):
+    step: Literal["agent", "pve", "pbs", "done"] | None = None
+    # Non-secret results only: keys that look like secrets are dropped server-side.
+    data: dict[str, Any] | None = None
+
+
+class SetupAgentStatusRead(BaseModel):
+    registered: bool
+    connected: bool
+    agent_id: int | None = None
+    hostname: str | None = None
+    base_url: str | None = None
+    fingerprint: str | None = None
+    last_seen_at: datetime | None = None
+
+
+class SetupGuestRead(BaseModel):
+    vmid: int
+    name: str
+    node: str
+    status: str
+
+
+class PveProvisionRead(BaseModel):
+    node: str
+    pve_version: str
+    api_url: str
+    fingerprint: str
+    token_id: str
+    vm_count: int
+    ct_count: int
+    vms: list[SetupGuestRead] = []
+
+
+class PbsCandidateRead(SetupGuestRead):
+    addresses: list[str] = []
+    pbs_port_open: bool = False
+    name_match: bool = False
+    score: int = 0
+    suggested_url: str | None = None
+
+
+class PbsCandidatesRead(BaseModel):
+    node: str
+    suggested_vmid: int | None = None
+    vms: list[PbsCandidateRead] = []
+
+
+class PbsFingerprintRequest(BaseModel):
+    api_url: str = Field(min_length=1, max_length=512)
+
+
+class PbsFingerprintRead(BaseModel):
+    api_url: str
+    fingerprint: str
+
+
+class PbsProvisionRequest(BaseModel):
+    api_url: str = Field(min_length=1, max_length=512)
+    fingerprint: str = Field(min_length=1, max_length=128)
+    # The operator ticked "the fingerprint matches" (compared with PBS › Dashboard).
+    fingerprint_confirmed: bool
+    username: str = Field(default="root@pam", min_length=3, max_length=128)
+    # Used once for a PBS ticket, never stored nor logged (SecretStr hides it in reprs).
+    password: SecretStr = Field(min_length=1, max_length=1024)
+    pbs_vm_id: int | None = Field(default=None, ge=100, le=999_999_999)
+
+
+class PbsProvisionRead(BaseModel):
+    api_url: str
+    fingerprint: str
+    version: str
+    token_id: str
+    vmid: int | None = None
+    datastores: list["PbsDatastoreRead"] = []
+
+
+class PbsDatastoreSelect(BaseModel):
+    datastore: str = Field(min_length=1, max_length=255)
+
+
+class ManualCommandsRead(BaseModel):
+    pve: list[str]
+    pbs: list[str]
+    pve_token_id: list[str]
+    pbs_token_id: list[str]
 
 
 class SetupAdminCreate(BaseModel):
@@ -63,7 +162,8 @@ class PbsProbeRead(BaseModel):
 
 class ProxmoxSetupUpdate(ConnectionProbeRequest):
     node_name: str = Field(min_length=1, max_length=255)
-    pbs_vm_id: int = Field(ge=100, le=999_999_999)
+    # Optional: the wizard picks the PBS VM at the PBS step.
+    pbs_vm_id: int | None = Field(default=None, ge=100, le=999_999_999)
     pbs_vm_node: str | None = Field(default=None, max_length=255)
 
 
@@ -71,6 +171,7 @@ class PbsSetupUpdate(ConnectionProbeRequest):
     datastore: str = Field(min_length=1, max_length=255)
     # "api" (PBS >= 3.3, removable datastores, no PBS agent) or "agent" (legacy).
     mode: Literal["api", "agent"] | None = None
+    pbs_vm_id: int | None = Field(default=None, ge=100, le=999_999_999)
 
 
 class SettingItemRead(BaseModel):
@@ -85,3 +186,6 @@ class SettingItemRead(BaseModel):
 class SettingsUpdate(BaseModel):
     # Setting key -> new value; null resets the key to its built-in default.
     values: dict[str, Any]
+
+
+PbsProvisionRead.model_rebuild()

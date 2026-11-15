@@ -16,6 +16,7 @@ Use this repository map:
 - Read `scripts/install/` for the documented install (Debian 13 LXC, `update`) and `apps/api/app/agent_install/install.sh` for the one-line host agent.
 - Read `infra/docker/docker-compose.yml` and `infra/docker/*.Dockerfile` for the legacy Docker app-stack wiring.
 - Read `docs/*.md` for production behavior, security assumptions, and operator workflows.
+- Read `apps/web/src/setup/` (first-run wizard, Tailwind + shadcn/ui scoped under `#pbo-wizard`), `apps/api/app/services/setup_wizard.py` and `pbs_provisioning.py`, and `docs/PERMISSIONS.md` before touching setup or API privileges (see AGENTS.md, "First-run wizard").
 
 Use these likely entrypoints first:
 

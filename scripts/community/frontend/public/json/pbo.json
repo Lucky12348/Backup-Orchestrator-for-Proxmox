@@ -38,7 +38,7 @@
   },
   "notes": [
     {
-      "text": "Open https://<container-ip> after the install to create the admin account (self-signed certificate).",
+      "text": "Open https://<container-ip> after the install and follow the setup wizard (self-signed certificate).",
       "type": "info"
     },
     {

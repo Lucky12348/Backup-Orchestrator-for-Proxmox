@@ -29,6 +29,8 @@ LISTEN_IP=""
 CODE=""
 EXPECTED_FP=""
 ASSUME_YES=0
+UNINSTALL=0
+PURGE_PVE_ACCESS=0
 WORK_DIR=""
 
 usage() {
@@ -43,6 +45,12 @@ Usage: install.sh --code XXXX-XXXX [options]
   --listen-ip IP           listen on this address instead
   --role host|pbs          agent role (default host; pbs = legacy PBS agent mode)
   --app-url URL            override the app URL (default ${PBO_APP_URL})
+
+Usage: install.sh --uninstall [--purge-pve-access]
+
+  --uninstall              stop and remove the agent services, ${INSTALL_DIR} and ${CONF_DIR}
+  --purge-pve-access       also delete the API identity made by the setup wizard
+                           (token pbo@pve!pbo, user pbo@pve, role PBO)
 EOF
 }
 
@@ -77,6 +85,8 @@ parse_args() {
       --listen-ip) LISTEN_IP="${2:-}"; shift 2 ;;
       --role) ROLE="${2:-}"; shift 2 ;;
       --app-url) PBO_APP_URL="${2:-}"; shift 2 ;;
+      --uninstall) UNINSTALL=1; shift ;;
+      --purge-pve-access) PURGE_PVE_ACCESS=1; shift ;;
       -h | --help) usage; exit 0 ;;
       *) usage >&2; die "unknown option: $1" ;;
     esac
@@ -406,8 +416,45 @@ legacy_notice() {
   done
 }
 
+# Removes everything the installer created, to start a test from scratch.
+# The registration stays in the app until revoked there (or replaced by the
+# next registration of a host agent).
+require_root() {
+  [[ ${EUID} -eq 0 ]] || die "run this script as root."
+}
+
+uninstall() {
+  require_root
+  local unit
+  info "Stopping and removing the agent services"
+  for unit in pbo-agent-report.timer pbo-agent-report.service pbo-agent.service; do
+    systemctl disable --now --quiet "${unit}" 2>/dev/null || true
+    rm -f "/etc/systemd/system/${unit}"
+  done
+  systemctl daemon-reload
+  systemctl reset-failed pbo-agent.service pbo-agent-report.service 2>/dev/null || true
+  info "Removing ${INSTALL_DIR} and ${CONF_DIR}"
+  rm -rf "${INSTALL_DIR}" "${CONF_DIR}"
+  if ((PURGE_PVE_ACCESS)); then
+    if command -v pveum >/dev/null 2>&1; then
+      info "Removing the Proxmox VE API identity pbo@pve (token, user, role PBO)"
+      pveum user token remove pbo@pve pbo 2>/dev/null || true
+      pveum user delete pbo@pve 2>/dev/null || true
+      pveum role delete PBO 2>/dev/null || true
+    fi
+  elif command -v pveum >/dev/null 2>&1 && pveum user list --output-format json 2>/dev/null | grep -q '"pbo@pve"'; then
+    echo "NOTE: the API user pbo@pve (token pbo@pve!pbo, role PBO) is kept."
+    echo "      Re-run with --uninstall --purge-pve-access to delete it as well."
+  fi
+  info "Agent removed. Revoke it in the app too (Integrations > Agent installation) or register a new one."
+}
+
 main() {
   parse_args "$@"
+  if ((UNINSTALL)); then
+    uninstall
+    return 0
+  fi
   preflight
   install_packages
   WORK_DIR="$(mktemp -d)"

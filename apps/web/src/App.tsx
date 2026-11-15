@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
 import { getExternalBackupPreview, AUTH_EXPIRED_EVENT } from "./api";
 import { AuthProvider, useAuth } from "./AuthContext";
 import { LoginPage } from "./pages/LoginPage";
-import { SetupPage } from "./pages/SetupPage";
+import { SETUP_PATH, setupRedirect } from "./setup/logic";
 import { AppShell } from "./components/AppShell";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { ErrorBanner } from "./components/ErrorBanner";
@@ -347,23 +347,48 @@ export default function App() {
   );
 }
 
+// The wizard (Tailwind + shadcn/ui, Geist) is its own chunk: the other pages
+// never load its CSS or fonts unless the setup is running.
+const SetupWizard = lazy(() => import("./setup/SetupWizard").then((module) => ({ default: module.SetupWizard })));
+
 function AppInner() {
-  const { status } = useAuth();
+  const { status, setupCompleted, markSetupCompleted } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   // We need t for LoginPage — use default language here
   const t = translations["fr"];
 
+  const loading = (
+    <div className="centered-shell">
+      <LoadingBlock label={t.loading} />
+    </div>
+  );
+  const wizard = (
+    <Suspense fallback={loading}>
+      <SetupWizard
+        onFinished={() => {
+          markSetupCompleted();
+          navigate("/", { replace: true });
+        }}
+      />
+    </Suspense>
+  );
+
   if (status === "loading") {
-    return (
-      <div className="centered-shell">
-        <LoadingBlock label={t.loading} />
-      </div>
-    );
+    return loading;
   }
   if (status === "needs-setup") {
-    return <SetupPage t={t} />;
+    return location.pathname === SETUP_PATH ? wizard : <Navigate to={SETUP_PATH} replace />;
   }
   if (status !== "authenticated") {
     return <LoginPage t={t} />;
+  }
+  const redirect = setupRedirect(location.pathname, setupCompleted);
+  if (redirect) {
+    return <Navigate to={redirect} replace />;
+  }
+  if (setupCompleted === false) {
+    return wizard;
   }
 
   return <AuthenticatedApp />;

@@ -64,6 +64,7 @@ class ProbeResult:
     trust_required: bool = False
     nodes: list[str] = field(default_factory=list)
     vms: list[dict[str, Any]] = field(default_factory=list)
+    containers: list[dict[str, Any]] = field(default_factory=list)
     datastores: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -133,6 +134,7 @@ def probe_proxmox(
     verify_ssl: bool,
     fingerprint: str | None = None,
     transport: httpx.BaseTransport | None = None,
+    include_containers: bool = False,
 ) -> ProbeResult:
     url = normalize_api_url(api_url, 8006)
     if not token_id.strip() or not token_secret:
@@ -156,6 +158,18 @@ def probe_proxmox(
                         "status": item.get("status") or "unknown",
                     }
                 )
+        containers: list[dict[str, Any]] = []
+        if include_containers:
+            for node in nodes:
+                for item in session.get(f"nodes/{node}/lxc", "Proxmox VE") or []:
+                    containers.append(
+                        {
+                            "vmid": int(item.get("vmid")),
+                            "name": item.get("name") or "",
+                            "node": node,
+                            "status": item.get("status") or "unknown",
+                        }
+                    )
         return ProbeResult(
             api_url=url,
             version=str((version or {}).get("version", "")),
@@ -163,6 +177,7 @@ def probe_proxmox(
             fingerprint_pinned=bool(pinned),
             nodes=nodes,
             vms=sorted(vms, key=lambda vm: vm["vmid"]),
+            containers=sorted(containers, key=lambda ct: ct["vmid"]),
         )
 
 

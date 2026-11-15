@@ -9,6 +9,7 @@ from app.models.external_disk import ExternalDisk
 from app.models.external_backup_run import ExternalBackupMode, ExternalBackupRun
 from app.models.notification_preferences import NotificationPreferences
 from app.models.registered_agent import AgentPairingCode, RegisteredAgent
+from app.models.setup_progress import SetupProgress
 from app.models.scheduled_backup import (
     ScheduledBackupEvent,
     ScheduledBackupRecurrenceType,
@@ -40,6 +41,7 @@ __all__ = [
     "ScheduledBackupRun",
     "ScheduledBackupRunStatus",
     "ScheduledBackupStartMode",
+    "SetupProgress",
     "User",
     "VMType",
     "VirtualMachine",

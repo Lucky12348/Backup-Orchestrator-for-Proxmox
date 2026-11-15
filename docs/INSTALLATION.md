@@ -13,8 +13,9 @@ Proxmox VE host
   `/etc/pbo` (`pbo.env`, `tls/`), PostgreSQL listening on localhost only,
   `pbo.service` = uvicorn serving HTTPS on port 443 as the unprivileged `pbo`
   user.
-- **Host agent**: installed on the Proxmox VE host with one command shown by
-  the app; it registers itself with a single-use pairing code.
+- **Host agent**: installed on the Proxmox VE host with two commands shown by
+  the setup wizard; it registers itself with a single-use pairing code, then
+  creates the Proxmox VE API access for the app.
 - **PBS**: no agent with `PBS_MODE=api` (default for new installs, see
   [PBS_API.md](PBS_API.md)).
 
@@ -63,7 +64,7 @@ of `--ref`), creates the Python environment, the PostgreSQL database and user
 ```text
  ok Proxmox Backup Orchestrator v1.0.0 is running.
 
-  Open https://192.168.1.60 to create the admin account.
+  Open https://192.168.1.60 to start the setup wizard.
 ```
 
 ### Option C — test container from the Proxmox host (development)
@@ -83,67 +84,108 @@ git archive --prefix=pbo/ -o /tmp/pbo-src.tar.gz HEAD      # on the dev machine
 scripts/dev/create-test-lxc.sh --tarball /tmp/pbo-src.tar.gz  # on the PVE host
 ```
 
-## 3. First run
+## 3. First run: the setup wizard
 
-1. Open `https://<lxc-ip>` (accept the self-signed certificate; its SHA-256
-   fingerprint is printed at the end of the install and shown by
-   `openssl x509 -in /etc/pbo/tls/cert.pem -noout -fingerprint -sha256`).
-2. Create the administrator account (first-run screen).
-3. Configure Proxmox VE and PBS. Until the setup wizard screens land, use the
-   API with the session cookie, e.g. from the LXC:
+Installing is three things: **install the LXC, open its URL, follow the
+wizard**. No API token is created or copied by hand.
 
-   ```bash
-   B=https://127.0.0.1; C=/root/pbo.cookies
-   curl -sk -c $C -X POST $B/api/v1/auth/token --data-urlencode username=admin --data-urlencode 'password=…'
-   # Probe first: without a fingerprint the answer only contains the certificate fingerprint (trust on first use).
-   curl -sk -b $C -H 'Content-Type: application/json' -X POST $B/api/v1/setup/proxmox/test \
-     -d '{"api_url":"https://192.168.1.10:8006","token_id":"pbo@pve!pbo","token_secret":"…"}'
-   curl -sk -b $C -H 'Content-Type: application/json' -X PUT $B/api/v1/setup/proxmox \
-     -d '{"api_url":"https://192.168.1.10:8006","token_id":"pbo@pve!pbo","token_secret":"…","fingerprint":"AB:CD:…","node_name":"pve","pbs_vm_id":110}'
-   curl -sk -b $C -H 'Content-Type: application/json' -X PUT $B/api/v1/setup/pbs \
-     -d '{"api_url":"https://192.168.1.20:8007","token_id":"pbo@pbs!pbo","token_secret":"…","fingerprint":"12:34:…","datastore":"main","mode":"api"}'
-   ```
+Open `https://<lxc-ip>` (accept the self-signed certificate; its SHA-256
+fingerprint is printed at the end of the install and shown by
+`openssl x509 -in /etc/pbo/tls/cert.pem -noout -fingerprint -sha256`).
+Until the wizard is finished, every page leads to `/setup`. Its state is kept
+server-side: a reload resumes on the same step.
 
-   Token privileges: read-only inventory on PVE (`PVEAuditor` on `/`); on PBS
-   see [PBS_API.md](PBS_API.md#recommended-pbs-token).
-
-## 4. Install the host agent (one line)
-
-The agent runs on the **Proxmox VE host** (root: it drives `qm set` for USB
-passthrough and inspects disks).
-
-1. In the app: **Integrations → Agent installation → Generate install command**.
-   The app shows two commands with a single-use code (valid 15 minutes), and
-   the fingerprint of its certificate:
+1. **Administrator account** — the only account of the app (password ≥ 12
+   characters).
+2. **Host agent** — a single-use pairing code is generated automatically and
+   the screen shows two commands to run as root in the Proxmox VE host shell
+   (*Datacenter › node › Shell*), plus the app certificate fingerprint:
 
    ```bash
    curl -fskSL -o pbo-agent-install.sh https://192.168.1.60/agent/install.sh
    bash pbo-agent-install.sh --code K7QF-3MZP
    ```
 
-   The block is selected as a whole on click; there is deliberately no "Copy"
-   button and no `bash -c "$(curl …)"` one-liner: content blockers such as
-   uBlock Origin flag that pattern written to the clipboard as a "ClickFix"
-   attack, and downloading first lets you read the script before running it.
+   The screen waits for the agent and turns green on its first heartbeat
+   (about ten seconds after the script ends). An expired code (15 minutes) is
+   regenerated with one click. Details of what the script does:
+   [section 4](#4-host-agent-what-the-install-command-does).
+3. **Proxmox VE** — *Connect automatically*: the agent creates the
+   `pbo@pve` user, a `PBO` role with the minimum privileges, the ACL and the
+   `pbo@pve!pbo` token, and returns the API URL (`https://<vmbr0-ip>:8006`)
+   and the PVE certificate fingerprint read locally — no trust-on-first-use,
+   the app ↔ agent channel is already pinned. The screen shows the node, the
+   PVE version and the number of VMs/CTs.
+4. **Proxmox Backup Server** — pick the PBS VM in the list (the wizard
+   proposes the VM whose guest-agent address answers on port 8007, or whose
+   name contains "pbs"; the URL is pre-filled when an address is known).
+   *Verify* shows the PBS certificate fingerprint: compare it with
+   *PBS › Dashboard › Show Fingerprint* and tick "the fingerprint matches".
+   Then type the **root@pam password once**: the app opens a PBS session
+   pinned on that fingerprint, creates `pbo@pbs` and the `pbo@pbs!pbo` token,
+   sets the ACLs (user and token), checks the version (≥ 3.3) and lists the
+   datastores. The password is neither stored nor logged. Choose the source
+   datastore.
+5. **Done** — summary, first inventory sync (Proxmox VE guests, then PBS
+   backups) with progress, then *Plug a USB disk to get started* and a link to
+   the dashboard.
 
-2. Run both lines as root in the Proxmox host shell. The script:
-   - checks it runs on a PVE host (`pveversion`);
-   - prints the fingerprint of the app certificate it sees and asks you to
-     compare it with the one shown in the app (`-k` is only used for this
-     first download; `--app-fingerprint <fp>` skips the prompt, `--yes`
-     accepts blindly);
-   - downloads the agent **from the app** (same version) over a pinned
-     connection and installs it in `/opt/pbo-agent` (Python venv);
-   - generates a self-signed certificate (`/etc/pbo-agent/tls`) and listens
-     **only on the IPv4 address of `vmbr0`** (`--bridge`/`--listen-ip` to
-     change), port 8090 (`--port`);
-   - registers with the pairing code: the app records the agent URL and
-     certificate fingerprint and returns two tokens, written to
-     `/etc/pbo-agent/agent.env` (0600):
-     - `AGENT_SERVER_TOKEN`: app → agent (the app stores it encrypted);
-     - `AGENT_CALLBACK_TOKEN`: agent → app (the app stores only its hash);
-   - installs `pbo-agent.service` and `pbo-agent-report.timer` (heartbeat +
-     disk report every 2 minutes) and sends a first report.
+Privileges and the reason for each one: [PERMISSIONS.md](PERMISSIONS.md).
+
+### Manual configuration (advanced)
+
+Steps 3 and 4 have a **Manual configuration (advanced)** section: it prints
+the exact `pveum` / `proxmox-backup-manager` commands (names pre-filled) and
+takes the URL, token and certificate fingerprint. The same can be done with
+the API and the session cookie, e.g. from the LXC:
+
+```bash
+B=https://127.0.0.1; C=/root/pbo.cookies
+curl -sk -c $C -X POST $B/api/v1/auth/token --data-urlencode username=admin --data-urlencode 'password=…'
+curl -sk -b $C $B/api/v1/setup/manual-commands          # the pveum / proxmox-backup-manager commands
+# Probe first: without a fingerprint the answer only contains the certificate fingerprint (trust on first use).
+curl -sk -b $C -H 'Content-Type: application/json' -X POST $B/api/v1/setup/proxmox/test \
+  -d '{"api_url":"https://192.168.1.10:8006","token_id":"pbo@pve!pbo","token_secret":"…"}'
+curl -sk -b $C -H 'Content-Type: application/json' -X PUT $B/api/v1/setup/proxmox \
+  -d '{"api_url":"https://192.168.1.10:8006","token_id":"pbo@pve!pbo","token_secret":"…","fingerprint":"AB:CD:…","node_name":"pve"}'
+curl -sk -b $C -H 'Content-Type: application/json' -X PUT $B/api/v1/setup/pbs \
+  -d '{"api_url":"https://192.168.1.20:8007","token_id":"pbo@pbs!pbo","token_secret":"…","fingerprint":"12:34:…","datastore":"main","mode":"api","pbs_vm_id":110}'
+curl -sk -b $C -X POST $B/api/v1/setup/complete         # leaves the wizard
+```
+
+An install configured before the wizard existed (Proxmox VE connection already
+stored) is considered finished and never sent to `/setup`.
+
+## 4. Host agent: what the install command does
+
+The agent runs on the **Proxmox VE host** (root: it drives `qm set` for USB
+passthrough, inspects disks and runs `pveum` for step 3). The two commands
+come from the wizard (step 2) or, later, from **Integrations → Agent
+installation**. The block is selected as a whole on click; there is
+deliberately no "Copy" button and no `bash -c "$(curl …)"` one-liner: content
+blockers such as uBlock Origin flag that pattern written to the clipboard as a
+"ClickFix" attack, and downloading first lets you read the script before
+running it.
+
+The script:
+
+- checks it runs on a PVE host (`pveversion`);
+- prints the fingerprint of the app certificate it sees and asks you to
+  compare it with the one shown in the app (`-k` is only used for this first
+  download; `--app-fingerprint <fp>` skips the prompt, `--yes` accepts
+  blindly);
+- downloads the agent **from the app** (same version) over a pinned
+  connection and installs it in `/opt/pbo-agent` (Python venv);
+- generates a self-signed certificate (`/etc/pbo-agent/tls`) and listens
+  **only on the IPv4 address of `vmbr0`** (`--bridge`/`--listen-ip` to
+  change), port 8090 (`--port`);
+- registers with the pairing code: the app records the agent URL and
+  certificate fingerprint and returns two tokens, written to
+  `/etc/pbo-agent/agent.env` (0600):
+  - `AGENT_SERVER_TOKEN`: app → agent (the app stores it encrypted);
+  - `AGENT_CALLBACK_TOKEN`: agent → app (the app stores only its hash);
+- installs `pbo-agent.service` and `pbo-agent-report.timer` (heartbeat +
+  disk report every 2 minutes) and sends a first report.
 
 From then on, every app → agent call pins the agent certificate fingerprint,
 and every agent → app call pins the app certificate.
@@ -151,6 +193,13 @@ and every agent → app call pins the app certificate.
 Re-running the command with a new code re-registers the agent (new tokens, the
 previous registration is revoked). **Revoke** in the same card disables an
 agent; the app then falls back to the static `HOST_AGENT_*` settings if any.
+
+To remove the agent (e.g. to test again from scratch), on the PVE host:
+
+```bash
+bash pbo-agent-install.sh --uninstall                      # services, /opt/pbo-agent, /etc/pbo-agent
+bash pbo-agent-install.sh --uninstall --purge-pve-access   # + token pbo@pve!pbo, user pbo@pve, role PBO
+```
 
 Restrict port 8090 to the LXC address in the Proxmox firewall
 ([SECURITY.md](SECURITY.md#proxmox-firewall-hostfw-for-port-8090)).
@@ -197,6 +246,13 @@ journalctl -u pbo-agent-report.service -n 50
   `ExecStartPre`) gives the dump / recreate / restore commands.
 - **Install script: "this is not a Proxmox VE host"**: it must run on the PVE
   host itself, not in a VM or CT.
+- **Wizard step 3: "The installed agent is too old"**: the agent predates
+  `/pve/provision-access`. Re-run its install command (step 2 generates a new
+  code) to update it.
+- **Wizard step 4: "PBS refused the password"**: five failures within 15
+  minutes block that step for 15 minutes (per client address).
+- **Wizard step 4: "This PBS version is too old"**: the API mode needs PBS ≥ 3.3
+  (removable datastores). Upgrade PBS first.
 - **"Invalid or expired pairing code"**: codes are single use and last 15
   minutes; generate a new one. Ten failures within 15 minutes from one address
   block registration for 15 minutes.
