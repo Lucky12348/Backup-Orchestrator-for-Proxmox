@@ -155,6 +155,7 @@ export const wizardApi = {
   pbsFingerprint: (api_url: string) => call<{ api_url: string; fingerprint: string }>("/setup/pbs/fingerprint", json("POST", { api_url })),
   provisionPbs: (body: { api_url: string; fingerprint: string; fingerprint_confirmed: boolean; password: string; pbs_vm_id: number | null }) =>
     call<PbsProvisionResult>("/setup/pbs/provision", json("POST", body)),
+  pbsDatastores: () => call<{ datastores: PbsDatastore[] }>("/setup/pbs/datastores"),
   selectDatastore: (datastore: string) => call<{ datastore: string }>("/setup/pbs/datastore", json("PUT", { datastore })),
   testPbs: (body: { api_url: string; token_id: string; token_secret: string; fingerprint: string }) =>
     call<ProbeResult>("/setup/pbs/test", json("POST", body)),

@@ -15,6 +15,7 @@ from app.schemas.setup import (
     ManualCommandsRead,
     PbsCandidatesRead,
     PbsDatastoreSelect,
+    PbsDatastoresRead,
     PbsFingerprintRead,
     PbsFingerprintRequest,
     PbsProbeRead,
@@ -193,6 +194,15 @@ def provision_pbs(payload: PbsProvisionRequest, request: Request, db: DbSession)
         logger.warning("Setup: PBS provisioning failed (%s): %s", exc.code, exc)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"code": exc.code, "message": str(exc)}) from None
     return PbsProvisionRead(**setup_wizard.store_pbs_access(db, result, pbs_vmid=payload.pbs_vm_id))
+
+
+@router.get("/pbs/datastores", response_model=PbsDatastoresRead)
+def get_pbs_datastores(db: DbSession) -> PbsDatastoresRead:
+    """Re-list the datastores with the stored token ("Refresh the list")."""
+    try:
+        return PbsDatastoresRead(datastores=setup_wizard.refresh_pbs_datastores(db))
+    except setup_wizard.SetupError as exc:
+        raise _setup_error(exc) from None
 
 
 @router.put("/pbs/datastore")

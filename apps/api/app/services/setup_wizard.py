@@ -452,7 +452,8 @@ def store_pbs_access(db: Session, result: Any, *, pbs_vmid: int | None) -> dict[
     return {**summary, "datastores": result.datastores}
 
 
-def select_pbs_datastore(db: Session, datastore: str, *, transport: httpx.BaseTransport | None = None) -> dict[str, Any]:
+def list_pbs_datastores(db: Session, *, transport: httpx.BaseTransport | None = None) -> list[dict[str, Any]]:
+    """Datastores the stored PBS token can see (PBS filters the list by ACL)."""
     from app.services.setup_probe import probe_pbs
 
     settings = effective_settings(db)
@@ -466,7 +467,21 @@ def select_pbs_datastore(db: Session, datastore: str, *, transport: httpx.BaseTr
         )
     except ProbeError as exc:
         raise SetupError("pbs_check_failed", f"Cannot list the PBS datastores: {exc}", status_code=502) from None
-    names = [store["name"] for store in probe.datastores]
+    return probe.datastores
+
+
+def refresh_pbs_datastores(db: Session, *, transport: httpx.BaseTransport | None = None) -> list[dict[str, Any]]:
+    datastores = list_pbs_datastores(db, transport=transport)
+    progress = get_progress(db)
+    pbs = dict(progress["data"].get("pbs") or {})
+    if pbs:
+        pbs["datastores"] = [store["name"] for store in datastores]
+        save_progress(db, data={"pbs": pbs})
+    return datastores
+
+
+def select_pbs_datastore(db: Session, datastore: str, *, transport: httpx.BaseTransport | None = None) -> dict[str, Any]:
+    names = [store["name"] for store in list_pbs_datastores(db, transport=transport)]
     if datastore not in names:
         raise SetupError(
             "unknown_datastore",

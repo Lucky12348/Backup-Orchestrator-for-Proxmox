@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import quote
@@ -53,6 +54,11 @@ PBS_ACLS: tuple[tuple[str, str], ...] = (
 )
 PBS_MIN_VERSION = (3, 3)
 PROVISION_TIMEOUT_SECONDS = 20.0
+# PBS caches its ACL config for a few seconds: right after `PUT access/acl` the
+# new token may still have no rights. Then GET /admin/datastore is *filtered*
+# (an empty list, not a 403) and other calls answer 403. The check is retried
+# with these waits (10 s in total) before concluding "no datastore".
+ACL_PROPAGATION_DELAYS: tuple[float, ...] = (0.5, 1.0, 2.0, 3.0, 3.5)
 
 
 class PbsProvisionError(RuntimeError):
@@ -155,6 +161,43 @@ def _transport_error(exc: httpx.HTTPError) -> PbsProvisionError:
     return PbsProvisionError("unreachable", f"PBS is unreachable ({exc.__class__.__name__}): check the URL and port 8007.")
 
 
+def _probe_new_token(
+    url: str,
+    token_id: str,
+    secret: str,
+    fingerprint: str,
+    *,
+    transport: httpx.BaseTransport | None,
+    delays: tuple[float, ...] | None = None,
+    sleep=None,  # noqa: ANN001  (tests patch time.sleep)
+):
+    """End-to-end check with the new token (pinned) + the datastore list,
+    retried while PBS still serves its cached ACLs (403 or an empty list)."""
+    waits = ACL_PROPAGATION_DELAYS if delays is None else delays
+    wait = sleep or time.sleep
+    probe = None
+    last_error: ProbeError | None = None
+    for attempt in range(len(waits) + 1):
+        if attempt:
+            wait(waits[attempt - 1])
+        try:
+            probe = probe_pbs(url, token_id, secret, verify_ssl=False, fingerprint=fingerprint, transport=transport)
+            last_error = None
+        except ProbeError as exc:
+            if exc.code != "token_rejected":  # unreachable, fingerprint mismatch...: no point waiting
+                raise PbsProvisionError("token_check_failed", f"The new token does not work: {exc}") from None
+            last_error = exc
+            continue
+        if probe.datastores:
+            return probe
+        logger.info("PBS provisioning: no datastore visible yet (attempt %d), waiting for the ACL cache", attempt + 1)
+    if probe is None:
+        raise PbsProvisionError(
+            "token_check_failed", f"The new token does not work yet: {last_error}"
+        ) from None
+    return probe  # really no datastore (or still invisible after ~10 s)
+
+
 def provision_pbs_access(
     api_url: str,
     fingerprint: str,
@@ -225,11 +268,7 @@ def provision_pbs_access(
     finally:
         session.close()
 
-    # End-to-end check with the new token (pinned), and the datastore list.
-    try:
-        probe = probe_pbs(url, token_id, secret, verify_ssl=False, fingerprint=pinned, transport=transport)
-    except ProbeError as exc:
-        raise PbsProvisionError("token_check_failed", f"The new token does not work yet: {exc}") from None
+    probe = _probe_new_token(url, token_id, secret, pinned, transport=transport)
     return PbsProvisionResult(
         api_url=url,
         fingerprint=pinned,

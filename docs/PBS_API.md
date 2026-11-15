@@ -81,6 +81,14 @@ intersection of its ACLs and its user's):
 | `/system/tasks` | `Audit` | `Sys.Audit` (follow tasks) |
 | `/datastore` | `DatastoreAdmin` | `Datastore.Allocate`/`Modify`/`Backup`/`Read`/`Audit` on every store (targets are created at runtime) |
 
+PBS caches its ACL configuration for a few seconds: right after the ACLs are
+set, `GET /admin/datastore` with the new token returns a **filtered (empty)**
+list and other calls may answer 403. The wizard retries the check (0.5, 1, 2,
+3, 3.5 s — about 10 s) before concluding there is no datastore, and offers
+*Refresh the list* (`GET /api/v1/setup/pbs/datastores`, stored token).
+`GET /nodes` is never called with a token: PBS's `list_nodes` is
+superuser-only (the PBS node is always `localhost`).
+
 Reasons and the manual equivalent: [PERMISSIONS.md](PERMISSIONS.md). Exact
 local-sync permissions on the *source* store are not spelled out by the schema
 [U]: `DatastoreAdmin` on `/datastore` covers them.

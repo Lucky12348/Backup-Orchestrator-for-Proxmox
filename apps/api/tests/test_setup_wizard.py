@@ -259,6 +259,9 @@ class FakePbs:
         self.password = password
         self.created_tokens = 0
         self.log: list[str] = []
+        # Simulated ACL cache: answers served to the token, in order, before the real list.
+        self.datastore_answers: list = []
+        self.datastores = [{"store": "main"}, {"store": "offsite"}]
 
     def transport(self):
         return httpx.MockTransport(self.handle)
@@ -286,7 +289,12 @@ class FakePbs:
                 return httpx.Response(403, json={"data": None, "message": "permission check failed"})
             return httpx.Response(200, json={"data": [{"node": "localhost"}]})
         if path == "admin/datastore":
-            return httpx.Response(200, json={"data": [{"store": "main"}, {"store": "offsite"}]})
+            if token_ok and self.datastore_answers:
+                answer = self.datastore_answers.pop(0)
+                if answer == 403:
+                    return httpx.Response(403, json={"data": None, "message": "permission check failed"})
+                return httpx.Response(200, json={"data": answer})
+            return httpx.Response(200, json={"data": self.datastores})
         if path == "access/users" and request.method == "GET":
             return httpx.Response(200, json={"data": [{"userid": u} for u in sorted(self.users)]})
         if path == "access/users" and request.method == "POST":
@@ -328,6 +336,11 @@ def fake_pbs(monkeypatch):
     pbs = FakePbs()
     monkeypatch.setattr(
         "app.api.routes.setup.provision_pbs_access", functools.partial(provision_pbs_access, transport=pbs.transport())
+    )
+    original_refresh = setup_wizard.refresh_pbs_datastores
+    monkeypatch.setattr(
+        "app.api.routes.setup.setup_wizard.refresh_pbs_datastores",
+        functools.partial(original_refresh, transport=pbs.transport()),
     )
     original_select = setup_wizard.select_pbs_datastore
     monkeypatch.setattr(
@@ -503,3 +516,63 @@ def test_every_setup_error_code_is_translated_by_the_ui():
     translated = set(re.findall(r'"([a-z_]+)"', block))
     assert len(raised) > 20
     assert raised <= translated, sorted(raised - translated)
+
+
+# --- PBS ACL cache (datastore list filtered for a few seconds) ------------------
+
+
+@pytest.fixture
+def no_sleep(monkeypatch):
+    waits: list[float] = []
+    monkeypatch.setattr("app.services.pbs_provisioning.time.sleep", waits.append)
+    return waits
+
+
+def test_provisioning_waits_for_the_acl_cache(client, fake_pbs, no_sleep):
+    fake_pbs.datastore_answers = [[], []]  # ACLs not visible yet, then the real list
+    _login(client)
+    response = client.post("/api/v1/setup/pbs/provision", json=_pbs_payload())
+    assert response.status_code == 200, response.text
+    assert [store["name"] for store in response.json()["datastores"]] == ["main", "offsite"]
+    assert no_sleep == [0.5, 1.0]
+
+
+def test_provisioning_retries_a_transient_403(client, fake_pbs, no_sleep):
+    fake_pbs.datastore_answers = [403, []]
+    _login(client)
+    response = client.post("/api/v1/setup/pbs/provision", json=_pbs_payload())
+    assert response.status_code == 200, response.text
+    assert [store["name"] for store in response.json()["datastores"]] == ["main", "offsite"]
+    assert len(no_sleep) == 2
+
+
+def test_really_no_datastore_after_about_ten_seconds(client, fake_pbs, no_sleep):
+    fake_pbs.datastores = []
+    _login(client)
+    response = client.post("/api/v1/setup/pbs/provision", json=_pbs_payload())
+    assert response.status_code == 200, response.text
+    assert response.json()["datastores"] == []
+    assert 9 <= sum(no_sleep) <= 11
+
+    # "Refresh the list" once a datastore exists (or the cache expired).
+    fake_pbs.datastores = [{"store": "main"}]
+    refreshed = client.get("/api/v1/setup/pbs/datastores")
+    assert refreshed.status_code == 200, refreshed.text
+    assert [store["name"] for store in refreshed.json()["datastores"]] == ["main"]
+    assert client.get("/api/v1/setup/progress").json()["data"]["pbs"]["datastores"] == ["main"]
+
+
+def test_token_still_rejected_after_the_delay(client, fake_pbs, no_sleep):
+    fake_pbs.datastore_answers = [403] * 10
+    _login(client)
+    response = client.post("/api/v1/setup/pbs/provision", json=_pbs_payload())
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "token_check_failed"
+    assert 9 <= sum(no_sleep) <= 11
+
+
+def test_refresh_datastores_requires_pbs(client):
+    _login(client)
+    response = client.get("/api/v1/setup/pbs/datastores")
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "pbs_missing"

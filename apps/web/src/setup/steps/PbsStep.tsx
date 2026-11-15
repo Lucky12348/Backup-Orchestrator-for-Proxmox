@@ -1,5 +1,5 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
-import { ArrowLeft, ArrowRight, CheckCircle2, Loader2, Radar, ShieldCheck } from "lucide-react";
+import { ArrowLeft, ArrowRight, CheckCircle2, Loader2, Radar, RefreshCw, ShieldCheck } from "lucide-react";
 
 import { Alert } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
@@ -46,7 +46,7 @@ export function PbsStep({ saved, onSaved, onBack, onNext }: PbsStepProps) {
   const [connected, setConnected] = useState<PbsSummary | null>(saved?.token_id ? saved : null);
   const [datastore, setDatastore] = useState(saved?.datastore ?? "");
   const [chosen, setChosen] = useState(saved?.datastore ?? "");
-  const [busy, setBusy] = useState<"candidates" | "verify" | "connect" | "datastore" | null>("candidates");
+  const [busy, setBusy] = useState<"candidates" | "verify" | "connect" | "datastore" | "refresh" | null>("candidates");
   const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
@@ -130,6 +130,22 @@ export function PbsStep({ saved, onSaved, onBack, onNext }: PbsStepProps) {
     }
   }
 
+  // PBS caches its ACLs for a few seconds: a datastore can appear a bit later.
+  async function refreshDatastores() {
+    setBusy("refresh");
+    setError(null);
+    try {
+      const result = await wizardApi.pbsDatastores();
+      setDatastores(result.datastores);
+      if (result.datastores.length === 1) setChosen(result.datastores[0].name);
+      if (connected) onSaved({ ...connected, datastores: result.datastores.map((store) => store.name) });
+    } catch (err) {
+      setError(err);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function useDatastore() {
     if (!chosen) return;
     setBusy("datastore");
@@ -180,7 +196,20 @@ export function PbsStep({ saved, onSaved, onBack, onNext }: PbsStepProps) {
               <Label>{text.pbs.datastore}</Label>
               <p className="text-[13px] text-faint">{text.pbs.datastoreHint}</p>
               {datastores.length === 0 ? (
-                <Alert variant="warning" title={text.pbs.noDatastore} />
+                <div className="flex flex-col gap-3">
+                  <Alert variant="warning" title={text.pbs.noDatastore}>
+                    <p>{text.pbs.noDatastoreHint}</p>
+                  </Alert>
+                  <Button
+                    variant="secondary"
+                    className="self-start"
+                    onClick={() => void refreshDatastores()}
+                    disabled={busy !== null}
+                  >
+                    <RefreshCw className={busy === "refresh" ? "animate-spin" : undefined} />
+                    {busy === "refresh" ? text.pbs.refreshing : text.pbs.refreshDatastores}
+                  </Button>
+                </div>
               ) : (
                 <RadioGroup value={chosen} onValueChange={setChosen}>
                   {datastores.map((store) => (

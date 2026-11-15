@@ -97,6 +97,10 @@ class PbsProvisionRead(BaseModel):
     datastores: list["PbsDatastoreRead"] = []
 
 
+class PbsDatastoresRead(BaseModel):
+    datastores: list["PbsDatastoreRead"] = []
+
+
 class PbsDatastoreSelect(BaseModel):
     datastore: str = Field(min_length=1, max_length=255)
 
@@ -189,3 +193,4 @@ class SettingsUpdate(BaseModel):
 
 
 PbsProvisionRead.model_rebuild()
+PbsDatastoresRead.model_rebuild()
