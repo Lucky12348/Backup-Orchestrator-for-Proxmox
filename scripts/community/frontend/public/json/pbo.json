@@ -13,9 +13,9 @@
     "amd64"
   ],
   "interface_port": 443,
-  "documentation": "https://github.com/Lucky12348/proxmox_backup_orchestrator/blob/main/docs/INSTALLATION.md",
-  "website": "https://github.com/Lucky12348/proxmox_backup_orchestrator",
-  "repository": "https://github.com/Lucky12348/proxmox_backup_orchestrator",
+  "documentation": "https://github.com/Lucky12348/Backup-Orchestrator-for-Proxmox/blob/main/docs/INSTALLATION.md",
+  "website": "https://github.com/Lucky12348/Backup-Orchestrator-for-Proxmox",
+  "repository": "https://github.com/Lucky12348/Backup-Orchestrator-for-Proxmox",
   "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/proxmox.webp",
   "description": "Rotating external-disk backups for Proxmox VE + Proxmox Backup Server: detects a USB disk on the host, passes it through to the PBS VM, prepares a removable PBS datastore, syncs the backups to it and ejects it safely. Includes planning, notifications and an iCalendar feed.",
   "install_methods": [

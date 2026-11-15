@@ -67,6 +67,11 @@ jobs:
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
 
+      # A lock generated without resolved/integrity or without the Linux
+      # esbuild/rollup binaries breaks npm ci + vite build on Linux.
+      - name: Check lockfile
+        run: node ../../scripts/ci/check-lockfile.mjs package-lock.json
+
       - name: Install
         run: npm ci
 

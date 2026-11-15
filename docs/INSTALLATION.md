@@ -48,7 +48,7 @@ Create an **unprivileged** Debian 13 container with the **nesting** feature
 8 GiB disk, then inside it, as root:
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/Lucky12348/proxmox_backup_orchestrator/main/scripts/install/pbo-install.sh
+curl -fsSLO https://raw.githubusercontent.com/Lucky12348/Backup-Orchestrator-for-Proxmox/main/scripts/install/pbo-install.sh
 bash pbo-install.sh                # latest GitHub release
 # bash pbo-install.sh --ref main   # a branch or tag (the web UI is built in the CT with a temporary Node.js)
 ```

@@ -140,7 +140,7 @@ One-time setup per machine (host agent and PBS agent), so the existing
 
 ```bash
 # 1. Full clone of the monorepo next to the existing agent directory.
-git clone git@github.com:<you>/proxmox_backup_orchestrator.git /opt/proxmox-backup-orchestrator-agent-repo
+git clone git@github.com:<you>/Backup-Orchestrator-for-Proxmox.git /opt/proxmox-backup-orchestrator-agent-repo
 
 # 2. Point the running agent's src/tests at the clone via symlinks, replacing
 #    the plain directories that were there before (back them up first if

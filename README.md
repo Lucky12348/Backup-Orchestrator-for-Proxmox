@@ -11,7 +11,7 @@ Proxmox Backup Orchestrator is a specialized control plane for rotating external
 In a Debian 13 LXC (unprivileged, nesting on), as root:
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/Lucky12348/proxmox_backup_orchestrator/main/scripts/install/pbo-install.sh
+curl -fsSLO https://raw.githubusercontent.com/Lucky12348/Backup-Orchestrator-for-Proxmox/main/scripts/install/pbo-install.sh
 bash pbo-install.sh
 ```
 

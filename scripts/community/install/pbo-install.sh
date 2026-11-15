@@ -4,7 +4,7 @@
 # Copyright (c) 2021-2026 community-scripts ORG
 # Author: Lucky12348
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
-# Source: https://github.com/Lucky12348/proxmox_backup_orchestrator
+# Source: https://github.com/Lucky12348/Backup-Orchestrator-for-Proxmox
 #
 # DRAFT for community-scripts. Mirrors scripts/install/pbo-install.sh (the
 # reference installer) with the community-scripts helpers.
@@ -26,7 +26,7 @@ msg_ok "Installed Dependencies"
 
 PG_VERSION="17" setup_postgresql
 PG_DB_NAME="pbo" PG_DB_USER="pbo" setup_postgresql_db
-fetch_and_deploy_gh_release "pbo" "Lucky12348/proxmox_backup_orchestrator" "prebuild" "latest" "/opt/pbo" "pbo-*.tar.gz"
+fetch_and_deploy_gh_release "pbo" "Lucky12348/Backup-Orchestrator-for-Proxmox" "prebuild" "latest" "/opt/pbo" "pbo-*.tar.gz"
 
 msg_info "Setting up ${APPLICATION}"
 useradd --system --home-dir /opt/pbo --no-create-home --shell /usr/sbin/nologin pbo

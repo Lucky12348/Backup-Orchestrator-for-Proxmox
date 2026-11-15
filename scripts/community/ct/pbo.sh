@@ -6,7 +6,7 @@ source "$_cs_boot" 2>/dev/null || source <(curl -fsSL "${COMMUNITY_SCRIPTS_CORE_
 # Copyright (c) 2021-2026 community-scripts ORG
 # Author: Lucky12348
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
-# Source: https://github.com/Lucky12348/proxmox_backup_orchestrator
+# Source: https://github.com/Lucky12348/Backup-Orchestrator-for-Proxmox
 #
 # DRAFT for community-scripts (DevScripts first, per their CONTRIBUTING.md).
 # Not tested against the community-scripts helpers: see scripts/community/README.md.
@@ -34,7 +34,7 @@ function update_script() {
     exit
   fi
 
-  if check_for_gh_release "pbo" "Lucky12348/proxmox_backup_orchestrator"; then
+  if check_for_gh_release "pbo" "Lucky12348/Backup-Orchestrator-for-Proxmox"; then
     msg_info "Backing up the database"
     mkdir -p /var/backups/pbo
     BACKUP_FILE="/var/backups/pbo/pbo-$(date +%Y%m%d-%H%M%S).dump"
@@ -45,7 +45,7 @@ function update_script() {
     systemctl stop pbo
     msg_ok "Stopped Service"
 
-    CLEAN_INSTALL=1 fetch_and_deploy_gh_release "pbo" "Lucky12348/proxmox_backup_orchestrator" "prebuild" "latest" "/opt/pbo" "pbo-*.tar.gz"
+    CLEAN_INSTALL=1 fetch_and_deploy_gh_release "pbo" "Lucky12348/Backup-Orchestrator-for-Proxmox" "prebuild" "latest" "/opt/pbo" "pbo-*.tar.gz"
 
     msg_info "Updating ${APP}"
     rm -rf /opt/pbo/.venv

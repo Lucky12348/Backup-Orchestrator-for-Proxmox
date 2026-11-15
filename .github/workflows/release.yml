@@ -27,6 +27,7 @@ jobs:
       - name: Build the web UI
         working-directory: apps/web
         run: |
+          node ../../scripts/ci/check-lockfile.mjs package-lock.json
           npm ci
           npm run build
           npm test

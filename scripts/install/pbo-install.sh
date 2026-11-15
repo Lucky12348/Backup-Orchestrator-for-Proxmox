@@ -14,7 +14,7 @@
 # runs unless it is executed directly.
 set -Eeuo pipefail
 
-PBO_REPO="${PBO_REPO:-Lucky12348/proxmox_backup_orchestrator}"
+PBO_REPO="${PBO_REPO:-Lucky12348/Backup-Orchestrator-for-Proxmox}"
 PBO_DIR="${PBO_DIR:-/opt/pbo}"
 PBO_ETC="/etc/pbo"
 PBO_ENV="${PBO_ETC}/pbo.env"

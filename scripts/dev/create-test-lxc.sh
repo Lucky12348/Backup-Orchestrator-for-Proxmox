@@ -13,7 +13,7 @@
 # pbo.service), 2 vCPU, 2 GiB RAM, 8 GiB disk.
 set -Eeuo pipefail
 
-REPO="${PBO_REPO:-Lucky12348/proxmox_backup_orchestrator}"
+REPO="${PBO_REPO:-Lucky12348/Backup-Orchestrator-for-Proxmox}"
 REF=""
 TARBALL=""
 CTID=""
