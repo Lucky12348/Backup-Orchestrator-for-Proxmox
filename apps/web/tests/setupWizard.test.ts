@@ -94,3 +94,27 @@ test("the PBS URL is pre-filled from the selected VM", () => {
   assert.equal(suggestedPbsUrl(vms, 120), "");
   assert.equal(suggestedPbsUrl(vms, null), "");
 });
+
+// Stable error codes returned by /api/v1/setup/* (apps/api: routes/setup.py,
+// services/setup_wizard.py, setup_probe.py, pbs_provisioning.py) plus the
+// client-side ones. Each must be translated in both languages.
+const SETUP_ERROR_CODES = [
+  "admin_exists", "invalid_credentials", "invalid_step", "progress_too_large",
+  "agent_missing", "agent_outdated", "agent_unreachable", "agent_failed",
+  "pve_check_failed", "pve_missing", "pbs_missing", "pbs_check_failed",
+  "unknown_datastore", "too_many_attempts", "fingerprint_not_confirmed",
+  "bad_credentials", "fingerprint_mismatch", "unreachable", "pbs_too_old",
+  "pbs_error", "token_check_failed", "invalid_input", "secret_required",
+  "invalid_url", "invalid_fingerprint", "token_rejected", "api_error", "probe_failed",
+  "network", "validation", "password_required",
+];
+
+test("every setup error code is translated in French and English", async () => {
+  const { WIZARD_TEXT } = await import("../src/setup/i18n.ts");
+  for (const language of ["fr", "en"] as const) {
+    const errors = WIZARD_TEXT[language].errors as Record<string, string>;
+    const missing = SETUP_ERROR_CODES.filter((code) => !errors[code]);
+    assert.deepEqual(missing, [], `${language}: missing ${missing.join(", ")}`);
+  }
+  assert.notEqual(WIZARD_TEXT.fr.errors.token_check_failed, WIZARD_TEXT.en.errors.token_check_failed);
+});

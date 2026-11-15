@@ -17,27 +17,33 @@ export function useText(): WizardText {
   return text;
 }
 
-// Codes whose explanation is complete on its own: the server detail would only repeat it.
-const SELF_EXPLANATORY = new Set([
-  "network",
-  "bad_credentials",
-  "fingerprint_not_confirmed",
-  "too_many_attempts",
-  "pve_missing",
-  "pbs_missing",
-  "agent_missing",
-]);
-
+/**
+ * The API returns {code, message}: the code is translated here (stable), the
+ * message is the English technical detail, only shown in a collapsed
+ * "Details" block so the alert itself stays in the UI language.
+ */
 export function ErrorAlert({ error }: { error: unknown }) {
   const text = useText();
   if (!error) return null;
   const wizardError = error instanceof WizardError ? error : null;
-  const code = wizardError?.code ?? "generic";
+  const code = wizardError?.code ?? (error as { code?: string })?.code ?? "generic";
   const known = (text.errors as Record<string, string>)[code];
-  const detail = wizardError?.message || (error instanceof Error && !wizardError ? error.message : "");
+  const detail = error instanceof Error ? error.message : "";
   return (
     <Alert variant={code === "pbs_too_old" ? "warning" : "danger"} title={known ?? text.errors.generic}>
-      {detail && !SELF_EXPLANATORY.has(code) ? <p className="break-words text-[13px]">{detail}</p> : null}
+      {detail ? (
+        <Collapsible>
+          <CollapsibleTrigger className="group flex items-center gap-1 text-[13px] text-muted hover:text-fg">
+            <ChevronRight className="h-3.5 w-3.5 transition-transform group-data-[state=open]:rotate-90" />
+            {text.details}
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <p lang="en" className="mt-1.5 whitespace-pre-wrap break-words font-mono text-[12px] text-faint">
+              {detail}
+            </p>
+          </CollapsibleContent>
+        </Collapsible>
+      ) : null}
     </Alert>
   );
 }

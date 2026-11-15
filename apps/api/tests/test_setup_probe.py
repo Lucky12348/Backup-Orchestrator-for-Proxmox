@@ -33,7 +33,8 @@ def _pbs_transport():
         if path.endswith("/version"):
             return httpx.Response(200, json={"data": {"version": "3.4.1"}})
         if path.endswith("/nodes"):
-            return httpx.Response(200, json={"data": [{"node": "localhost"}]})
+            # Real PBS: list_nodes is superuser-only, a token always gets 403.
+            return httpx.Response(403, json={"data": None, "message": "permission check failed"})
         if path.endswith("/admin/datastore"):
             return httpx.Response(200, json={"data": [{"store": "main", "comment": "primary"}, {"store": "archive"}]})
         return httpx.Response(404)
@@ -88,6 +89,7 @@ def test_probe_pbs_lists_datastores_and_reports_auth_errors():
     assert result.version == "3.4.1"
     assert result.fingerprint_pinned is True
     assert [store["name"] for store in result.datastores] == ["archive", "main"]
+    assert result.nodes == ["localhost"]  # never asked: GET /nodes is superuser-only on PBS
 
     denied = httpx.MockTransport(lambda request: httpx.Response(401))
     with pytest.raises(ProbeError, match="rejected the API token"):
@@ -125,7 +127,8 @@ def test_setup_test_endpoint_reports_probe_errors(admin_client, monkeypatch):
     monkeypatch.setattr("app.api.routes.setup.probe_proxmox", failing)
     response = admin_client.post("/api/v1/setup/proxmox/test", json={"api_url": "pve", "token_id": "t", "token_secret": "s"})
     assert response.status_code == 400
-    assert "unreachable" in response.json()["detail"]
+    detail = response.json()["detail"]
+    assert detail["code"] == "probe_failed" and "unreachable" in detail["message"]
 
 
 def test_save_proxmox_persists_encrypted_settings(admin_client, session_factory):

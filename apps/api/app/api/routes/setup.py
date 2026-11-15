@@ -54,6 +54,10 @@ from app.services.users import (
 logger = logging.getLogger(__name__)
 
 public_router = APIRouter(prefix="/setup", tags=["setup"])
+
+# Every error of /setup is {"code", "message"}: the code is stable and
+# translated by the UI, the message is the English technical detail.
+SECRET_REQUIRED = {"code": "secret_required", "message": "API token secret is required."}
 router = APIRouter(prefix="/setup", tags=["setup"])
 
 
@@ -80,9 +84,13 @@ def create_admin(payload: SetupAdminCreate, response: Response, db: DbSession) -
     try:
         user = create_first_admin(db, payload.username, payload.password)
     except SetupAlreadyDoneError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail={"code": "admin_exists", "message": str(exc)}
+        ) from exc
     except InvalidCredentialsFormatError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail={"code": "invalid_credentials", "message": str(exc)}
+        ) from exc
     # A fresh install starts the wizard at the agent step.
     if not setup_wizard.setup_completed(db):
         setup_wizard.save_progress(db, step="agent")
@@ -203,12 +211,13 @@ def _secret(db: DbSession, payload: ConnectionProbeRequest, stored_key: str) -> 
         return payload.token_secret
     secret = stored_secret(db, stored_key)
     if not secret:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="API token secret is required.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=SECRET_REQUIRED)
     return secret
 
 
-def _bad_request(exc: Exception) -> HTTPException:
-    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+def _bad_request(exc: ProbeError) -> HTTPException:
+    # Stable code (translated by the UI) + English technical detail.
+    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"code": exc.code, "message": str(exc)})
 
 
 @router.post("/proxmox/test", response_model=ProxmoxProbeRead)
@@ -259,7 +268,7 @@ def save_proxmox(payload: ProxmoxSetupUpdate, db: DbSession) -> SetupStatusRead:
     if payload.token_secret:
         values["PVE_API_TOKEN_SECRET"] = payload.token_secret
     elif not stored_secret(db, "PVE_API_TOKEN_SECRET"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="API token secret is required.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=SECRET_REQUIRED)
     update_settings(db, values)
     if not setup_wizard.setup_completed(db):
         setup_wizard.record_manual_pve(db)
@@ -286,7 +295,7 @@ def save_pbs(payload: PbsSetupUpdate, db: DbSession) -> SetupStatusRead:
     if payload.token_secret:
         values["PBS_TOKEN_SECRET"] = payload.token_secret
     elif not stored_secret(db, "PBS_TOKEN_SECRET"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="API token secret is required.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=SECRET_REQUIRED)
     update_settings(db, values)
     if not setup_wizard.setup_completed(db):
         setup_wizard.save_progress(

@@ -22,9 +22,16 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-async function readError(response: Response, fallback: string): Promise<Error> {
+/** Error with the stable API code when there is one ({"detail": {code, message}}). */
+export type CodedError = Error & { code?: string };
+
+async function readError(response: Response, fallback: string): Promise<CodedError> {
   const data = (await response.json().catch(() => ({}))) as { detail?: unknown };
   if (typeof data.detail === "string") return new Error(data.detail);
+  if (data.detail && typeof data.detail === "object" && !Array.isArray(data.detail)) {
+    const detail = data.detail as { code?: string; message?: string };
+    return Object.assign(new Error(detail.message || fallback), { code: detail.code });
+  }
   if (Array.isArray(data.detail)) {
     return new Error(data.detail.map((item: { msg?: string }) => item.msg ?? "").filter(Boolean).join("\n") || fallback);
   }
@@ -95,7 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (response.status === 409) {
       // Someone else finished setup first: fall back to the login screen.
       await refresh();
-      throw new Error("An administrator account already exists. Please log in.");
+      throw Object.assign(new Error("An administrator account already exists. Please log in."), { code: "admin_exists" });
     }
     if (!response.ok) throw await readError(response, "Account creation failed");
     const data = (await response.json()) as { username: string };

@@ -281,6 +281,9 @@ class FakePbs:
         if path == "version":
             return httpx.Response(200, json={"data": {"version": self.version, "release": "1"}})
         if path == "nodes":
+            # PBS list_nodes has no `access` block: superuser only, 403 for any token.
+            if token_ok:
+                return httpx.Response(403, json={"data": None, "message": "permission check failed"})
             return httpx.Response(200, json={"data": [{"node": "localhost"}]})
         if path == "admin/datastore":
             return httpx.Response(200, json={"data": [{"store": "main"}, {"store": "offsite"}]})
@@ -356,6 +359,7 @@ def test_pbs_provision_creates_user_token_and_acls(client, db, fake_pbs, caplog)
     expected = {(path, role, auth) for path, role in PBS_ACLS for auth in ("pbo@pbs", "pbo@pbs!pbo")}
     assert fake_pbs.acls == expected
     assert PBS_SECRET not in response.text
+    assert not any(line == "GET nodes" for line in fake_pbs.log)
 
     settings = effective_settings(db)
     assert settings.pbs_api_url == "https://10.0.0.5:8007/api2/json"
@@ -476,3 +480,26 @@ def test_manual_pve_save_without_pbs_vm(client, db):
     )
     assert response.status_code == 200, response.text
     assert client.get("/api/v1/setup/progress").json()["data"]["pve"]["manual"] is True
+
+
+def test_every_setup_error_code_is_translated_by_the_ui():
+    """Codes raised by /setup must be in the UI list (translated FR/EN, checked
+    by apps/web/tests/setupWizard.test.ts)."""
+    app_dir = Path(__file__).resolve().parents[1] / "app"
+    sources = "".join(
+        (app_dir / name).read_text(encoding="utf-8")
+        for name in (
+            "api/routes/setup.py",
+            "services/setup_wizard.py",
+            "services/setup_probe.py",
+            "services/pbs_provisioning.py",
+        )
+    )
+    raised = set(re.findall(r'(?:SetupError|PbsProvisionError)\(\s*"([a-z_]+)"', sources))
+    raised |= set(re.findall(r'code="([a-z_]+)"', sources))
+    raised |= set(re.findall(r'"code": "([a-z_]+)"', sources))
+    web_test = Path(__file__).resolve().parents[2] / "web" / "tests" / "setupWizard.test.ts"
+    block = re.search(r"SETUP_ERROR_CODES = \[(.*?)\];", web_test.read_text(encoding="utf-8"), re.DOTALL).group(1)
+    translated = set(re.findall(r'"([a-z_]+)"', block))
+    assert len(raised) > 20
+    assert raised <= translated, sorted(raised - translated)

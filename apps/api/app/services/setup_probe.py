@@ -28,28 +28,33 @@ from app.core.tls import FingerprintFormatError, build_tls_verify
 from app.core.tls import normalize_fingerprint as _normalize_fingerprint
 
 PROBE_TIMEOUT_SECONDS = 10.0
+PBS_NODE = "localhost"
 
 
 class ProbeError(RuntimeError):
-    pass
+    """`code` is stable (the UI translates it); the message is the English detail."""
+
+    def __init__(self, message: str, *, code: str = "probe_failed") -> None:
+        super().__init__(message)
+        self.code = code
 
 
 def normalize_fingerprint(value: str | None) -> str:
     try:
         return _normalize_fingerprint(value)
     except FingerprintFormatError as exc:
-        raise ProbeError(str(exc)) from exc
+        raise ProbeError(str(exc), code="invalid_fingerprint") from exc
 
 
 def normalize_api_url(url: str, default_port: int) -> str:
     raw = (url or "").strip()
     if not raw:
-        raise ProbeError("API URL is required.")
+        raise ProbeError("API URL is required.", code="invalid_url")
     if "://" not in raw:
         raw = f"https://{raw}"
     parts = urlsplit(raw)
     if parts.scheme != "https" or not parts.hostname:
-        raise ProbeError("API URL must be an https:// URL with a host name or address.")
+        raise ProbeError("API URL must be an https:// URL with a host name or address.", code="invalid_url")
     port = parts.port or default_port
     host = f"[{parts.hostname}]" if ":" in parts.hostname else parts.hostname
     return f"https://{host}:{port}/api2/json"
@@ -96,21 +101,22 @@ class _Session:
             response = self.client.get(path)
         except httpx.HTTPError as exc:
             if "fingerprint mismatch" in str(exc):
-                raise ProbeError(f"{exc}. Refusing to send the API token.") from exc
-            raise ProbeError(f"{product} API unreachable: {exc}") from exc
+                raise ProbeError(f"{exc}. Refusing to send the API token.", code="fingerprint_mismatch") from exc
+            raise ProbeError(f"{product} API unreachable: {exc}", code="unreachable") from exc
         if not authenticated:
             return None
         if response.status_code in (401, 403):
             raise ProbeError(
                 f"{product} rejected the API token (HTTP {response.status_code}) on {path}. "
-                "Check token id, secret and permissions."
+                "Check token id, secret and permissions.",
+                code="token_rejected",
             )
         if response.is_error:
-            raise ProbeError(f"{product} API error on {path}: HTTP {response.status_code}")
+            raise ProbeError(f"{product} API error on {path}: HTTP {response.status_code}", code="api_error")
         try:
             payload = response.json()
         except ValueError as exc:
-            raise ProbeError(f"{product} API returned a non-JSON response on {path}.") from exc
+            raise ProbeError(f"{product} API returned a non-JSON response on {path}.", code="api_error") from exc
         return payload.get("data", payload) if isinstance(payload, dict) else payload
 
 
@@ -138,7 +144,7 @@ def probe_proxmox(
 ) -> ProbeResult:
     url = normalize_api_url(api_url, 8006)
     if not token_id.strip() or not token_secret:
-        raise ProbeError("Proxmox API token id and secret are required.")
+        raise ProbeError("Proxmox API token id and secret are required.", code="secret_required")
     pinned = normalize_fingerprint(fingerprint)
     if not verify_ssl and not pinned:
         return _trust_on_first_use(url, "Proxmox VE", transport)
@@ -192,14 +198,16 @@ def probe_pbs(
 ) -> ProbeResult:
     url = normalize_api_url(api_url, 8007)
     if not token_id.strip() or not token_secret:
-        raise ProbeError("PBS API token id and secret are required.")
+        raise ProbeError("PBS API token id and secret are required.", code="secret_required")
     pinned = normalize_fingerprint(fingerprint)
     if not verify_ssl and not pinned:
         return _trust_on_first_use(url, "PBS", transport)
     header = f"PBSAPIToken={token_id.strip()}:{token_secret}"
     with _Session(url, header, verify_ssl, pinned, transport) as session:
+        # Only routes a token can reach. GET /nodes is NOT one of them: PBS's
+        # list_nodes has no `access` block, so it is superuser-only and answers
+        # 403 to any API token whatever its ACLs. The PBS node is always "localhost".
         version = session.get("version", "PBS")
-        nodes_payload = session.get("nodes", "PBS") or []
         datastores_payload = session.get("admin/datastore", "PBS") or []
         fingerprint_seen = session.fingerprint
     datastores = [
@@ -217,6 +225,6 @@ def probe_pbs(
         version=str((version or {}).get("version", "")),
         fingerprint=fingerprint_seen,
         fingerprint_pinned=bool(pinned),
-        nodes=sorted(str(item.get("node")) for item in (nodes_payload or []) if isinstance(item, dict) and item.get("node")),
+        nodes=[PBS_NODE],
         datastores=sorted(datastores, key=lambda store: store["name"]),
     )

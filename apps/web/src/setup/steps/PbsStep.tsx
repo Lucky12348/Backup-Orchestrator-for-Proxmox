@@ -95,7 +95,11 @@ export function PbsStep({ saved, onSaved, onBack, onNext }: PbsStepProps) {
 
   async function connect(event: FormEvent) {
     event.preventDefault();
-    if (!fingerprint || !confirmed || !password) return;
+    if (!fingerprint || !confirmed) return;
+    if (!password) {
+      setError(new WizardError("password_required", "", 0));
+      return;
+    }
     setBusy("connect");
     setError(null);
     try {
@@ -121,7 +125,7 @@ export function PbsStep({ saved, onSaved, onBack, onNext }: PbsStepProps) {
     } catch (err) {
       setError(err);
     } finally {
-      setPassword(""); // never kept in memory longer than the request
+      setPassword(""); // emptied after every attempt: never kept longer than the request
       setBusy(null);
     }
   }
@@ -295,7 +299,9 @@ export function PbsStep({ saved, onSaved, onBack, onNext }: PbsStepProps) {
                   onChange={(event: ChangeEvent<HTMLInputElement>) => setPassword(event.target.value)}
                   hint={text.pbs.passwordHint}
                 />
-                <Button type="submit" className="self-start" disabled={!password || busy !== null}>
+                {/* Only disabled while a request runs: after a failure the field is emptied
+                    and the operator retries with the same button. */}
+                <Button type="submit" className="self-start" disabled={busy !== null}>
                   {busy === "connect" ? <Loader2 className="animate-spin" /> : null}
                   {busy === "connect" ? text.pbs.connecting : text.pbs.connect}
                 </Button>

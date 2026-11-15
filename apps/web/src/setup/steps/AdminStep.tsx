@@ -2,10 +2,9 @@ import { useState, type FormEvent } from "react";
 import { ArrowRight, Loader2 } from "lucide-react";
 
 import { useAuth } from "../../AuthContext";
-import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../../components/ui/card";
-import { Field, useText } from "../shared";
+import { ErrorAlert, Field, useText } from "../shared";
 
 const MIN_PASSWORD_LENGTH = 12;
 
@@ -16,7 +15,7 @@ export function AdminStep() {
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
 
   const tooShort = password.length > 0 && password.length < MIN_PASSWORD_LENGTH;
@@ -31,8 +30,7 @@ export function AdminStep() {
     try {
       await createAdmin(username.trim(), password);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "";
-      setError(message.includes("already exists") ? text.admin.exists : message || text.errors.generic);
+      setError(err); // coded error ({code, message}) from AuthContext
       setBusy(false);
     }
   }
@@ -44,7 +42,7 @@ export function AdminStep() {
         <CardDescription>{text.admin.description}</CardDescription>
       </CardHeader>
       <CardContent>
-        {error ? <Alert variant="danger" title={error} /> : null}
+        <ErrorAlert error={error} />
         <Field
           label={text.admin.username}
           autoCapitalize="none"
