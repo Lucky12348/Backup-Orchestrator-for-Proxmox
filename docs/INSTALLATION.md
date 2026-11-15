@@ -181,6 +181,14 @@ journalctl -u pbo-agent-report.service -n 50
 
 - **`pbo.service` fails with `226/NAMESPACE`**: enable nesting on the CT
   (`pct set <ctid> --features nesting=1`, then restart it).
+- **`pbo.service` refuses to start: "database 'pbo' uses encoding SQL_ASCII"**:
+  PostgreSQL was initialised under a locale missing from the container (SSH
+  forwarding e.g. `LANG=en_US.UTF-8`). The installers now force
+  `LANG=C.UTF-8` and create the database with `-E UTF8 --locale=C.UTF-8 -T
+  template0`; re-running `pbo-install.sh` recreates an **empty** SQL_ASCII
+  database in UTF8. A database that already holds data is not touched: the
+  error message (also printed by `python -m app.db.preflight`, the unit's
+  `ExecStartPre`) gives the dump / recreate / restore commands.
 - **Install script: "this is not a Proxmox VE host"**: it must run on the PVE
   host itself, not in a VM or CT.
 - **"Invalid or expired pairing code"**: codes are single use and last 15

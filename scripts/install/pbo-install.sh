@@ -13,6 +13,10 @@
 # This file is also sourced by pbo-update.sh for its helper functions: nothing
 # runs unless it is executed directly.
 set -Eeuo pipefail
+# Force a locale that always exists. SSH clients forward e.g. LANG=en_US.UTF-8,
+# absent from a fresh container: PostgreSQL would then initialise its cluster
+# in locale C / SQL_ASCII and psycopg would get bytes instead of str.
+export LANG=C.UTF-8 LC_ALL=C.UTF-8
 
 PBO_REPO="${PBO_REPO:-Lucky12348/Backup-Orchestrator-for-Proxmox}"
 PBO_DIR="${PBO_DIR:-/opt/pbo}"
@@ -172,6 +176,43 @@ pbo_create_user() {
   fi
 }
 
+# Always UTF8, whatever the cluster default (template0 accepts any encoding).
+pbo_create_database() {
+  runuser -u postgres -- createdb -O "${PBO_USER}" -E UTF8 --locale=C.UTF-8 -T template0 "${PBO_DB}"
+}
+
+pbo_database_encoding() {
+  runuser -u postgres -- psql -tAc     "SELECT pg_encoding_to_char(encoding) FROM pg_database WHERE datname='${PBO_DB}'" | tr -d '[:space:]'
+}
+
+# Create the database, or fix one left in SQL_ASCII by an earlier attempt:
+# recreated if it holds no table, otherwise stop (data must be migrated by hand).
+pbo_ensure_utf8_database() {
+  local encoding tables
+  encoding="$(pbo_database_encoding)"
+  if [[ -z "${encoding}" ]]; then
+    pbo_create_database
+    return
+  fi
+  [[ "${encoding}" == "UTF8" ]] && return
+  tables="$(runuser -u postgres -- psql -d "${PBO_DB}" -tAc     "SELECT count(*) FROM pg_tables WHERE schemaname NOT IN ('pg_catalog', 'information_schema')" | tr -d '[:space:]')"
+  if [[ "${tables}" == "0" ]]; then
+    pbo_warn "database ${PBO_DB} is ${encoding} and empty: recreating it in UTF8"
+    systemctl stop pbo.service 2>/dev/null || true
+    runuser -u postgres -- dropdb "${PBO_DB}"
+    pbo_create_database
+    return
+  fi
+  pbo_die "database ${PBO_DB} is encoded ${encoding} and already holds ${tables} table(s); the app requires UTF8.
+  Convert it by hand, e.g.:
+    systemctl stop pbo
+    runuser -u postgres -- pg_dump -Fc ${PBO_DB} > /root/pbo.dump
+    runuser -u postgres -- dropdb ${PBO_DB}
+    runuser -u postgres -- createdb -O ${PBO_USER} -E UTF8 --locale=C.UTF-8 -T template0 ${PBO_DB}
+    runuser -u postgres -- pg_restore -d ${PBO_DB} --no-owner --role ${PBO_USER} /root/pbo.dump
+  (only safe if the stored text is plain ASCII / valid UTF-8), then re-run this script."
+}
+
 pbo_setup_postgres() {
   local conf password
   pbo_info "Configuring PostgreSQL (localhost only)"
@@ -186,7 +227,8 @@ pbo_setup_postgres() {
   systemctl restart postgresql
 
   if [[ -f "${PBO_ENV}" ]] && grep -q '^DATABASE_URL=' "${PBO_ENV}"; then
-    pbo_ok "database already configured (kept)"
+    pbo_ensure_utf8_database
+    pbo_ok "database already configured (credentials kept)"
     return
   fi
   password="$(openssl rand -hex 24)"
@@ -195,9 +237,7 @@ pbo_setup_postgres() {
   else
     runuser -u postgres -- psql -q -c "CREATE ROLE ${PBO_USER} WITH LOGIN PASSWORD '${password}'"
   fi
-  if ! runuser -u postgres -- psql -tAc "SELECT 1 FROM pg_database WHERE datname='${PBO_DB}'" | grep -q 1; then
-    runuser -u postgres -- createdb -O "${PBO_USER}" "${PBO_DB}"
-  fi
+  pbo_ensure_utf8_database
   PBO_NEW_DATABASE_URL="postgresql+psycopg://${PBO_USER}:${password}@127.0.0.1:5432/${PBO_DB}"
   pbo_ok "database ${PBO_DB} ready"
 }
@@ -268,6 +308,8 @@ Group=${PBO_USER}
 WorkingDirectory=${PBO_DIR}/apps/api
 EnvironmentFile=${PBO_ENV}
 Environment=PYTHONDONTWRITEBYTECODE=1
+# Clear message (no traceback) when the database is not UTF8.
+ExecStartPre=${PBO_DIR}/.venv/bin/python -m app.db.preflight
 ExecStart=${PBO_DIR}/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port ${PBO_PORT} --ssl-certfile ${PBO_TLS}/cert.pem --ssl-keyfile ${PBO_TLS}/key.pem --no-server-header
 Restart=on-failure
 RestartSec=5
@@ -339,7 +381,13 @@ pbo_install_main() {
   pbo_parse_args "$@"
   pbo_require_root
   pbo_require_debian
-  [[ ! -f "${PBO_DIR}/VERSION" ]] || pbo_die "already installed (${PBO_DIR}): use 'update'."
+  if [[ -f "${PBO_DIR}/VERSION" ]]; then
+    if curl -fsk --max-time 3 "https://127.0.0.1:${PBO_PORT}/health" >/dev/null 2>&1; then
+      pbo_die "already installed and running (${PBO_DIR}): use 'update'."
+    fi
+    pbo_warn "previous install found but not running: installing again (${PBO_ENV} and the database are kept)."
+    systemctl stop pbo.service 2>/dev/null || true
+  fi
   pbo_install_packages
   pbo_resolve_ref
   rm -rf "${PBO_DIR}"

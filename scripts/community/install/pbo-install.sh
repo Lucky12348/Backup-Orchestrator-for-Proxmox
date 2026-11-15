@@ -9,6 +9,10 @@
 # DRAFT for community-scripts. Mirrors scripts/install/pbo-install.sh (the
 # reference installer) with the community-scripts helpers.
 
+# The SSH client may forward a locale missing from the container (e.g.
+# LANG=en_US.UTF-8): PostgreSQL would initialise its cluster in C/SQL_ASCII.
+export LANG=C.UTF-8 LC_ALL=C.UTF-8
+
 # shellcheck disable=SC1091
 source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"
 color
@@ -25,7 +29,16 @@ $STD apt install -y \
 msg_ok "Installed Dependencies"
 
 PG_VERSION="17" setup_postgresql
-PG_DB_NAME="pbo" PG_DB_USER="pbo" setup_postgresql_db
+
+msg_info "Creating the database (UTF8)"
+# Created explicitly rather than with setup_postgresql_db: the encoding must be
+# UTF8 whatever the cluster default (template0 accepts any encoding).
+PG_DB_NAME="pbo"
+PG_DB_USER="pbo"
+PG_DB_PASS="$(openssl rand -hex 24)"
+$STD runuser -u postgres -- psql -c "CREATE ROLE ${PG_DB_USER} WITH LOGIN PASSWORD '${PG_DB_PASS}'"
+$STD runuser -u postgres -- createdb -O "$PG_DB_USER" -E UTF8 --locale=C.UTF-8 -T template0 "$PG_DB_NAME"
+msg_ok "Created the database (UTF8)"
 fetch_and_deploy_gh_release "pbo" "Lucky12348/Backup-Orchestrator-for-Proxmox" "prebuild" "latest" "/opt/pbo" "pbo-*.tar.gz"
 
 msg_info "Setting up ${APPLICATION}"
@@ -73,6 +86,8 @@ Group=pbo
 WorkingDirectory=/opt/pbo/apps/api
 EnvironmentFile=/etc/pbo/pbo.env
 Environment=PYTHONDONTWRITEBYTECODE=1
+# Clear message (no traceback) when the database is not UTF8.
+ExecStartPre=/opt/pbo/.venv/bin/python -m app.db.preflight
 ExecStart=/opt/pbo/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 443 --ssl-certfile /etc/pbo/tls/cert.pem --ssl-keyfile /etc/pbo/tls/key.pem --no-server-header
 Restart=on-failure
 RestartSec=5

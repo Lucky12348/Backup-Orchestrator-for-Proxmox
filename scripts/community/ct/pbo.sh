@@ -34,6 +34,13 @@ function update_script() {
     exit
   fi
 
+  export LANG=C.UTF-8 LC_ALL=C.UTF-8
+  DB_ENCODING="$(runuser -u postgres -- psql -tAc "SELECT pg_encoding_to_char(encoding) FROM pg_database WHERE datname='pbo'" | tr -d '[:space:]')"
+  if [[ "$DB_ENCODING" != "UTF8" ]]; then
+    msg_error "Database pbo is encoded ${DB_ENCODING:-unknown}; ${APP} requires UTF8. See the troubleshooting section of docs/INSTALLATION.md."
+    exit
+  fi
+
   if check_for_gh_release "pbo" "Lucky12348/Backup-Orchestrator-for-Proxmox"; then
     msg_info "Backing up the database"
     mkdir -p /var/backups/pbo

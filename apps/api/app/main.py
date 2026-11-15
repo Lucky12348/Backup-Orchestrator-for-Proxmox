@@ -10,6 +10,7 @@ from app.auth import validate_auth_settings
 from app.core.config import get_env_settings, get_settings
 from app.db.init import create_tables, seed_database
 from app.db.migrate import run_migrations
+from app.db.preflight import DatabaseEncodingError, check_database_encoding
 from app.db.session import SessionLocal, engine
 from app.services.notifications import validate_notification_settings
 from app.services.planning_scheduler import start_planning_scheduler, stop_planning_scheduler
@@ -21,8 +22,19 @@ logger = logging.getLogger(__name__)
 env_settings = get_env_settings()
 
 
+def ensure_database_encoding() -> None:
+    """Refuse to start on a non-UTF8 PostgreSQL database, with an explanation
+    instead of the TypeError SQLAlchemy raises on its first connection."""
+    try:
+        check_database_encoding(env_settings.database_url)
+    except DatabaseEncodingError as exc:
+        logger.critical("%s", exc)
+        raise SystemExit(f"Startup refused: {exc}") from None
+
+
 def initialize_storage() -> None:
     """Schema + one-time imports from a legacy .env, then enable stored settings."""
+    ensure_database_encoding()
     create_tables()
     run_migrations(engine)
     with SessionLocal() as db:

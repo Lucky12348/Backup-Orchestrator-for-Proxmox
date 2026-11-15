@@ -10,6 +10,8 @@
 # -> stop -> swap directories -> Python env -> migrations -> start -> /health.
 # If migrations or /health fail: previous code AND database are restored.
 set -Eeuo pipefail
+# See pbo-install.sh: a locale missing from the container breaks PostgreSQL tools.
+export LANG=C.UTF-8 LC_ALL=C.UTF-8
 
 INSTALL_LIB="${PBO_INSTALL_LIB:-/opt/pbo/scripts/install/pbo-install.sh}"
 [[ -f "${INSTALL_LIB}" ]] || {
@@ -88,7 +90,7 @@ pbo_rollback() {
   if [[ -n "${BACKUP_FILE}" && -f "${BACKUP_FILE}" ]]; then
     pbo_info "Restoring the database from ${BACKUP_FILE}"
     runuser -u postgres -- dropdb --if-exists "${PBO_DB}"
-    runuser -u postgres -- createdb -O "${PBO_USER}" "${PBO_DB}"
+    runuser -u postgres -- createdb -O "${PBO_USER}" -E UTF8 --locale=C.UTF-8 -T template0 "${PBO_DB}"
     runuser -u postgres -- pg_restore --dbname "${PBO_DB}" --no-owner --role "${PBO_USER}" <"${BACKUP_FILE}" ||
       pbo_warn "pg_restore reported errors, check the database"
   fi
@@ -113,6 +115,10 @@ pbo_update_main() {
     exit 0
   fi
   pbo_info "Updating ${current} -> ${target}"
+  # The app refuses a non-UTF8 database: fix an empty one, stop on a full one.
+  if declare -F pbo_ensure_utf8_database >/dev/null; then
+    pbo_ensure_utf8_database
+  fi
 
   rm -rf "${STAGE_DIR}"
   pbo_fetch_source "${STAGE_DIR}"
