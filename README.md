@@ -16,7 +16,7 @@ bash pbo-install.sh
 ```
 
 Open `https://<lxc-ip>`, create the admin account, then install the Proxmox
-host agent with the one-line command shown in **Integrations → Agent
+host agent with the two commands shown in **Integrations → Agent
 installation**. Update with `update` inside the LXC. Full guide:
 [docs/INSTALLATION.md](docs/INSTALLATION.md). The Docker Compose app VM is the
 legacy path ([docs/INSTALLATION_DOCKER_LEGACY.md](docs/INSTALLATION_DOCKER_LEGACY.md)).

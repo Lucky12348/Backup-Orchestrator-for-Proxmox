@@ -8,8 +8,8 @@ from app.schemas.base import UTCDateTimeModel
 class PairingCodeRead(UTCDateTimeModel):
     code: str
     expires_at: datetime
-    # Command to paste on the Proxmox host (as root).
-    install_command: str
+    # Commands to run on the Proxmox host (as root), in order: download, run.
+    install_commands: list[str]
     app_url: str
     # SHA-256 of the app certificate, to compare with what install.sh prints
     # (it downloads over `curl -k` the first time). None when unknown.

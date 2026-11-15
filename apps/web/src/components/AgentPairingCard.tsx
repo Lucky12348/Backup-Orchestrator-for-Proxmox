@@ -15,12 +15,11 @@ import { StatusBadge } from "./StatusBadge";
 const TEXT = {
   en: {
     title: "Agent installation",
-    intro: "Generate a single-use command (valid 15 minutes) and run it as root on the Proxmox VE host.",
+    intro: "Generate a single-use code (valid 15 minutes), then run these two commands as root on the Proxmox VE host.",
     generate: "Generate install command",
     expires: "Expires",
+    select: "Click the block to select both lines.",
     fingerprint: "App certificate fingerprint (compare it with the one the script prints)",
-    copy: "Copy",
-    copied: "Copied",
     agents: "Registered agents",
     none: "No agent registered yet.",
     revoke: "Revoke",
@@ -30,12 +29,11 @@ const TEXT = {
   },
   fr: {
     title: "Installation de l'agent",
-    intro: "Générez une commande à usage unique (valable 15 minutes) et lancez-la en root sur l'hôte Proxmox VE.",
+    intro: "Générez un code à usage unique (valable 15 minutes), puis lancez ces deux commandes en root sur l'hôte Proxmox VE.",
     generate: "Générer la commande d'installation",
     expires: "Expire",
+    select: "Cliquez dans le bloc pour sélectionner les deux lignes.",
     fingerprint: "Empreinte du certificat de l'app (à comparer avec celle affichée par le script)",
-    copy: "Copier",
-    copied: "Copié",
     agents: "Agents enregistrés",
     none: "Aucun agent enregistré.",
     revoke: "Révoquer",
@@ -51,7 +49,6 @@ export function AgentPairingCard({ language, notAvailable }: { language: Languag
   const [agents, setAgents] = useState<RegisteredAgent[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [copied, setCopied] = useState(false);
 
   const refresh = () =>
     getRegisteredAgents()
@@ -65,23 +62,12 @@ export function AgentPairingCard({ language, notAvailable }: { language: Languag
   const generate = async () => {
     setBusy(true);
     setError(null);
-    setCopied(false);
     try {
       setPairing(await createAgentPairing());
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setBusy(false);
-    }
-  };
-
-  const copy = async () => {
-    if (!pairing) return;
-    try {
-      await navigator.clipboard.writeText(pairing.install_command);
-      setCopied(true);
-    } catch {
-      setCopied(false);
     }
   };
 
@@ -106,15 +92,15 @@ export function AgentPairingCard({ language, notAvailable }: { language: Languag
         <p className="integration-message">{text.intro}</p>
         {pairing ? (
           <>
-            <pre className="log-pre">{pairing.install_command}</pre>
-            <div className="summary-row">
-              <span>
-                {text.expires} : {formatDateTime(pairing.expires_at, language, notAvailable)}
-              </span>
-              <button className="action-button" onClick={copy} type="button">
-                {copied ? text.copied : text.copy}
-              </button>
-            </div>
+            {/* No "Copy" button on purpose: writing `curl … | bash`-style commands to the
+                clipboard is flagged as ClickFix by content blockers (uBlock Origin).
+                The block selects as a whole on click for a manual copy. */}
+            <pre className="log-pre" style={{ userSelect: "all", whiteSpace: "pre-wrap" }}>
+              {pairing.install_commands.join("\n")}
+            </pre>
+            <p className="integration-message">
+              {text.select} {text.expires} : {formatDateTime(pairing.expires_at, language, notAvailable)}
+            </p>
             {pairing.app_fingerprint ? (
               <p className="integration-message">
                 {text.fingerprint} :<br />

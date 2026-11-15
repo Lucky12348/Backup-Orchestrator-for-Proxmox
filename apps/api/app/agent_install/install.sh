@@ -4,7 +4,11 @@
 # Served by the app at https://<app>/agent/install.sh (the app URL below is
 # filled in by the app). Run as root on the Proxmox VE host:
 #
-#   bash -c "$(curl -fskSL https://<app>/agent/install.sh)" -- --code XXXX-XXXX
+#   curl -fskSL -o pbo-agent-install.sh https://<app>/agent/install.sh
+#   bash pbo-agent-install.sh --code XXXX-XXXX
+#
+# (`bash -c "$(curl …)" -- --code …` works too, but the app does not show it:
+# content blockers flag that pattern in the clipboard as "ClickFix".)
 #
 # `-k` is accepted for this first download only: the app certificate is
 # self-signed. The script then prints the fingerprint of the certificate it
@@ -79,10 +83,17 @@ parse_args() {
   done
 }
 
+# https://<host>[:port] only (IPv4, DNS name or [IPv6]): the value ends up in
+# commands. In a bash bracket expression `\]` is not an escape: a literal `]`
+# must come first, hence `[][…]` (`]` and `[` then the other characters).
+valid_app_url() {
+  [[ "$1" =~ ^https://[][A-Za-z0-9.:-]+$ ]]
+}
+
 preflight() {
   [[ ${EUID} -eq 0 ]] || die "run this script as root."
   [[ -n "${CODE}" ]] || die "--code is required (generate one in the app: Agents > Add)."
-  [[ "${PBO_APP_URL}" =~ ^https://[A-Za-z0-9.:\[\]-]+$ ]] || die "invalid app URL: ${PBO_APP_URL}"
+  valid_app_url "${PBO_APP_URL}" || die "invalid app URL: ${PBO_APP_URL}"
   if ! [[ "${PORT}" =~ ^[0-9]+$ ]] || ((PORT < 1 || PORT > 65535)); then
     die "invalid port: ${PORT}"
   fi
@@ -415,4 +426,8 @@ main() {
   echo "    Only the app needs to reach port ${PORT}: restrict it in the Proxmox firewall."
 }
 
-main "$@"
+# PBO_INSTALL_SOURCED=1 lets tests source the functions without running.
+# (BASH_SOURCE cannot be used: under `bash -c "$(curl …)"` it is empty.)
+if [[ -z "${PBO_INSTALL_SOURCED:-}" ]]; then
+  main "$@"
+fi

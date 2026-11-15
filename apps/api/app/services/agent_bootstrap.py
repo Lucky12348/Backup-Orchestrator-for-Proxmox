@@ -44,8 +44,17 @@ def app_url_from_base(base_url: str) -> str:
     return url
 
 
-def install_command(app_url: str, code: str) -> str:
-    return f'bash -c "$(curl -fskSL {app_url}/agent/install.sh)" -- --code {code}'
+INSTALL_SCRIPT_NAME = "pbo-agent-install.sh"
+
+
+def install_commands(app_url: str, code: str) -> list[str]:
+    """Download, then run: two lines on purpose. A `bash -c "$(curl …)"`
+    one-liner placed in the clipboard is flagged as "ClickFix" by content
+    blockers (uBlock Origin), and a downloaded file can be read before running."""
+    return [
+        f"curl -fskSL -o {INSTALL_SCRIPT_NAME} {app_url}/agent/install.sh",
+        f"bash {INSTALL_SCRIPT_NAME} --code {code}",
+    ]
 
 
 def app_certificate_fingerprint(cert_file: str) -> str | None:

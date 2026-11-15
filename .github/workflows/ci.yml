@@ -82,7 +82,7 @@ jobs:
         run: npm test
 
   shellcheck:
-    name: shellcheck (install scripts)
+    name: shell scripts (shellcheck + tests)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -92,6 +92,9 @@ jobs:
         run: |
           shellcheck --version
           git ls-files -z '*.sh' | xargs -0 shellcheck -x -P SCRIPTDIR
+
+      - name: Agent installer tests (bash)
+        run: bash scripts/ci/test-agent-install.sh
 
   docker:
     name: docker image (api + web)

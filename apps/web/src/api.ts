@@ -464,7 +464,8 @@ export function getActivityEvents(limit = 100) {
 export interface AgentPairing {
   code: string;
   expires_at: string;
-  install_command: string;
+  // Run in order on the Proxmox host: download, then run.
+  install_commands: string[];
   app_url: string;
   app_fingerprint: string | null;
 }

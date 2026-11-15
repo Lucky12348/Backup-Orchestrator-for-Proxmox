@@ -52,15 +52,18 @@ def test_pairing_requires_a_session(client):
     assert client.get("/api/v1/agents").status_code == 401
 
 
-def test_pairing_code_and_install_command(client, db):
+def test_pairing_code_and_install_commands(client, db):
     _login(client)
     pairing = _pair(client)
     code = pairing["code"]
     assert len(code) == 9 and code[4] == "-"
     assert set(code.replace("-", "")) <= set(agent_registry.PAIRING_ALPHABET)
-    assert pairing["install_command"] == (
-        f'bash -c "$(curl -fskSL https://testserver/agent/install.sh)" -- --code {code}'
-    )
+    assert pairing["install_commands"] == [
+        "curl -fskSL -o pbo-agent-install.sh https://testserver/agent/install.sh",
+        f"bash pbo-agent-install.sh --code {code}",
+    ]
+    # No `bash -c "$(curl …)"` one-liner (flagged as ClickFix by content blockers).
+    assert "$(" not in " ".join(pairing["install_commands"])
     assert pairing["app_url"] == "https://testserver"
     expires = datetime.fromisoformat(pairing["expires_at"].replace("Z", "+00:00"))
     assert timedelta(minutes=14) < expires - datetime.now(timezone.utc) <= timedelta(minutes=15)

@@ -23,7 +23,7 @@ from app.services.agent_bootstrap import (
     app_certificate_fingerprint,
     app_url_from_base,
     build_agent_archive,
-    install_command,
+    install_commands,
     render_install_script,
 )
 from app.services.agent_registry import (
@@ -71,7 +71,7 @@ def create_pairing(request: Request, db: DbSession) -> PairingCodeRead:
     return PairingCodeRead(
         code=pairing.code,
         expires_at=pairing.expires_at,
-        install_command=install_command(app_url, pairing.code),
+        install_commands=install_commands(app_url, pairing.code),
         app_url=app_url,
         app_fingerprint=app_certificate_fingerprint(get_settings().tls_cert_file),
     )

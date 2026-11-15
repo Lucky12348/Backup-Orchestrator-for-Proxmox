@@ -113,14 +113,20 @@ The agent runs on the **Proxmox VE host** (root: it drives `qm set` for USB
 passthrough and inspects disks).
 
 1. In the app: **Integrations → Agent installation → Generate install command**.
-   The app shows a single-use command, valid 15 minutes, and the fingerprint
-   of its certificate:
+   The app shows two commands with a single-use code (valid 15 minutes), and
+   the fingerprint of its certificate:
 
    ```bash
-   bash -c "$(curl -fskSL https://192.168.1.60/agent/install.sh)" -- --code K7QF-3MZP
+   curl -fskSL -o pbo-agent-install.sh https://192.168.1.60/agent/install.sh
+   bash pbo-agent-install.sh --code K7QF-3MZP
    ```
 
-2. Paste it as root in the Proxmox host shell. The script:
+   The block is selected as a whole on click; there is deliberately no "Copy"
+   button and no `bash -c "$(curl …)"` one-liner: content blockers such as
+   uBlock Origin flag that pattern written to the clipboard as a "ClickFix"
+   attack, and downloading first lets you read the script before running it.
+
+2. Run both lines as root in the Proxmox host shell. The script:
    - checks it runs on a PVE host (`pveversion`);
    - prints the fingerprint of the app certificate it sees and asks you to
      compare it with the one shown in the app (`-k` is only used for this
