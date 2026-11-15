@@ -12,6 +12,7 @@ from app.schemas import (
     ExternalBackupRunRequest,
     ExternalBackupRunSummaryRead,
 )
+from app.services.agent_registry import authenticate_callback, has_active_agent
 from app.services.external_backups import (
     append_external_backup_run_log,
     cleanup_external_export_objects,
@@ -98,6 +99,23 @@ def delete_run(run_id: int, db: DbSession) -> None:
     delete_external_backup_run(db, run_id)
 
 
+def _require_run_log_token(db: DbSession, x_agent_token: str | None) -> None:
+    """Registered PBS agent: its own callback token. Legacy: PBS_AGENT_TOKEN
+    (only while no PBS agent is registered, since a registered agent's
+    PBS_AGENT_TOKEN is the app -> agent direction)."""
+    if authenticate_callback(db, x_agent_token, roles=("pbs",)) is not None:
+        return
+    settings = get_settings()
+    legacy_token = "" if settings.pbs_agent_fingerprint else settings.pbs_agent_token
+    if not legacy_token and not has_active_agent(db, "pbs"):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="PBS_AGENT_TOKEN is not configured.",
+        )
+    if x_agent_token is None or not legacy_token or not secrets.compare_digest(x_agent_token, legacy_token):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid agent token.")
+
+
 @public_callback_router.post("/runs/{run_id}/log", response_model=ExternalBackupRunRead)
 def append_run_log(
     run_id: int,
@@ -105,14 +123,7 @@ def append_run_log(
     db: DbSession,
     x_agent_token: str | None = Header(default=None),
 ) -> ExternalBackupRunRead:
-    settings = get_settings()
-    if not settings.pbs_agent_token:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="PBS_AGENT_TOKEN is not configured.",
-        )
-    if x_agent_token is None or not secrets.compare_digest(x_agent_token, settings.pbs_agent_token):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid agent token.")
+    _require_run_log_token(db, x_agent_token)
 
     stream = "stderr" if payload.stderr_line else "stdout"
     run = append_external_backup_run_log(

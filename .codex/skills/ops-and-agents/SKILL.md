@@ -38,7 +38,9 @@ Respect these operational rules:
 
 Read deployment wiring before editing:
 
-- Read `infra/docker/docker-compose.yml` for the app VM stack.
+- Read `scripts/install/pbo-install.sh` and `pbo-update.sh` for the documented LXC install (`pbo.service`, `/etc/pbo`, `update` with rollback).
+- Read `apps/api/app/agent_install/install.sh` and `apps/api/app/services/agent_registry.py` for the one-line host agent install (pairing code, per-agent tokens, pinned TLS both ways).
+- Read `infra/docker/docker-compose.yml` for the legacy app VM stack.
 - Read `apps/agent/deploy/systemd/` for host and PBS agent service/timer deployment.
 - Read `apps/app-maintenance-agent/deploy/systemd/` for app VM maintenance deployment.
 - Read `.env.example` for the expected variable contract across app VM and agents.

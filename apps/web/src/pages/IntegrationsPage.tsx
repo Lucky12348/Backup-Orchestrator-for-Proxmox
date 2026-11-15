@@ -1,3 +1,4 @@
+import { AgentPairingCard } from "../components/AgentPairingCard";
 import { PageHeader } from "../components/PageHeader";
 import { StatusBadge } from "../components/StatusBadge";
 import { formatDateTime, getAgentStatusTone, parseUtcDate } from "../utils";
@@ -159,6 +160,7 @@ export function IntegrationsPage({
             <p className="integration-message">{t.agentDescription}</p>
           </div>
         </article>
+        <AgentPairingCard language={language} notAvailable={t.notAvailable} />
       </section>
     </div>
   );

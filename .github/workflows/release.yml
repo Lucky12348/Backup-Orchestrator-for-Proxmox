@@ -1,0 +1,59 @@
+name: Release
+
+# Tag v1.2.3 -> GitHub release with pbo-1.2.3.tar.gz (+ .sha256): the sources
+# plus the pre-built web UI (apps/web/dist), so that pbo-install.sh / update
+# and community-scripts (`fetch_and_deploy_gh_release ... prebuild`) need no
+# Node.js inside the container.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Build the web UI
+        working-directory: apps/web
+        run: |
+          npm ci
+          npm run build
+          npm test
+
+      - name: Assemble pbo-<version>.tar.gz
+        id: assemble
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          name="pbo-${version}"
+          mkdir -p "build/${name}"
+          git archive --format=tar HEAD | tar -x -C "build/${name}"
+          cp -r apps/web/dist "build/${name}/apps/web/dist"
+          echo "${tag}" > "build/${name}/VERSION"
+          tar -C build --owner=0 --group=0 --sort=name -czf "${name}.tar.gz" "${name}"
+          sha256sum "${name}.tar.gz" > "${name}.tar.gz.sha256"
+          echo "asset=${name}.tar.gz" >> "$GITHUB_OUTPUT"
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          asset="${{ steps.assemble.outputs.asset }}"
+          if ! gh release view "${tag}" >/dev/null 2>&1; then
+            gh release create "${tag}" --title "${tag}" --generate-notes
+          fi
+          gh release upload "${tag}" "${asset}" "${asset}.sha256" --clobber

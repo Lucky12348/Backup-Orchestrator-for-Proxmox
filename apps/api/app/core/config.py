@@ -60,6 +60,10 @@ class Settings:
     auth_cookie_secure: bool = parse_bool(os.getenv("AUTH_COOKIE_SECURE"), default=True)
     # Built web UI served by the API (same origin). Empty = auto-detect.
     web_dist_dir: str = os.getenv("WEB_DIST_DIR", "")
+    # TLS certificate the app serves (LXC install: /etc/pbo/tls/cert.pem). Only
+    # read to show its fingerprint when pairing an agent; uvicorn itself gets
+    # the certificate from its command line.
+    tls_cert_file: str = os.getenv("PBO_TLS_CERT_FILE", "")
     planning_scheduler_enabled: bool = parse_bool(os.getenv("PLANNING_SCHEDULER_ENABLED"), default=True)
     planning_scheduler_interval_seconds: int = int(os.getenv("PLANNING_SCHEDULER_INTERVAL_SECONDS", "60"))
     # Legacy loop-image coexistence mode, kept as an operator escape hatch.
@@ -128,6 +132,11 @@ class Settings:
     pbs_agent_base_url: str = ""
     pbs_agent_token: str = ""
     pbs_agent_timeout_seconds: float = 7200.0
+    # Not settings: filled from the `agents` table when an agent registered
+    # itself (app/services/agent_registry.py). Non-empty = that agent's TLS
+    # certificate is pinned on every call and it has its own callback token.
+    host_agent_fingerprint: str = ""
+    pbs_agent_fingerprint: str = ""
     # Previous default kept on purpose (Docker service name); the PBS agent
     # must actually reach this URL, so operators set it in the settings.
     external_backup_callback_base_url: str = "http://api:8000/api/v1"

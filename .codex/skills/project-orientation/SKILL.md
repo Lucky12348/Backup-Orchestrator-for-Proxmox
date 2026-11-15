@@ -13,7 +13,8 @@ Use this repository map:
 - Read `apps/web` for React pages, UI components, hooks, and frontend API calls.
 - Read `apps/agent` for root-capable host and PBS agent behavior.
 - Read `apps/app-maintenance-agent` for app-VM git and Docker Compose maintenance endpoints.
-- Read `infra/docker/docker-compose.yml` and `infra/docker/*.Dockerfile` for deployed app-stack wiring.
+- Read `scripts/install/` for the documented install (Debian 13 LXC, `update`) and `apps/api/app/agent_install/install.sh` for the one-line host agent.
+- Read `infra/docker/docker-compose.yml` and `infra/docker/*.Dockerfile` for the legacy Docker app-stack wiring.
 - Read `docs/*.md` for production behavior, security assumptions, and operator workflows.
 
 Use these likely entrypoints first:

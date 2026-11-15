@@ -1,0 +1,57 @@
+{
+  "name": "Proxmox Backup Orchestrator",
+  "slug": "pbo",
+  "categories": [
+    7
+  ],
+  "date_created": "2026-11-15",
+  "type": "ct",
+  "platforms": ["pve"],
+  "updateable": true,
+  "privileged": false,
+  "architectures": [
+    "amd64"
+  ],
+  "interface_port": 443,
+  "documentation": "https://github.com/Lucky12348/proxmox_backup_orchestrator/blob/main/docs/INSTALLATION.md",
+  "website": "https://github.com/Lucky12348/proxmox_backup_orchestrator",
+  "repository": "https://github.com/Lucky12348/proxmox_backup_orchestrator",
+  "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/proxmox.webp",
+  "description": "Rotating external-disk backups for Proxmox VE + Proxmox Backup Server: detects a USB disk on the host, passes it through to the PBS VM, prepares a removable PBS datastore, syncs the backups to it and ejects it safely. Includes planning, notifications and an iCalendar feed.",
+  "install_methods": [
+    {
+      "type": "default",
+      "script": "ct/pbo.sh",
+      "config_path": "/etc/pbo/pbo.env",
+      "resources": {
+        "cpu": 2,
+        "ram": 2048,
+        "hdd": 8,
+        "os": "Debian",
+        "version": "13"
+      }
+    }
+  ],
+  "default_credentials": {
+    "username": null,
+    "password": null
+  },
+  "notes": [
+    {
+      "text": "Open https://<container-ip> after the install to create the admin account (self-signed certificate).",
+      "type": "info"
+    },
+    {
+      "text": "USB passthrough needs an agent on the Proxmox VE host: the app shows a one-line install command (Agents > Add).",
+      "type": "info"
+    },
+    {
+      "text": "Proxmox Backup Server 3.3 or newer is required (removable datastores).",
+      "type": "warning"
+    },
+    {
+      "text": "AUTH_SECRET_KEY in /etc/pbo/pbo.env encrypts the secrets stored in the database: never change it.",
+      "type": "warning"
+    }
+  ]
+}

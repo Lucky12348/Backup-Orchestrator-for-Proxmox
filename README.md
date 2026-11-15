@@ -6,6 +6,21 @@
 
 Proxmox Backup Orchestrator is a specialized control plane for rotating external-disk backups in a small Proxmox VE and Proxmox Backup Server environment. It keeps the web UI and API inside an application VM while privileged disk, passthrough, and PBS datastore actions stay behind dedicated root agents on the Proxmox host and the PBS VM.
 
+## Install
+
+In a Debian 13 LXC (unprivileged, nesting on), as root:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/Lucky12348/proxmox_backup_orchestrator/main/scripts/install/pbo-install.sh
+bash pbo-install.sh
+```
+
+Open `https://<lxc-ip>`, create the admin account, then install the Proxmox
+host agent with the one-line command shown in **Integrations → Agent
+installation**. Update with `update` inside the LXC. Full guide:
+[docs/INSTALLATION.md](docs/INSTALLATION.md). The Docker Compose app VM is the
+legacy path ([docs/INSTALLATION_DOCKER_LEGACY.md](docs/INSTALLATION_DOCKER_LEGACY.md)).
+
 ## What It Does
 
 The project coordinates a focused removable-media workflow:
@@ -114,7 +129,7 @@ npm install
 npm run dev
 ```
 
-### App stack with Docker Compose
+### App stack with Docker Compose (legacy)
 
 ```powershell
 Copy-Item .env.example .env
@@ -138,7 +153,7 @@ Fresh installs do not need it: the administrator is created on the first-run scr
 
 ## Production And Operations Docs
 
-- [Installation](docs/INSTALLATION.md)
+- [Installation](docs/INSTALLATION.md) (LXC + one-line agent) — [legacy Docker](docs/INSTALLATION_DOCKER_LEGACY.md)
 - [Operations](docs/OPERATIONS.md)
 - [Maintenance](docs/MAINTENANCE.md)
 - [Security](docs/SECURITY.md)

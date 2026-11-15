@@ -1,335 +1,207 @@
 # Installation
 
-This guide installs the production layout:
+The documented layout:
 
-- app VM `backupOrchestrator` running Docker Compose: API, Web UI, Postgres
-- Proxmox host root agent on port `8090`
-- PBS VM root agent on port `8091`
-- external USB disk passed from Proxmox host to PBS VM
+```text
+Proxmox VE host
+├── LXC "pbo" (Debian 13, unprivileged)      ← web UI + API + PostgreSQL, https://<lxc-ip>
+├── host agent (/opt/pbo-agent, root)         ← USB passthrough, disk discovery, https://<vmbr0-ip>:8090
+└── PBS VM (PBS ≥ 3.3)                        ← driven through its REST API, no agent needed
+```
 
-Do not use `code_secret`. Use strong random values from `openssl rand -hex 32`.
+- **App**: one native LXC, no Docker. Code in `/opt/pbo`, configuration in
+  `/etc/pbo` (`pbo.env`, `tls/`), PostgreSQL listening on localhost only,
+  `pbo.service` = uvicorn serving HTTPS on port 443 as the unprivileged `pbo`
+  user.
+- **Host agent**: installed on the Proxmox VE host with one command shown by
+  the app; it registers itself with a single-use pairing code.
+- **PBS**: no agent with `PBS_MODE=api` (default for new installs, see
+  [PBS_API.md](PBS_API.md)).
+
+The previous Docker Compose layout is still supported for existing deployments:
+[INSTALLATION_DOCKER_LEGACY.md](INSTALLATION_DOCKER_LEGACY.md).
 
 ## 1. Prerequisites
 
-- A Proxmox host with firewall enabled.
-- A PBS VM running on that Proxmox host.
-- An app VM named `backupOrchestrator` with Docker and Docker Compose.
-- A dedicated external USB disk for removable PBS backups.
-- Network reachability:
-  - app VM to Proxmox API `8006`
-  - app VM to PBS API `8007`
-  - app VM to host agent `8090`
-  - app VM to PBS agent `8091`
+- Proxmox VE 8 or 9, with a PBS **3.3 or newer** VM on the same node (removable
+  datastores). The external USB disk is plugged into the Proxmox host.
+- Internet access from the LXC (Debian packages, PyPI, GitHub) and from the
+  Proxmox host (Debian packages, PyPI) during installation.
+- Network: LXC → PVE API `8006`, LXC → PBS API `8007`, LXC → host agent `8090`,
+  host agent → LXC `443` (heartbeat and disk reports).
 
-Record these values before installation:
+## 2. Install the app (LXC)
+
+### Option A — community-scripts (once published)
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/pbo.sh)"
+```
+
+Drafts live in [`scripts/community/`](../scripts/community/README.md) until they
+are accepted.
+
+### Option B — any Debian 13 LXC
+
+Create an **unprivileged** Debian 13 container with the **nesting** feature
+(`pbo.service` uses systemd sandboxing, which needs it), 2 vCPU, 2 GiB RAM,
+8 GiB disk, then inside it, as root:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/Lucky12348/proxmox_backup_orchestrator/main/scripts/install/pbo-install.sh
+bash pbo-install.sh                # latest GitHub release
+# bash pbo-install.sh --ref main   # a branch or tag (the web UI is built in the CT with a temporary Node.js)
+```
+
+The script installs the packages, creates the `pbo` system user, fetches the
+code into `/opt/pbo` (release archive with a pre-built UI, or a `git clone`
+of `--ref`), creates the Python environment, the PostgreSQL database and user
+(random password), `/etc/pbo/pbo.env` (mode 0600: `AUTH_SECRET_KEY`,
+`DATABASE_URL`…), a self-signed certificate in `/etc/pbo/tls`, and
+`pbo.service`. It ends with:
 
 ```text
-APP_VM_IP=
-PROXMOX_HOST_IP=
-PBS_VM_IP=
-PBS_VM_ID=
-PVE_NODE_NAME=
-MAIN_PBS_DATASTORE=<your-source-datastore>
+ ok Proxmox Backup Orchestrator v1.0.0 is running.
+
+  Open https://192.168.1.60 to create the admin account.
 ```
 
-`MAIN_PBS_DATASTORE` is the exact name of your existing source PBS datastore (the one
-external disks copy from), whatever you named it. List it on the PBS VM with
-`proxmox-backup-manager datastore list`. No name is assumed anywhere: you will set it as
-`PBS_DATASTORE` on the app VM and on the PBS agent.
-
-## 2. Install the App VM
-
-Clone the repository on `backupOrchestrator`:
+### Option C — test container from the Proxmox host (development)
 
 ```bash
-git clone <repo-url> /opt/proxmox_backup_orchestrator
-cd /opt/proxmox_backup_orchestrator
-cp .env.example .env
-chmod 600 .env
+# On the PVE host, from a checkout (or a copy of scripts/):
+scripts/dev/create-test-lxc.sh --ref public-release                   # DHCP
+scripts/dev/create-test-lxc.sh --ref main --ip 192.168.1.60/24 --gw 192.168.1.1
 ```
 
-Edit `.env` and keep only the app VM bootstrap values active for Docker Compose:
-
-```env
-APP_ENV=production
-API_PORT=8000
-MAINTENANCE_TIMEOUT_SECONDS=300
-APP_MAINTENANCE_AGENT_BASE_URL=http://host.docker.internal:8092
-APP_MAINTENANCE_AGENT_HOST=127.0.0.1
-APP_MAINTENANCE_AGENT_PORT=8092
-APP_MAINTENANCE_AGENT_TOKEN=<app-maintenance-agent-token>
-APP_REPO_PATH=/opt/proxmox_backup_orchestrator
-APP_COMPOSE_FILE=infra/docker/docker-compose.yml
-APP_MAINTENANCE_TIMEOUT_SECONDS=300
-
-POSTGRES_DB=proxmox_backup_orchestrator
-POSTGRES_USER=pbo
-POSTGRES_PASSWORD=<random>
-DATABASE_URL=postgresql+psycopg://pbo:<random>@db:5432/proxmox_backup_orchestrator
-
-AUTH_SECRET_KEY=<random>
-# Session cookie is Secure: keep true behind HTTPS. false only for plain HTTP on a trusted LAN.
-AUTH_COOKIE_SECURE=true
-```
-
-Proxmox VE, PBS, agent URLs/tokens and ntfy are **not** environment variables
-anymore: they are stored in the database (secrets encrypted with a key derived
-from `AUTH_SECRET_KEY`) and set from the first-run setup (API:
-`/api/v1/setup/proxmox`, `/api/v1/setup/pbs`, `/api/v1/settings`). The
-administrator account is created on the first-run screen.
-
-Upgrading an install that still has those values in `.env`
-(`PVE_*`, `PBS_*`, `HOST_AGENT_*`, `PBS_AGENT_*`, `NTFY_*`, `NOTIFY_ON_*`,
-`AUTH_USERNAME` / `AUTH_PASSWORD_HASH`…): they are imported into the database
-**once**, on the first start, then ignored. See the commented block in
-`.env.example`. A legacy `AUTH_PASSWORD_HASH` must still be Compose-escaped
-(`$$2b$$12$$...`) to be imported.
-
-Generate JWT and agent tokens:
+It creates the CT (2 vCPU, 2 GiB, 8 GiB, unprivileged, nesting), pushes
+`pbo-install.sh` and runs it with `--ref`. `--ref` must exist on GitHub; to
+test unpushed code, build an archive and pass `--tarball`:
 
 ```bash
-openssl rand -hex 32  # AUTH_SECRET_KEY
-openssl rand -hex 32  # APP_MAINTENANCE_AGENT_TOKEN
-openssl rand -hex 32  # HOST_AGENT_TOKEN and Proxmox AGENT_SERVER_TOKEN
-openssl rand -hex 32  # PBS_AGENT_TOKEN and PBS AGENT_SERVER_TOKEN
+git archive --prefix=pbo/ -o /tmp/pbo-src.tar.gz HEAD      # on the dev machine
+scripts/dev/create-test-lxc.sh --tarball /tmp/pbo-src.tar.gz  # on the PVE host
 ```
 
-Install the local App VM maintenance agent before using Settings > Maintenance:
+## 3. First run
+
+1. Open `https://<lxc-ip>` (accept the self-signed certificate; its SHA-256
+   fingerprint is printed at the end of the install and shown by
+   `openssl x509 -in /etc/pbo/tls/cert.pem -noout -fingerprint -sha256`).
+2. Create the administrator account (first-run screen).
+3. Configure Proxmox VE and PBS. Until the setup wizard screens land, use the
+   API with the session cookie, e.g. from the LXC:
+
+   ```bash
+   B=https://127.0.0.1; C=/root/pbo.cookies
+   curl -sk -c $C -X POST $B/api/v1/auth/token --data-urlencode username=admin --data-urlencode 'password=…'
+   # Probe first: without a fingerprint the answer only contains the certificate fingerprint (trust on first use).
+   curl -sk -b $C -H 'Content-Type: application/json' -X POST $B/api/v1/setup/proxmox/test \
+     -d '{"api_url":"https://192.168.1.10:8006","token_id":"pbo@pve!pbo","token_secret":"…"}'
+   curl -sk -b $C -H 'Content-Type: application/json' -X PUT $B/api/v1/setup/proxmox \
+     -d '{"api_url":"https://192.168.1.10:8006","token_id":"pbo@pve!pbo","token_secret":"…","fingerprint":"AB:CD:…","node_name":"pve","pbs_vm_id":110}'
+   curl -sk -b $C -H 'Content-Type: application/json' -X PUT $B/api/v1/setup/pbs \
+     -d '{"api_url":"https://192.168.1.20:8007","token_id":"pbo@pbs!pbo","token_secret":"…","fingerprint":"12:34:…","datastore":"main","mode":"api"}'
+   ```
+
+   Token privileges: read-only inventory on PVE (`PVEAuditor` on `/`); on PBS
+   see [PBS_API.md](PBS_API.md#recommended-pbs-token).
+
+## 4. Install the host agent (one line)
+
+The agent runs on the **Proxmox VE host** (root: it drives `qm set` for USB
+passthrough and inspects disks).
+
+1. In the app: **Integrations → Agent installation → Generate install command**.
+   The app shows a single-use command, valid 15 minutes, and the fingerprint
+   of its certificate:
+
+   ```bash
+   bash -c "$(curl -fskSL https://192.168.1.60/agent/install.sh)" -- --code K7QF-3MZP
+   ```
+
+2. Paste it as root in the Proxmox host shell. The script:
+   - checks it runs on a PVE host (`pveversion`);
+   - prints the fingerprint of the app certificate it sees and asks you to
+     compare it with the one shown in the app (`-k` is only used for this
+     first download; `--app-fingerprint <fp>` skips the prompt, `--yes`
+     accepts blindly);
+   - downloads the agent **from the app** (same version) over a pinned
+     connection and installs it in `/opt/pbo-agent` (Python venv);
+   - generates a self-signed certificate (`/etc/pbo-agent/tls`) and listens
+     **only on the IPv4 address of `vmbr0`** (`--bridge`/`--listen-ip` to
+     change), port 8090 (`--port`);
+   - registers with the pairing code: the app records the agent URL and
+     certificate fingerprint and returns two tokens, written to
+     `/etc/pbo-agent/agent.env` (0600):
+     - `AGENT_SERVER_TOKEN`: app → agent (the app stores it encrypted);
+     - `AGENT_CALLBACK_TOKEN`: agent → app (the app stores only its hash);
+   - installs `pbo-agent.service` and `pbo-agent-report.timer` (heartbeat +
+     disk report every 2 minutes) and sends a first report.
+
+From then on, every app → agent call pins the agent certificate fingerprint,
+and every agent → app call pins the app certificate.
+
+Re-running the command with a new code re-registers the agent (new tokens, the
+previous registration is revoked). **Revoke** in the same card disables an
+agent; the app then falls back to the static `HOST_AGENT_*` settings if any.
+
+Restrict port 8090 to the LXC address in the Proxmox firewall
+([SECURITY.md](SECURITY.md#proxmox-firewall-hostfw-for-port-8090)).
+
+## 5. Updates
+
+Inside the LXC:
 
 ```bash
-cd /opt/proxmox_backup_orchestrator/apps/app-maintenance-agent
-python3 -m venv .venv
-.venv/bin/pip install -e .
-cp deploy/systemd/proxmox-backup-orchestrator-app-maintenance-agent.service \
-  /etc/systemd/system/proxmox-backup-orchestrator-app-maintenance-agent.service
-systemctl daemon-reload
-systemctl enable --now proxmox-backup-orchestrator-app-maintenance-agent.service
-systemctl status proxmox-backup-orchestrator-app-maintenance-agent.service
+update                 # latest release
+update --ref v1.2.0    # a given tag (or a branch)
 ```
 
-Health check on the App VM:
+`update` (= `/usr/local/bin/pbo-update`, from `scripts/install/pbo-update.sh`)
+dumps the database to `/var/backups/pbo/` (5 kept), fetches the new version
+into `/opt/pbo.new`, stops the service, swaps directories (previous code kept
+in `/opt/pbo.previous`), rebuilds the Python environment, runs the migrations,
+restarts and waits for `/health`. If migrations or `/health` fail, the
+previous code **and** the database dump are restored automatically.
+
+The host agent is updated by re-running its install command (new pairing code):
+it downloads the agent shipped with the running app.
+
+## 6. Checks and troubleshooting
 
 ```bash
-curl -H "X-Agent-Token: <app-maintenance-agent-token>" http://127.0.0.1:8092/health
+systemctl status pbo.service                   # LXC
+journalctl -u pbo.service -n 100
+curl -sk https://127.0.0.1/health
+
+systemctl status pbo-agent.service             # Proxmox host
+journalctl -u pbo-agent-report.service -n 50
 ```
 
-Start the app stack (run from the repository root; `--env-file .env` is
-required — see the note in `docs/setup.md` about why omitting it silently
-reverts settings like notifications to their defaults):
+- **`pbo.service` fails with `226/NAMESPACE`**: enable nesting on the CT
+  (`pct set <ctid> --features nesting=1`, then restart it).
+- **Install script: "this is not a Proxmox VE host"**: it must run on the PVE
+  host itself, not in a VM or CT.
+- **"Invalid or expired pairing code"**: codes are single use and last 15
+  minutes; generate a new one. Ten failures within 15 minutes from one address
+  block registration for 15 minutes.
+- **"TLS fingerprint mismatch"** (agent side): the app certificate changed
+  (e.g. `/etc/pbo/tls` regenerated). Re-run the install command.
+- **Agent shown offline**: `journalctl -u pbo-agent-report.service` on the host;
+  the host must reach `https://<lxc-ip>:443`.
+- **Login loops back to the login page**: the session cookie is `Secure`; use
+  `https://`.
 
-```bash
-docker compose --env-file .env -f infra/docker/docker-compose.yml up -d --build
-docker compose --env-file .env -f infra/docker/docker-compose.yml ps
-```
+## Files
 
-Login and protected API check:
+| Path | Content |
+|---|---|
+| `/opt/pbo` | code (`VERSION`, `apps/`, `scripts/`), Python env `.venv` |
+| `/etc/pbo/pbo.env` | bootstrap settings (0600). **Never change `AUTH_SECRET_KEY`**: it encrypts the secrets stored in the database. |
+| `/etc/pbo/tls/` | app certificate and key |
+| `/var/backups/pbo/` | database dumps made by `update` |
+| `/opt/pbo-agent`, `/etc/pbo-agent/` | host agent code, venv, `agent.env`, certificate |
 
-```bash
-# First run only: create the administrator (or use the first-run screen in the UI).
-curl -sS -c /tmp/pbo.cookies -X POST https://<app-host>/api/v1/setup/admin \
-  -H "Content-Type: application/json" \
-  -d '{"username": "<admin-username>", "password": "<admin-password>"}'
-
-# Later logins (session = HttpOnly cookie, kept in the cookie jar):
-curl -sS -c /tmp/pbo.cookies -X POST https://<app-host>/api/v1/auth/token \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  --data-urlencode "username=<admin-username>" \
-  --data-urlencode "password=<admin-password>"
-curl -sS -b /tmp/pbo.cookies https://<app-host>/api/v1/disks/preferred
-```
-
-Expected result: the login request returns `{"username": ...}` and sets the session cookie; the preferred disks request returns a JSON array (empty is valid before any preferred disk has been saved).
-
-## 3. Install the Proxmox Host Agent
-
-On the Proxmox host:
-
-```bash
-mkdir -p /opt/proxmox-backup-orchestrator-agent
-rsync -a apps/agent/ /opt/proxmox-backup-orchestrator-agent/
-cd /opt/proxmox-backup-orchestrator-agent
-python3 -m venv .venv
-.venv/bin/pip install -e .
-```
-
-Create `/opt/proxmox-backup-orchestrator-agent/.env`:
-
-```env
-AGENT_API_BASE_URL=http://<app-vm-ip>:8000/api/v1
-AGENT_HOSTNAME=<proxmox-hostname>
-AGENT_VERSION=0.1.0
-AGENT_TIMEOUT_SECONDS=10
-AGENT_INCLUDE_NON_USB_CANDIDATES=false
-AGENT_EXPORT_TIMEOUT_SECONDS=7200
-AGENT_DATASTORE_CREATE_TIMEOUT_SECONDS=14400
-AGENT_SERVER_HOST=0.0.0.0
-AGENT_SERVER_PORT=8090
-AGENT_SERVER_TOKEN=<same-value-as-HOST_AGENT_TOKEN>
-AGENT_REPO_PATH=/opt/proxmox-backup-orchestrator-agent
-AGENT_MAINTENANCE_TIMEOUT_SECONDS=120
-```
-
-Protect it:
-
-```bash
-chown root:root /opt/proxmox-backup-orchestrator-agent/.env
-chmod 600 /opt/proxmox-backup-orchestrator-agent/.env
-```
-
-Install the systemd service as `proxmox-backup-orchestrator-agent-http.service`. If your repo service file has another name, copy it under this production name:
-
-```bash
-cp apps/agent/deploy/systemd/proxmox-backup-orchestrator-agent-api.service \
-  /etc/systemd/system/proxmox-backup-orchestrator-agent-http.service
-systemctl daemon-reload
-systemctl enable --now proxmox-backup-orchestrator-agent-http.service
-systemctl status proxmox-backup-orchestrator-agent-http.service
-```
-
-Health check from the app VM:
-
-```bash
-curl -H "X-Agent-Token: <host-agent-token>" http://<proxmox-host>:8090/health
-```
-
-## 4. Install the PBS Agent
-
-On the PBS VM:
-
-```bash
-mkdir -p /opt/proxmox-backup-orchestrator-pbs-agent
-rsync -a apps/agent/ /opt/proxmox-backup-orchestrator-pbs-agent/
-cd /opt/proxmox-backup-orchestrator-pbs-agent
-python3 -m venv .venv
-.venv/bin/pip install -e .
-```
-
-Create `/opt/proxmox-backup-orchestrator-pbs-agent/.env`:
-
-```env
-AGENT_API_BASE_URL=http://<app-vm-ip>:8000/api/v1
-AGENT_HOSTNAME=<pbs-hostname>
-AGENT_VERSION=0.1.0
-AGENT_TIMEOUT_SECONDS=10
-AGENT_INCLUDE_NON_USB_CANDIDATES=false
-AGENT_EXPORT_TIMEOUT_SECONDS=7200
-AGENT_DATASTORE_CREATE_TIMEOUT_SECONDS=14400
-AGENT_SERVER_HOST=0.0.0.0
-AGENT_SERVER_PORT=8091
-AGENT_SERVER_TOKEN=<same-value-as-PBS_AGENT_TOKEN>
-AGENT_REPO_PATH=/opt/proxmox-backup-orchestrator-pbs-agent
-AGENT_MAINTENANCE_TIMEOUT_SECONDS=120
-PBS_DATASTORE=<your-source-datastore>
-```
-
-`PBS_DATASTORE` must match the source datastore (same value as on the app VM). At startup the
-agent checks that it exists on this PBS, logs an error listing the available datastores if it
-does not, and reports the result under `source_datastore` in `GET /health`.
-
-Protect it:
-
-```bash
-chown root:root /opt/proxmox-backup-orchestrator-pbs-agent/.env
-chmod 600 /opt/proxmox-backup-orchestrator-pbs-agent/.env
-```
-
-Install the systemd service:
-
-```bash
-cp apps/agent/deploy/systemd/proxmox-backup-orchestrator-pbs-agent-api.service \
-  /etc/systemd/system/proxmox-backup-orchestrator-pbs-agent-http.service
-sed -i 's#/opt/proxmox-backup-orchestrator-agent#/opt/proxmox-backup-orchestrator-pbs-agent#g' \
-  /etc/systemd/system/proxmox-backup-orchestrator-pbs-agent-http.service
-systemctl daemon-reload
-systemctl enable --now proxmox-backup-orchestrator-pbs-agent-http.service
-systemctl status proxmox-backup-orchestrator-pbs-agent-http.service
-```
-
-Health check from the app VM:
-
-```bash
-curl -H "X-Agent-Token: <pbs-agent-token>" http://<pbs-vm>:8091/health
-```
-
-The response must contain `"source_datastore": {"status": "ok", ...}`.
-
-## 5. Firewall Rules
-
-Limit agent ports to the app VM IP.
-
-On Proxmox, add a host firewall rule for TCP `8090` from `<app-vm-ip>` only. See [Security](SECURITY.md) for a `host.fw` example.
-
-On PBS, configure `nftables` to allow TCP `8091` from `<app-vm-ip>` only. See [Security](SECURITY.md) for a full example.
-
-## 6. Final Checks
-
-From the app VM:
-
-```bash
-# The session is an HttpOnly cookie: keep it in a cookie jar.
-curl -sS -c /tmp/pbo.cookies -X POST https://<app-host>/api/v1/auth/token \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  --data-urlencode "username=<admin-username>" \
-  --data-urlencode "password=<admin-password>"
-curl -sS -b /tmp/pbo.cookies https://<app-host>/api/v1/disks/preferred
-curl -H "X-Agent-Token: <host-agent-token>" http://<proxmox-host>:8090/health
-curl -H "X-Agent-Token: <pbs-agent-token>" http://<pbs-vm>:8091/health
-```
-
-Open the UI:
-
-```text
-https://<app-host>/        # TLS reverse proxy in front of port 8000 (recommended)
-http://<app-vm-ip>:8000    # plain HTTP: only with AUTH_COOKIE_SECURE=false
-```
-
-The API serves the web UI on the same port (`8000`); there is no separate web
-container anymore. On a fresh database the first screen creates the
-administrator account.
-
-## Troubleshooting
-
-**Login succeeds but the UI goes straight back to the login screen**
-
-The session cookie is `Secure`; browsers drop it over plain `http://<ip>`. Use
-HTTPS (reverse proxy) or set `AUTH_COOKIE_SECURE=false` on a trusted LAN.
-
-**Legacy `AUTH_PASSWORD_HASH` was not imported (upgrade)**
-
-If Docker Compose receives an unescaped bcrypt hash, it may interpolate `$2b`, `$12`, or later segments; the API then sees a truncated hash, logs a warning and does not import it. Either fix the value with `$$` escaping before the first start, or create the administrator from the first-run screen.
-
-**`code_secret` still works**
-
-Remove it from every environment file, shell profile, service override, and secret store. This deployment uses database accounts, `AUTH_SECRET_KEY`, and agent tokens. Restart the app and both agents after cleanup.
-
-**Agent health returns 401**
-
-The `X-Agent-Token` header does not match `AGENT_SERVER_TOKEN` on that agent. Compare `HOST_AGENT_TOKEN` with the Proxmox agent token, and `PBS_AGENT_TOKEN` with the PBS agent token. Restart the affected service after editing `.env`.
-
-**PBS disk is visible but not mounted**
-
-Confirm the disk is attached to the PBS VM, then inspect the PBS agent logs:
-
-```bash
-journalctl -u proxmox-backup-orchestrator-pbs-agent-http.service -n 200 --no-pager
-```
-
-The first dedicated preparation may need destructive confirmation. Reuse mode should mount the existing PBS datastore without formatting.
-
-**USB passthrough is still attached**
-
-Check the PBS VM config on the Proxmox host:
-
-```bash
-qm config <pbs-vm-id> | grep '^usb'
-```
-
-Run safe eject again from the UI. If necessary, detach the stale slot manually only after confirming the PBS datastore is unmounted.
-
-**External datastore reuse vs first format**
-
-First preparation of a new dedicated disk can format the disk. Later runs should reuse the existing filesystem and PBS datastore unless force format is explicitly requested.
-
-**Source datastore renamed or migrated (`source_datastore.status` is `missing`)**
-
-The agent `/health` response and its log list the datastores that really exist on PBS. Update `PBS_DATASTORE` in the PBS agent `.env`, then restart the agent service (`systemctl restart proxmox-backup-orchestrator-pbs-agent-http.service`). Update `PBS_DATASTORE` in the app VM `.env` too and recreate the stack with `docker compose --env-file .env -f infra/docker/docker-compose.yml up --build -d`.
+Everything else (Proxmox/PBS connections, notifications, agents) is stored in
+the database and edited from the UI/API.

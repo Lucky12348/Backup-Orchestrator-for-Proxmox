@@ -38,7 +38,37 @@ Keep `.env` out of git. The repository `.gitignore` excludes `.env` and `.env.*`
 
 ## Agent Tokens
 
-Each root agent has its own shared bearer-style token sent in the `X-Agent-Token` header.
+### Agents installed with a pairing code (documented path)
+
+`POST /api/v1/agents/pairing` (admin session) returns a single-use code valid
+15 minutes (only its SHA-256 is stored). `install.sh` registers the agent with
+it (`POST /api/v1/agents/register`, public, authenticated by the code; 10
+failures within 15 minutes from one address → HTTP 429). The registration
+produces, **per agent and per direction**:
+
+| Token | Direction | Stored in the app | Stored on the agent |
+|---|---|---|---|
+| agent token | app → agent (`X-Agent-Token`) | Fernet-encrypted (key derived from `AUTH_SECRET_KEY`) | `AGENT_SERVER_TOKEN` |
+| callback token | agent → app (heartbeat, disk reports, run logs) | SHA-256 only | `AGENT_CALLBACK_TOKEN` |
+
+- The app pins the SHA-256 of the agent certificate sent at registration on
+  **every** call (checked in the TLS handshake, before the token is sent).
+- The agent pins the app certificate (`AGENT_API_FINGERPRINT`, confirmed by the
+  operator when running `install.sh`) on every call to the app, and only sends
+  its callback token to its own `AGENT_API_BASE_URL`.
+- An agent token is not accepted as a callback credential, and a host agent's
+  callback token is not accepted for PBS run logs.
+- Registering a new agent of the same role revokes the previous one; **Revoke**
+  (`DELETE /api/v1/agents/{id}`) disables an agent immediately. Rotation =
+  re-run the install command with a new code.
+- The agent listens on the `vmbr0` address only, over HTTPS, and serves only
+  the routes of its role (`AGENT_ROLE`).
+
+### Static tokens (legacy `.env`)
+
+Still accepted for roles without a registered agent. Each root agent has its
+own shared bearer-style token sent in the `X-Agent-Token` header (also used,
+historically, for the agent → app direction).
 
 Generate separate tokens:
 

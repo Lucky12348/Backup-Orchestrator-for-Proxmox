@@ -2,7 +2,9 @@ from fastapi import APIRouter, Depends
 
 from app.api.routes import (
     agent,
+    agents,
     assets,
+    calendar,
     backup_runs,
     disks,
     external_backups,
@@ -26,6 +28,7 @@ public_router = APIRouter(prefix="/api/v1")
 public_router.include_router(auth_router)
 public_router.include_router(setup.public_router)
 public_router.include_router(agent.router)
+public_router.include_router(agents.public_router)
 public_router.include_router(external_backups.public_callback_router)
 
 protected_router = APIRouter(
@@ -37,6 +40,8 @@ protected_router.include_router(overview.router)
 protected_router.include_router(setup.router)
 protected_router.include_router(settings.router)
 protected_router.include_router(agent.status_router)
+protected_router.include_router(agents.router)
+protected_router.include_router(calendar.router)
 protected_router.include_router(assets.router)
 protected_router.include_router(vms.router)
 protected_router.include_router(disks.router)
@@ -55,3 +60,6 @@ protected_router.include_router(host_notifications.activity_router)
 api_router = APIRouter()
 api_router.include_router(public_router)
 api_router.include_router(protected_router)
+# Root-level public routes (outside /api/v1): agent installer and calendar feed.
+api_router.include_router(agents.install_router)
+api_router.include_router(calendar.feed_router)

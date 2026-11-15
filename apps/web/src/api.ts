@@ -458,3 +458,37 @@ export function getHostNotifQueue() {
 export function getActivityEvents(limit = 100) {
   return request<ActivityEvent[]>(`/activity-events?limit=${limit}`);
 }
+
+// --- Agents (one-line install) ----------------------------------------------------
+
+export interface AgentPairing {
+  code: string;
+  expires_at: string;
+  install_command: string;
+  app_url: string;
+  app_fingerprint: string | null;
+}
+
+export interface RegisteredAgent {
+  id: number;
+  role: "host" | "pbs";
+  hostname: string;
+  base_url: string;
+  fingerprint: string;
+  created_at: string;
+  last_seen_at: string | null;
+  revoked_at: string | null;
+  active: boolean;
+}
+
+export function createAgentPairing() {
+  return request<AgentPairing>("/agents/pairing", { method: "POST" });
+}
+
+export function getRegisteredAgents() {
+  return request<RegisteredAgent[]>("/agents");
+}
+
+export function revokeRegisteredAgent(agentId: number) {
+  return request<RegisteredAgent>(`/agents/${agentId}`, { method: "DELETE" });
+}

@@ -1,5 +1,16 @@
 # Maintenance / Updates
 
+## LXC install (documented path)
+
+Inside the container run `update` (see [INSTALLATION.md](INSTALLATION.md#5-updates)):
+database dump, new version staged, swap, migrations, `/health` check, automatic
+rollback of code and database on failure. The host agent installed with the
+one-line command is updated by re-running that command with a new pairing
+code. The update center described below is for the **legacy** Docker app VM
+and agents installed from a git checkout.
+
+## Legacy update center
+
 The Settings page includes a controlled update center for the app VM, the Proxmox host agent, and the PBS VM agent.
 
 ## Security Model

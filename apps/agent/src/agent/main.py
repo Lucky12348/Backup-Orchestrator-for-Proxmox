@@ -8,6 +8,7 @@ import os.path
 import posixpath
 import shutil
 import socket
+import ssl
 import stat
 import string
 import subprocess
@@ -124,6 +125,28 @@ class AgentSettings:
     # role are served (see agent.server.ROUTE_ROLES). Empty = every route, the
     # legacy behaviour, logged as a warning at startup.
     role: str = os.getenv("AGENT_ROLE", "").strip().lower()
+    # One-line install (registration with a pairing code) — see
+    # apps/api/app/services/agent_registry.py:
+    # * callback_token: agent -> app token (heartbeat, disk reports, run logs),
+    #   distinct from server_token (app -> agent). Empty = legacy: server_token.
+    # * api_fingerprint: SHA-256 of the app certificate, pinned on every call
+    #   to AGENT_API_BASE_URL.
+    # * tls_cert_file / tls_key_file: serve HTTPS (self-signed, pinned by the app).
+    callback_token: str = os.getenv("AGENT_CALLBACK_TOKEN", "")
+    api_fingerprint: str = os.getenv("AGENT_API_FINGERPRINT", "")
+    tls_cert_file: str = os.getenv("AGENT_TLS_CERT_FILE", "")
+    tls_key_file: str = os.getenv("AGENT_TLS_KEY_FILE", "")
+
+    @property
+    def reporting_token(self) -> str:
+        return self.callback_token or self.server_token
+
+
+def _is_own_api_url(settings: AgentSettings, url: str | None) -> bool:
+    if url is None:
+        return True
+    base = settings.api_base_url.rstrip("/") + "/"
+    return url.startswith(base)
 
 
 class ExternalExportProgress:
@@ -139,8 +162,12 @@ class ExternalExportProgress:
         self.callback_url = callback_url
         # Do not fall back to `settings.server_token`: that is this agent's own
         # inbound-API secret, and leaking it to an externally-supplied callback_url
-        # would let a caller exfiltrate the master token. The API always supplies
-        # its own callback_token explicitly for real progress callbacks.
+        # would let a caller exfiltrate the master token. Legacy API versions
+        # supply their own callback_token explicitly. A registered agent gets
+        # neither URL nor token in the payload and uses its own callback token,
+        # but only towards its own configured AGENT_API_BASE_URL.
+        if callback_token is None and settings.callback_token and _is_own_api_url(settings, callback_url):
+            callback_token = settings.callback_token
         self.callback_token = callback_token
 
     def post(
@@ -183,7 +210,7 @@ def post_heartbeat(settings: AgentSettings) -> None:
         "agent_version": settings.agent_version,
         "observed_at": current_timestamp(),
     }
-    post_json(settings, "/agent/heartbeat", payload, token=settings.server_token)
+    post_json(settings, "/agent/heartbeat", payload, token=settings.reporting_token)
     logger.info("Heartbeat sent for host %s", settings.hostname)
 
 
@@ -194,7 +221,7 @@ def post_real_disk_report(settings: AgentSettings) -> None:
         "observed_at": current_timestamp(),
         "disks": disks,
     }
-    post_json(settings, "/agent/disks/report", payload, token=settings.server_token)
+    post_json(settings, "/agent/disks/report", payload, token=settings.reporting_token)
     logger.info("Real disk report sent for host %s with %s disks", settings.hostname, len(disks))
 
 
@@ -204,7 +231,7 @@ def post_mock_disk_report(settings: AgentSettings) -> None:
         "observed_at": current_timestamp(),
         "disks": mock_disks(),
     }
-    post_json(settings, "/agent/disks/report", payload, token=settings.server_token)
+    post_json(settings, "/agent/disks/report", payload, token=settings.reporting_token)
     logger.info("Mock disk report sent for host %s", settings.hostname)
 
 
@@ -3340,10 +3367,48 @@ def mock_disks() -> list[dict[str, Any]]:
     ]
 
 
+def app_tls_verify(settings: AgentSettings) -> bool | ssl.SSLContext:
+    """httpx `verify=` for calls to the app: pinned certificate when the agent
+    was installed with a pairing code, default CA verification otherwise."""
+    if not settings.api_fingerprint:
+        return True
+    return PinnedAppSSLContext.create(settings.api_fingerprint)
+
+
+class PinnedAppSSLContext(ssl.SSLContext):
+    """Checks the SHA-256 of the app certificate during the handshake, before
+    any byte (and so any token) is sent. The app certificate is self-signed:
+    the pin replaces CA verification."""
+
+    pinned: str = ""
+
+    @classmethod
+    def create(cls, fingerprint: str) -> "PinnedAppSSLContext":
+        context = cls(ssl.PROTOCOL_TLS_CLIENT)
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        context.pinned = normalize_fingerprint(fingerprint)
+        return context
+
+    def wrap_socket(self, *args: Any, **kwargs: Any) -> ssl.SSLSocket:  # type: ignore[override]
+        sock = super().wrap_socket(*args, **kwargs)
+        der = sock.getpeercert(binary_form=True)
+        seen = normalize_fingerprint(hashlib.sha256(der or b"").hexdigest())
+        if der is None or seen != self.pinned:
+            sock.close()
+            raise ssl.SSLCertVerificationError(f"App TLS fingerprint mismatch: got {seen}, pinned {self.pinned}.")
+        return sock
+
+
+def normalize_fingerprint(value: str) -> str:
+    cleaned = value.strip().replace(":", "").replace(" ", "").upper()
+    return ":".join(cleaned[index : index + 2] for index in range(0, len(cleaned), 2))
+
+
 def post_json(settings: AgentSettings, path: str, payload: dict[str, Any], token: str | None = None) -> None:
     base_url = settings.api_base_url.rstrip("/")
     headers = {"X-Agent-Token": token} if token else None
-    with httpx.Client(timeout=settings.timeout_seconds) as client:
+    with httpx.Client(timeout=settings.timeout_seconds, verify=app_tls_verify(settings)) as client:
         response = client.post(f"{base_url}{path}", json=payload, headers=headers)
         response.raise_for_status()
 
@@ -3358,7 +3423,9 @@ def post_progress_callback(
 ) -> None:
     headers = {"X-Agent-Token": token} if token else None
     url = callback_url or f"{settings.api_base_url.rstrip('/')}{fallback_path}"
-    with httpx.Client(timeout=settings.timeout_seconds) as client:
+    # The app pin only applies to the app's own URL.
+    verify = app_tls_verify(settings) if _is_own_api_url(settings, url) else True
+    with httpx.Client(timeout=settings.timeout_seconds, verify=verify) as client:
         response = client.post(url, json=payload, headers=headers)
         response.raise_for_status()
 
@@ -3524,11 +3591,17 @@ def _infer_error_return_code(exc: Exception) -> int:
 
 
 def serve_http_api(settings: AgentSettings) -> None:
+    tls: dict[str, str] = {}
+    if settings.tls_cert_file and settings.tls_key_file:
+        tls = {"ssl_certfile": settings.tls_cert_file, "ssl_keyfile": settings.tls_key_file}
+    elif settings.tls_cert_file or settings.tls_key_file:
+        raise SystemExit("AGENT_TLS_CERT_FILE and AGENT_TLS_KEY_FILE must be set together.")
     uvicorn.run(
         "agent.server:app",
         host=settings.server_host,
         port=settings.server_port,
         log_level="info",
+        **tls,
     )
 
 

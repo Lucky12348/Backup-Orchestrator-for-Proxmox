@@ -76,6 +76,18 @@ jobs:
       - name: Tests
         run: npm test
 
+  shellcheck:
+    name: shellcheck (install scripts)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # shellcheck is preinstalled on ubuntu-latest. Every tracked *.sh plus the
+      # agent installer served by the app; -x follows the sourced helper files.
+      - name: shellcheck
+        run: |
+          shellcheck --version
+          git ls-files -z '*.sh' | xargs -0 shellcheck -x -P SCRIPTDIR
+
   docker:
     name: docker image (api + web)
     runs-on: ubuntu-latest

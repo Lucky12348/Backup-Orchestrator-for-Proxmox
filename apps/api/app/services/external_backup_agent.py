@@ -218,6 +218,11 @@ class ExternalBackupAgentBridge:
         )
 
     def _callback_payload(self, run_id: int) -> dict[str, object]:
+        if self.settings.pbs_agent_fingerprint:
+            # Registered agent: it posts to its own AGENT_API_BASE_URL (app
+            # certificate pinned) with its own callback token, distinct from
+            # the app -> agent token. Nothing secret travels in the payload.
+            return {"callback_run_id": run_id}
         base_url = self.settings.external_backup_callback_base_url.rstrip("/")
         return {
             "callback_run_id": run_id,

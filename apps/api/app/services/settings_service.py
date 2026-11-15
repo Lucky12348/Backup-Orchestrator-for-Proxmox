@@ -230,8 +230,18 @@ def stored_secret(db: Session, key: str) -> str | None:
         return None
 
 
+def load_all_overrides(db: Session) -> dict[str, Any]:
+    """Stored settings + the connection of registered agents (which win over
+    the static HOST_AGENT_* / PBS_AGENT_* values)."""
+    from app.services.agent_registry import connection_overrides
+
+    overrides = load_overrides(db)
+    overrides.update(connection_overrides(db))
+    return overrides
+
+
 def effective_settings(db: Session, base: Settings | None = None) -> Settings:
-    return replace(base or Settings(), **load_overrides(db))
+    return replace(base or Settings(), **load_all_overrides(db))
 
 
 def settings_view(db: Session, groups: Iterable[str] | None = None) -> list[dict[str, Any]]:
@@ -324,6 +334,6 @@ def activate_settings_store(session_factory) -> None:  # noqa: ANN001
 
     def _load() -> dict[str, Any]:
         with session_factory() as db:
-            return load_overrides(db)
+            return load_all_overrides(db)
 
     set_settings_overlay_loader(_load)

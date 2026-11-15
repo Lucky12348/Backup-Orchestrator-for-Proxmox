@@ -126,6 +126,7 @@ def get_maintenance_host_agent_client(settings: Settings | None = None) -> HostA
         base_url=current_settings.host_agent_base_url,
         token=current_settings.host_agent_token,
         timeout_seconds=current_settings.maintenance_timeout_seconds,
+        fingerprint=current_settings.host_agent_fingerprint,
         label="Host agent maintenance",
     )
 
@@ -136,6 +137,7 @@ def get_maintenance_pbs_agent_client(settings: Settings | None = None) -> HostAg
         base_url=current_settings.pbs_agent_base_url,
         token=current_settings.pbs_agent_token,
         timeout_seconds=current_settings.maintenance_timeout_seconds,
+        fingerprint=current_settings.pbs_agent_fingerprint,
         label="PBS agent maintenance",
     )
 

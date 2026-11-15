@@ -4,6 +4,7 @@ from typing import Any
 import httpx
 
 from app.core.config import Settings, get_settings
+from app.core.tls import build_tls_verify
 
 
 MAX_LOG_LENGTH = 32000
@@ -46,11 +47,22 @@ class HostAgentError(RuntimeError):
 
 
 class HostAgentClient:
-    def __init__(self, *, base_url: str, token: str, timeout_seconds: float, label: str) -> None:
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        token: str,
+        timeout_seconds: float,
+        label: str,
+        fingerprint: str = "",
+    ) -> None:
         self.base_url = base_url
         self.token = token
         self.timeout_seconds = timeout_seconds
         self.label = label
+        # SHA-256 of the agent certificate, recorded at registration: checked in
+        # the TLS handshake of every request, before the token is sent.
+        self.fingerprint = fingerprint
 
     def get_health(self) -> dict[str, Any]:
         result = self._request("GET", "/health")
@@ -81,7 +93,9 @@ class HostAgentClient:
         headers = {"X-Agent-Token": self.token}
 
         try:
-            with httpx.Client(timeout=self.timeout_seconds, headers=headers) as client:
+            # Pin only: agent certificates are self-signed, the pin replaces the CA chain.
+            verify = build_tls_verify(False, self.fingerprint) if self.fingerprint else True
+            with httpx.Client(timeout=self.timeout_seconds, headers=headers, verify=verify) as client:
                 response = client.request(method, url, json=payload, params=params)
         except httpx.TimeoutException as exc:
             raise HostAgentError(
@@ -175,6 +189,7 @@ def get_host_agent_client() -> HostAgentClient:
         token=settings.host_agent_token,
         timeout_seconds=settings.host_agent_timeout_seconds,
         label="Host agent",
+        fingerprint=settings.host_agent_fingerprint,
     )
 
 
@@ -196,6 +211,7 @@ def get_pbs_agent_client() -> HostAgentClient:
         token=settings.pbs_agent_token,
         timeout_seconds=settings.pbs_agent_timeout_seconds,
         label="PBS agent",
+        fingerprint=settings.pbs_agent_fingerprint,
     )
 
 
@@ -206,10 +222,12 @@ def _build_agent_client(
     token: str,
     timeout_seconds: float,
     label: str,
+    fingerprint: str = "",
 ) -> HostAgentClient:
     return HostAgentClient(
         base_url=base_url,
         token=token,
         timeout_seconds=timeout_seconds,
         label=label,
+        fingerprint=fingerprint,
     )

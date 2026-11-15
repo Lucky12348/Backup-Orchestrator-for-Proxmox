@@ -141,6 +141,10 @@ legacy `verify=false` behaviour in that case.
 | Proxmox host agent (root) | QEMU USB passthrough attach/detach (`qm set`), VM USB config, disk spin-down, disk discovery reports (timer), host ntfy engine, host disk preparation endpoint |
 | PBS agent | Only with `PBS_MODE=agent`: legacy (fstab) datastores, coexistence mode, PBS agent maintenance |
 
+The host agent is installed with one command shown by the app (pairing code,
+HTTPS with a pinned certificate in both directions, one token per direction):
+see [INSTALLATION.md](INSTALLATION.md#4-install-the-host-agent-one-line).
+
 Agents now serve only the routes of their role (`AGENT_ROLE=host|pbs`,
 see `apps/agent/src/agent/server.py:ROUTE_ROLES`); an empty role keeps the
 historical "all routes" behaviour with a startup warning.
