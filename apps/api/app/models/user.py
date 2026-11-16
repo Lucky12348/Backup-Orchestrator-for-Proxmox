@@ -21,3 +21,5 @@ class User(Base):
     is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # UI language chosen by this account ("en" / "fr"); None = not chosen yet.
+    language: Mapped[str | None] = mapped_column(String(8), nullable=True)

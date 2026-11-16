@@ -136,6 +136,26 @@ No browser, LAN client, or internet host should be able to call the agent ports.
 
 ## Proxmox Firewall `host.fw` for Port 8090
 
+**Written by the agent installer (B12).** Unless `--no-firewall` is given,
+`pbo-agent-install.sh` adds, at the top of the `[RULES]` section of this
+node's `host.fw`:
+
+```ini
+IN ACCEPT -source <app-ip> -p tcp -dport 8090 -log nolog # pbo-agent
+IN DROP -p tcp -dport 8090 -log nolog # pbo-agent
+```
+
+`<app-ip>` is the IPv4 of the app URL used for the install (a DNS name is
+resolved with `getent`; an IPv6-only app gets no rule and a warning). The
+rules are tagged so a re-install replaces them and `--uninstall` removes them;
+other lines of the file are left untouched. Host rules only apply when the
+**datacenter** firewall is enabled (*Datacenter › Firewall › Options*); the
+installer never enables it — doing so switches the cluster's default input
+policy — and prints a note when it is off. Check with `pve-firewall status`
+and `pve-firewall compile`.
+
+The manual equivalent follows.
+
 The node-local host firewall file is:
 
 ```text

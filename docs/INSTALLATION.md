@@ -95,8 +95,16 @@ fingerprint is printed at the end of the install and shown by
 Until the wizard is finished, every page leads to `/setup`. Its state is kept
 server-side: a reload resumes on the same step.
 
+The UI is in **English by default**; French is available from the language
+selector shown on every wizard screen (and later in the top bar). The choice
+is kept in the browser before login and saved on the account afterwards. The
+browser language is only used on the very first load, when nothing was chosen
+yet.
+
 1. **Administrator account** — the only account of the app (password ≥ 12
-   characters).
+   characters), and the **time zone** of the plannings, detected from the
+   browser and editable. Existing plannings keep their own zone; the setting
+   is `TIMEZONE` (`PATCH /api/v1/settings`) afterwards.
 2. **Host agent** — a single-use pairing code is generated automatically and
    the screen shows two commands to run as root in the Proxmox VE host shell
    (*Datacenter › node › Shell*), plus the app certificate fingerprint:
@@ -118,7 +126,14 @@ server-side: a reload resumes on the same step.
    PVE version and the number of VMs/CTs.
 4. **Proxmox Backup Server** — pick the PBS VM in the list (the wizard
    proposes the VM whose guest-agent address answers on port 8007, or whose
-   name contains "pbs"; the URL is pre-filled when an address is known).
+   name contains "pbs"). The address is then looked up by the host agent
+   **without needing the QEMU guest agent**: the MAC addresses of the VM's
+   `net0..netN` (`qm config`) are matched in the host neighbour table
+   (`ip neigh`, after one ping per address of the bridge's /24 if the VM is
+   not there yet); the guest agent is used first when it answers. The app
+   keeps the address only if `https://<ip>:8007` answers like PBS: the field
+   is then pre-filled with a *Detected automatically* badge (still editable),
+   otherwise it stays empty with a hint.
    *Verify* shows the PBS certificate fingerprint: compare it with
    *PBS › Dashboard › Show Fingerprint* and tick "the fingerprint matches".
    Then type the **root@pam password once**: the app opens a PBS session
@@ -223,8 +238,15 @@ bash pbo-agent-install.sh --uninstall                      # services, udev rule
 bash pbo-agent-install.sh --uninstall --purge-pve-access   # + token pbo@pve!pbo, user pbo@pve, role PBO
 ```
 
-Restrict port 8090 to the LXC address in the Proxmox firewall
-([SECURITY.md](SECURITY.md#proxmox-firewall-hostfw-for-port-8090)).
+**Firewall.** The installer offers (answer *yes* by default, `--firewall` to
+skip the question, `--no-firewall` to refuse) to limit port 8090 to the app:
+two rules tagged `# pbo-agent` are inserted at the top of `[RULES]` in
+`/etc/pve/nodes/<node>/host.fw` — `IN ACCEPT -source <app-ip> -p tcp -dport 8090`
+then `IN DROP -p tcp -dport 8090`. A re-install replaces them, `--uninstall`
+removes them. The datacenter firewall is never switched on by the installer
+(it changes the default policy of the whole cluster): if it is off, the
+installer says the rule is not active yet. Details:
+[SECURITY.md](SECURITY.md#proxmox-firewall-hostfw-for-port-8090).
 
 ## 5. Updates
 
@@ -289,6 +311,18 @@ journalctl -u pbo-agent-report.service -n 50
   ("USB disk added: …"). An agent installed before this version has no rule:
   re-run its install command. Without the rule the 5-minute timer still
   reports the disk.
+- **Test VM/CT rollbacks fail ("snapshot … is not the most recent") on a
+  host running sanoid or zfs-auto-snapshot**: these tools snapshot every zvol
+  on a schedule, including the disks of throw-away test machines, and a ZFS
+  rollback can only go back to the most recent snapshot. Exclude the test
+  datasets (`zfs set com.sun:auto-snapshot=false rpool/data/vm-<id>-disk-0`
+  for zfs-auto-snapshot; drop them from `/etc/sanoid/sanoid.conf`, or set
+  `autosnap = no` on their template, for sanoid), or destroy the extra
+  snapshots first (`zfs list -t snapshot -o name rpool/data/vm-<id>-disk-0`).
+  Nothing in PBO creates ZFS snapshots.
+- **Agent port 8090 reachable from other machines**: the installer adds a
+  Proxmox firewall rule (see section 4); it is only active when the datacenter
+  firewall is enabled.
 - **Live updates do not arrive behind a reverse proxy**: `/api/v1/events` is a
   Server-Sent Events stream; disable response buffering for it (nginx:
   `proxy_buffering off;` — the app also sends `X-Accel-Buffering: no`) and

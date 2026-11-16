@@ -2,8 +2,18 @@
 
 export const SETUP_PATH = "/setup";
 
-export const WIZARD_STEPS = ["admin", "agent", "pve", "pbs", "done"] as const;
-export type WizardStep = (typeof WIZARD_STEPS)[number];
+// Every step the wizard knows, in order. "notifications" (optional, between
+// PBS and Done) is prepared but hidden until NOTIFICATIONS_STEP_ENABLED.
+export const ALL_WIZARD_STEPS = ["admin", "agent", "pve", "pbs", "notifications", "done"] as const;
+export type WizardStep = (typeof ALL_WIZARD_STEPS)[number];
+export const NOTIFICATIONS_STEP_ENABLED = false;
+
+export function visibleSteps(notificationsEnabled: boolean = NOTIFICATIONS_STEP_ENABLED): WizardStep[] {
+  return ALL_WIZARD_STEPS.filter((step) => step !== "notifications" || notificationsEnabled);
+}
+
+/** Steps shown in the indicator. */
+export const WIZARD_STEPS: readonly WizardStep[] = visibleSteps();
 
 export type WizardLanguage = "fr" | "en";
 export type ThemePreference = "system" | "light" | "dark";
@@ -20,19 +30,33 @@ export function setupRedirect(pathname: string, setupCompleted: boolean | null):
   return null;
 }
 
-export function normalizeStep(value: string | null | undefined): WizardStep {
-  return (WIZARD_STEPS as readonly string[]).includes(value ?? "") ? (value as WizardStep) : "agent";
+export function normalizeStep(
+  value: string | null | undefined,
+  notificationsEnabled: boolean = NOTIFICATIONS_STEP_ENABLED,
+): WizardStep {
+  const steps = visibleSteps(notificationsEnabled) as string[];
+  if (steps.includes(value ?? "")) return value as WizardStep;
+  // A hidden step stored server-side (feature switched off) resumes on Done's side.
+  return value === "notifications" ? "pbs" : "agent";
 }
 
-export function stepIndex(step: WizardStep): number {
-  return WIZARD_STEPS.indexOf(step);
+export function stepIndex(step: WizardStep, notificationsEnabled: boolean = NOTIFICATIONS_STEP_ENABLED): number {
+  return visibleSteps(notificationsEnabled).indexOf(step);
+}
+
+/** Step after `step` among the visible ones (null after Done). */
+export function nextStep(step: WizardStep, notificationsEnabled: boolean = NOTIFICATIONS_STEP_ENABLED): WizardStep | null {
+  const steps = visibleSteps(notificationsEnabled);
+  const index = steps.indexOf(step);
+  return index >= 0 && index < steps.length - 1 ? steps[index + 1] : null;
 }
 
 /** Back target, or null when going back makes no sense (account created, setup done). */
-export function previousStep(step: WizardStep): WizardStep | null {
-  if (step === "pve") return "agent";
-  if (step === "pbs") return "pve";
-  return null;
+export function previousStep(step: WizardStep, notificationsEnabled: boolean = NOTIFICATIONS_STEP_ENABLED): WizardStep | null {
+  if (step === "admin" || step === "agent" || step === "done") return null;
+  const steps = visibleSteps(notificationsEnabled);
+  const index = steps.indexOf(step);
+  return index > 0 ? steps[index - 1] : null;
 }
 
 export function detectLanguage(languages: readonly string[] | undefined): WizardLanguage {

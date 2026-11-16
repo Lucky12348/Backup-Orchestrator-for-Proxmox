@@ -3,6 +3,16 @@ export type Language = "en" | "fr";
 export const translations = {
   en: {
     title: "Proxmox Backup Orchestrator",
+    login: {
+      subtitle: "BACKUP ORCHESTRATION CONSOLE",
+      username: "USERNAME",
+      password: "PASSWORD",
+      submit: "SIGN IN ->",
+      submitting: "SIGNING IN...",
+      invalid: "Incorrect username or password.",
+      locked: "Too many failed attempts. Try again in a few minutes.",
+      failed: "Sign-in failed. Check that the app is reachable, then try again.",
+    },
     appTagline: "Backup visibility, removable media tracking, and planning",
     adminConsole: "Backup administration",
     navigation: "Navigation",
@@ -456,6 +466,16 @@ export const translations = {
   },
   fr: {
     title: "Proxmox Backup Orchestrator",
+    login: {
+      subtitle: "CONSOLE D'ORCHESTRATION DES SAUVEGARDES",
+      username: "UTILISATEUR",
+      password: "MOT DE PASSE",
+      submit: "SE CONNECTER ->",
+      submitting: "CONNEXION...",
+      invalid: "Nom d'utilisateur ou mot de passe incorrect.",
+      locked: "Trop d'essais échoués. Réessayez dans quelques minutes.",
+      failed: "Connexion impossible. Vérifiez que l'application répond, puis réessayez.",
+    },
     appTagline: "Visibilite des sauvegardes, medias amovibles et planification",
     adminConsole: "Console d'administration",
     navigation: "Navigation",

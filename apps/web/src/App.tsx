@@ -35,17 +35,10 @@ interface ConfirmState {
   extra?: ReactNode;
 }
 
-const LANGUAGE_STORAGE_KEY = "pbo:language";
-
-function getStoredLanguage(): Language {
-  const value = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
-  return value === "en" || value === "fr" ? value : "fr";
-}
-
 // Inner app — rendered only when authenticated
 function AuthenticatedApp() {
-  const { markSessionExpired } = useAuth();
-  const [language, setLanguage] = useState<Language>(() => getStoredLanguage());
+  // Language: English by default, per account + localStorage (AuthContext).
+  const { markSessionExpired, language, setLanguage } = useAuth();
   const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
   // Read at confirm-time by handleExternalBackupRequest; a ref (not state) so
   // toggling the checkbox doesn't re-render/recreate the modal's onConfirm closure.
@@ -85,7 +78,6 @@ function AuthenticatedApp() {
   const t = translations[language];
 
   function handleLanguageChange(nextLanguage: Language) {
-    window.localStorage.setItem(LANGUAGE_STORAGE_KEY, nextLanguage);
     setLanguage(nextLanguage);
   }
 
@@ -354,11 +346,11 @@ export default function App() {
 const SetupWizard = lazy(() => import("./setup/SetupWizard").then((module) => ({ default: module.SetupWizard })));
 
 function AppInner() {
-  const { status, setupCompleted, markSetupCompleted } = useAuth();
+  const { status, setupCompleted, markSetupCompleted, language } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   // We need t for LoginPage — use default language here
-  const t = translations["fr"];
+  const t = translations[language];
 
   const loading = (
     <div className="centered-shell">

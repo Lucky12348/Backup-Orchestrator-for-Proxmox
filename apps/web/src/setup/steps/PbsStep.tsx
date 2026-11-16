@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { ArrowLeft, ArrowRight, CheckCircle2, Loader2, Radar, RefreshCw, ShieldCheck } from "lucide-react";
 
 import { Alert } from "../../components/ui/alert";
@@ -16,7 +16,6 @@ import {
   type PbsDatastore,
   type PbsSummary,
 } from "../api";
-import { suggestedPbsUrl } from "../logic";
 import { CommandBlock, ErrorAlert, Field, Fingerprint, ManualSection, useText } from "../shared";
 
 interface PbsStepProps {
@@ -48,17 +47,43 @@ export function PbsStep({ saved, onSaved, onBack, onNext }: PbsStepProps) {
   const [chosen, setChosen] = useState(saved?.datastore ?? "");
   const [busy, setBusy] = useState<"candidates" | "verify" | "connect" | "datastore" | "refresh" | null>("candidates");
   const [error, setError] = useState<unknown>(null);
+  // Address of the chosen VM found by the host agent (no guest agent needed)
+  // and answering on 8007: pre-filled, still editable.
+  const [detect, setDetect] = useState<"idle" | "detecting" | "detected" | "not_found">("idle");
+  const urlEditedRef = useRef(urlEdited);
+  urlEditedRef.current = urlEdited;
+  const detectRun = useRef(0);
+
+  async function runDetect(id: number | null) {
+    if (!id || urlEditedRef.current) return;
+    const run = ++detectRun.current;
+    setDetect("detecting");
+    try {
+      const result = await wizardApi.pbsDetect(id);
+      if (run !== detectRun.current || urlEditedRef.current) return;
+      if (result.detected && result.url) {
+        setUrl(result.url);
+        setDetect("detected");
+      } else {
+        setUrl("");
+        setDetect("not_found");
+      }
+    } catch {
+      if (run === detectRun.current && !urlEditedRef.current) {
+        setUrl("");
+        setDetect("not_found");
+      }
+    }
+  }
 
   useEffect(() => {
     wizardApi
       .pbsCandidates()
       .then((result) => {
         setCandidates(result);
-        setVmid((current) => {
-          const selected = current ?? result.suggested_vmid;
-          if (!urlEdited) setUrl(suggestedPbsUrl(result.vms, selected));
-          return selected;
-        });
+        const selected = vmid ?? result.suggested_vmid;
+        setVmid(selected);
+        void runDetect(selected);
       })
       .catch(setCandidatesError)
       .finally(() => setBusy(null));
@@ -70,7 +95,7 @@ export function PbsStep({ saved, onSaved, onBack, onNext }: PbsStepProps) {
   function selectVm(value: string) {
     const id = Number(value);
     setVmid(id);
-    if (!urlEdited && candidates) setUrl(suggestedPbsUrl(candidates.vms, id));
+    void runDetect(id);
     resetTrust();
   }
 
@@ -286,10 +311,28 @@ export function PbsStep({ saved, onSaved, onBack, onNext }: PbsStepProps) {
                 value={url}
                 onChange={(event: ChangeEvent<HTMLInputElement>) => {
                   setUrl(event.target.value);
+                  setDetect("idle");
+                  detectRun.current += 1; // a pending detection must not overwrite the typed value
                   setUrlEdited(true);
                   resetTrust();
                 }}
-                hint={text.pbs.urlHint}
+                hint={
+                  detect === "detecting" ? (
+                    <span className="flex items-center gap-1.5">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      {text.pbs.detecting}
+                    </span>
+                  ) : detect === "detected" ? (
+                    <Badge variant="success">
+                      <Radar className="h-3 w-3" />
+                      {text.pbs.autoDetected}
+                    </Badge>
+                  ) : detect === "not_found" ? (
+                    text.pbs.notDetected
+                  ) : (
+                    text.pbs.urlHint
+                  )
+                }
               />
               <Button
                 type="button"

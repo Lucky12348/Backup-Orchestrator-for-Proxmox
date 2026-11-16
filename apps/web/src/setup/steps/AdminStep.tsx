@@ -1,9 +1,10 @@
-import { useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { ArrowRight, Loader2 } from "lucide-react";
 
 import { useAuth } from "../../AuthContext";
 import { Button } from "../../components/ui/button";
 import { CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../../components/ui/card";
+import { detectTimeZone, supportedTimeZones } from "../../language";
 import { ErrorAlert, Field, useText } from "../shared";
 
 const MIN_PASSWORD_LENGTH = 12;
@@ -17,6 +18,9 @@ export function AdminStep() {
   const [confirmation, setConfirmation] = useState("");
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
+  // D17: the browser's zone (not Europe/Paris) for new plannings; editable.
+  const [timezone, setTimezone] = useState(detectTimeZone);
+  const zones = useMemo(supportedTimeZones, []);
 
   const tooShort = password.length > 0 && password.length < MIN_PASSWORD_LENGTH;
   const mismatch = confirmation.length > 0 && confirmation !== password;
@@ -28,7 +32,7 @@ export function AdminStep() {
     setBusy(true);
     setError(null);
     try {
-      await createAdmin(username.trim(), password);
+      await createAdmin(username.trim(), password, { timezone: timezone.trim() });
     } catch (err) {
       setError(err); // coded error ({code, message}) from AuthContext
       setBusy(false);
@@ -76,6 +80,21 @@ export function AdminStep() {
           required
           disabled={busy}
         />
+        <Field
+          label={text.admin.timezone}
+          list="pbo-timezones"
+          autoComplete="off"
+          spellCheck={false}
+          value={timezone}
+          onChange={(event) => setTimezone(event.target.value)}
+          hint={text.admin.timezoneHint}
+          disabled={busy}
+        />
+        <datalist id="pbo-timezones">
+          {zones.map((zone) => (
+            <option key={zone} value={zone} />
+          ))}
+        </datalist>
       </CardContent>
       <CardFooter className="justify-end">
         <Button type="submit" disabled={busy || !valid}>

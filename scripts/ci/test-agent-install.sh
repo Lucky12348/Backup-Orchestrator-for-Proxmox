@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Unit tests for apps/api/app/agent_install/install.sh (run in CI, needs bash).
 #   bash scripts/ci/test-agent-install.sh
+# Command stubs (systemctl, hostname, pve-firewall…) are called by the sourced installer:
+# shellcheck disable=SC2329
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -52,6 +54,10 @@ uninstall_case() {
     mkdir -p "${INSTALL_DIR}/venv" "${CONF_DIR}/tls" "${STATE_DIR}"
     write_udev_rule "${UDEV_RULE_FILE}"
     udevadm() { echo "udevadm $*" >>"${calls}"; }
+    PVE_NODES_DIR="${tmp}/nodes"
+    hostname() { echo pve; }
+    pve-firewall() { :; }
+    write_firewall_rules "${PVE_NODES_DIR}/pve/host.fw" 192.168.1.60 8090
     require_root() { :; }
     systemctl() { echo "systemctl $*" >>"${calls}"; }
     pveum() { echo "pveum $*" >>"${calls}"; [[ "$1 $2" == "user list" ]] && echo '[{"userid":"pbo@pve"}]'; return 0; }
@@ -61,6 +67,7 @@ uninstall_case() {
     main --uninstall >/dev/null
     [[ ! -e "${INSTALL_DIR}" && ! -e "${CONF_DIR}" && ! -e "${STATE_DIR}" ]] || { echo "FAIL  uninstall left files"; exit 1; }
     [[ ! -e "${UDEV_RULE_FILE}" ]] || { echo "FAIL  uninstall left the udev rule"; exit 1; }
+    ! grep -q "pbo-agent" "${PVE_NODES_DIR}/pve/host.fw" || { echo "FAIL  uninstall left the firewall rules"; exit 1; }
   ) || failures=$((failures + 1))
   if ! grep -q "systemctl disable --now --quiet pbo-agent.service" "${calls}"; then
     echo "FAIL  uninstall did not stop pbo-agent.service"
@@ -114,6 +121,76 @@ for expect in "sync-state --settle 2" "OnUnitActiveSec=5min" "StateDirectory=pbo
     failures=$((failures + 1))
   fi
 done
+
+# Proxmox firewall rule (B12): app IP from the URL, rules first in [RULES],
+# idempotent, removed by --uninstall, skipped with --no-firewall.
+expect_eq() {
+  local label="$1" expected="$2" actual="$3"
+  if [[ "${expected}" != "${actual}" ]]; then
+    echo "FAIL  ${label}"
+    echo "      expected: ${expected//$'\n'/⏎}"
+    echo "      actual:   ${actual//$'\n'/⏎}"
+    failures=$((failures + 1))
+  fi
+}
+
+firewall_case() {
+  local tmp file
+  tmp="$(mktemp -d)"
+  file="${tmp}/nodes/pve/host.fw"
+
+  expect_eq "app ip literal" "192.168.1.60" "$(app_ip_from_url https://192.168.1.60)"
+  expect_eq "app ip with port" "192.168.1.60" "$(app_ip_from_url https://192.168.1.60:8443)"
+  if app_ip_from_url "https://[fd00::1]:443" >/dev/null; then
+    echo "FAIL  IPv6 app address must not produce a rule"
+    failures=$((failures + 1))
+  fi
+
+  write_firewall_rules "${file}" 192.168.1.60 8090
+  expect_eq "new host.fw" "[RULES]
+IN ACCEPT -source 192.168.1.60 -p tcp -dport 8090 -log nolog # pbo-agent
+IN DROP -p tcp -dport 8090 -log nolog # pbo-agent" "$(cat "${file}")"
+
+  printf '[OPTIONS]\nenable: 1\n\n[RULES]\nIN ACCEPT -p tcp -dport 22 -log nolog\n' >"${file}"
+  write_firewall_rules "${file}" 192.168.1.60 8090
+  write_firewall_rules "${file}" 192.168.1.61 8090  # re-install: replaced, not duplicated
+  expect_eq "existing host.fw" "[OPTIONS]
+enable: 1
+
+[RULES]
+IN ACCEPT -source 192.168.1.61 -p tcp -dport 8090 -log nolog # pbo-agent
+IN DROP -p tcp -dport 8090 -log nolog # pbo-agent
+IN ACCEPT -p tcp -dport 22 -log nolog" "$(cat "${file}")"
+
+  remove_firewall_rules "${file}"
+  expect_eq "removed" "[OPTIONS]
+enable: 1
+
+[RULES]
+IN ACCEPT -p tcp -dport 22 -log nolog" "$(cat "${file}")"
+
+  (
+    PVE_NODES_DIR="${tmp}/nodes2"
+    hostname() { echo pve; }
+    pve-firewall() { [[ "$1" == "status" ]] && echo "Status: disabled/stopped"; return 0; }
+    ROLE=host PORT=8090 PBO_APP_URL="https://192.168.1.60"
+    FIREWALL=0
+    configure_firewall >/dev/null
+    [[ ! -e "${PVE_NODES_DIR}/pve/host.fw" ]] || { echo "FAIL  --no-firewall wrote a rule"; exit 1; }
+    FIREWALL=1
+    out="$(configure_firewall)"
+    grep -qF "IN ACCEPT -source 192.168.1.60 -p tcp -dport 8090" "${PVE_NODES_DIR}/pve/host.fw" ||
+      { echo "FAIL  --firewall wrote no rule"; exit 1; }
+    [[ "${out}" == *"datacenter firewall is disabled"* ]] || { echo "FAIL  no warning for a disabled datacenter firewall"; exit 1; }
+    FIREWALL=ask ASSUME_YES=1
+    configure_firewall >/dev/null
+    [[ "${FIREWALL}" == 1 ]] || { echo "FAIL  default answer must be yes"; exit 1; }
+  ) || failures=$((failures + 1))
+
+  command rm -rf "${tmp}"
+  echo "ok    firewall rule"
+}
+firewall_case
 
 if ((failures)); then
   echo "${failures} failure(s)"

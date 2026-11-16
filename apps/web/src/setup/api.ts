@@ -152,6 +152,10 @@ export const wizardApi = {
   savePve: (body: { api_url: string; token_id: string; token_secret: string; fingerprint: string; node_name: string }) =>
     call<unknown>("/setup/proxmox", json("PUT", body)),
   pbsCandidates: () => call<PbsCandidates>("/setup/pbs/candidates"),
+  pbsDetect: (vmid: number) =>
+    call<{ vmid: number; detected: boolean; ip: string | null; source: string | null; url: string | null }>(
+      `/setup/pbs/detect?vmid=${encodeURIComponent(vmid)}`,
+    ),
   pbsFingerprint: (api_url: string) => call<{ api_url: string; fingerprint: string }>("/setup/pbs/fingerprint", json("POST", { api_url })),
   provisionPbs: (body: { api_url: string; fingerprint: string; fingerprint_confirmed: boolean; password: string; pbs_vm_id: number | null }) =>
     call<PbsProvisionResult>("/setup/pbs/provision", json("POST", body)),

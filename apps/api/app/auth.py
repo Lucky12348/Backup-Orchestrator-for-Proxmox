@@ -13,7 +13,7 @@ import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from threading import Lock
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.security import get_secret_key, validate_secret_key
 from app.db.session import get_db
-from app.services.users import authenticate, get_user
+from app.services.users import authenticate, get_user, set_user_language
 
 SESSION_COOKIE_NAME = "pbo_session"
 AUTH_ALGORITHM = "HS256"
@@ -74,6 +74,12 @@ def reset_login_attempts() -> None:
 class SessionInfo(BaseModel):
     username: str
     expires_at: datetime | None = None
+    # UI language stored for this account (None: not chosen yet).
+    language: str | None = None
+
+
+class PreferencesUpdate(BaseModel):
+    language: Literal["en", "fr"]
 
 
 def validate_auth_settings() -> None:
@@ -92,7 +98,7 @@ def _create_access_token(username: str, lifetime: timedelta) -> tuple[str, datet
     return token, expires_at
 
 
-def start_session(response: Response, username: str) -> SessionInfo:
+def start_session(response: Response, username: str, *, language: str | None = None) -> SessionInfo:
     lifetime = _token_lifetime()
     token, expires_at = _create_access_token(username, lifetime)
     response.set_cookie(
@@ -104,7 +110,7 @@ def start_session(response: Response, username: str) -> SessionInfo:
         samesite="strict",
         path="/",
     )
-    return SessionInfo(username=username, expires_at=expires_at)
+    return SessionInfo(username=username, expires_at=expires_at, language=language)
 
 
 def end_session(response: Response) -> None:
@@ -157,7 +163,7 @@ def login(
         _register_failed_login(client_key)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password")
 
-    return start_session(response, user.username)
+    return start_session(response, user.username, language=user.language)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
@@ -168,5 +174,15 @@ def logout(response: Response) -> Response:
 
 
 @router.get("/me", response_model=SessionInfo)
-def me(username: CurrentUser) -> SessionInfo:
-    return SessionInfo(username=username)
+def me(username: CurrentUser, db: Annotated[Session, Depends(get_db)]) -> SessionInfo:
+    user = get_user(db, username)
+    return SessionInfo(username=username, language=user.language if user else None)
+
+
+@router.put("/me/preferences", response_model=SessionInfo)
+def update_preferences(
+    payload: PreferencesUpdate, username: CurrentUser, db: Annotated[Session, Depends(get_db)]
+) -> SessionInfo:
+    """UI language of this account (also kept in localStorage before login)."""
+    user = set_user_language(db, username, payload.language)
+    return SessionInfo(username=username, language=user.language if user else None)

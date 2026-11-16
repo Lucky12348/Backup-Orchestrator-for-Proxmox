@@ -42,7 +42,8 @@ class ScheduledBackupEventBase(BaseModel):
     datastore: str = Field(min_length=1)
     recurrence_type: ScheduledBackupRecurrenceType = ScheduledBackupRecurrenceType.WEEKLY
     recurrence_config: dict | None = None
-    timezone: str = "Europe/Paris"
+    # None = the app time zone (TIMEZONE setting, chosen in the setup wizard).
+    timezone: str | None = None
     window_starts_at: datetime
     window_duration_minutes: int = Field(default=300, ge=1)
     notify_before_minutes: int = Field(default=60, ge=0)

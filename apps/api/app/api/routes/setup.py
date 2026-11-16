@@ -10,12 +10,14 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 
 from app.api.dependencies import DbSession
 from app.auth import SessionInfo, start_session
+from app.core.timezones import InvalidTimezoneError, validate_timezone
 from app.schemas.setup import (
     ConnectionProbeRequest,
     ManualCommandsRead,
     PbsCandidatesRead,
     PbsDatastoreSelect,
     PbsDatastoresRead,
+    PbsDetectRead,
     PbsFingerprintRead,
     PbsFingerprintRequest,
     PbsProbeRead,
@@ -50,6 +52,7 @@ from app.services.users import (
     SetupAlreadyDoneError,
     create_first_admin,
     has_users,
+    set_user_language,
 )
 
 logger = logging.getLogger(__name__)
@@ -82,6 +85,14 @@ def get_setup_status(db: DbSession) -> SetupStatusRead:
 
 @public_router.post("/admin", response_model=SessionInfo, status_code=status.HTTP_201_CREATED)
 def create_admin(payload: SetupAdminCreate, response: Response, db: DbSession) -> SessionInfo:
+    timezone_value = None
+    if payload.timezone:
+        try:
+            timezone_value = validate_timezone(payload.timezone)
+        except InvalidTimezoneError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail={"code": "invalid_timezone", "message": str(exc)}
+            ) from exc
     try:
         user = create_first_admin(db, payload.username, payload.password)
     except SetupAlreadyDoneError as exc:
@@ -92,10 +103,14 @@ def create_admin(payload: SetupAdminCreate, response: Response, db: DbSession) -
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail={"code": "invalid_credentials", "message": str(exc)}
         ) from exc
+    if payload.language:
+        set_user_language(db, user.username, payload.language)
+    if timezone_value:
+        update_settings(db, {"TIMEZONE": timezone_value})
     # A fresh install starts the wizard at the agent step.
     if not setup_wizard.setup_completed(db):
         setup_wizard.save_progress(db, step="agent")
-    return start_session(response, user.username)
+    return start_session(response, user.username, language=payload.language)
 
 
 # --- Wizard state ---------------------------------------------------------------
@@ -152,6 +167,17 @@ def provision_pve(db: DbSession) -> PveProvisionRead:
 def get_pbs_candidates(db: DbSession) -> PbsCandidatesRead:
     try:
         return PbsCandidatesRead(**setup_wizard.pbs_candidates(db))
+    except setup_wizard.SetupError as exc:
+        raise _setup_error(exc) from None
+
+
+@router.get("/pbs/detect", response_model=PbsDetectRead)
+def detect_pbs(vmid: int, db: DbSession) -> PbsDetectRead:
+    """Pre-fill the PBS address of the chosen VM (no guest agent needed)."""
+    if not 100 <= vmid <= 999_999_999:
+        raise _setup_error(setup_wizard.SetupError("invalid_input", "Invalid VM id."))
+    try:
+        return PbsDetectRead(**setup_wizard.detect_pbs_url(db, vmid))
     except setup_wizard.SetupError as exc:
         raise _setup_error(exc) from None
 

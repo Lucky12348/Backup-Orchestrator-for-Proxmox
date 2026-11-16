@@ -39,7 +39,8 @@ from app.services.users import has_users
 
 logger = logging.getLogger(__name__)
 
-STEPS = ("admin", "agent", "pve", "pbs", "done")
+# "notifications" is prepared for an optional step (hidden in the UI for now).
+STEPS = ("admin", "agent", "pve", "pbs", "notifications", "done")
 PROGRESS_ID = 1
 MAX_PROGRESS_BYTES = 32_000
 _SECRET_MARKERS = ("secret", "password", "passwd", "ticket")
@@ -377,6 +378,52 @@ def pbs_candidates(
     candidates.sort(key=lambda item: (-item["score"], item["vmid"]))
     suggested = candidates[0]["vmid"] if candidates and candidates[0]["score"] > 0 else None
     return {"node": settings.pve_node_name, "suggested_vmid": suggested, "vms": candidates}
+
+
+PBS_PORT = 8007
+
+
+def _pbs_answers(address: str, *, transport: httpx.BaseTransport | None = None) -> bool:
+    """True when https://<address>:8007 answers like PBS (any HTTP status on
+    /api2/json/version: 401 without credentials is the normal answer).
+    No credential is sent; the certificate is checked later (fingerprint)."""
+    host = f"[{address}]" if ":" in address else address
+    try:
+        with httpx.Client(verify=False, timeout=3.0, transport=transport) as client:  # noqa: S501 (no secret sent)
+            response = client.get(f"https://{host}:{PBS_PORT}/api2/json/version")
+    except httpx.HTTPError:
+        return False
+    return response.status_code in (200, 401, 403)
+
+
+def detect_pbs_url(
+    db: Session,
+    vmid: int,
+    *,
+    agent_client: HostAgentClient | None = None,
+    prober: Callable[[str], bool] | None = None,
+) -> dict[str, Any]:
+    """IP of the chosen PBS VM (host agent: guest agent first, then the MAC
+    addresses of its NICs in the neighbour table), kept only if PBS answers
+    on port 8007. `detected=False` = the operator types the address."""
+    client = agent_client or host_agent_client(db)
+    try:
+        payload = client.post("/pve/vm-addresses", {"vmid": vmid}).payload
+    except HostAgentError as exc:
+        raise _agent_error(exc, "the PBS VM address lookup") from None
+    candidates = [item for item in payload.get("addresses") or [] if isinstance(item, dict) and item.get("ip")]
+    probe = prober or _pbs_answers
+    for item in candidates:
+        if probe(str(item["ip"])):
+            return {
+                "vmid": vmid,
+                "detected": True,
+                "ip": item["ip"],
+                "source": item.get("source") or "",
+                "url": f"https://{item['ip']}:{PBS_PORT}",
+                "addresses": candidates,
+            }
+    return {"vmid": vmid, "detected": False, "ip": None, "source": None, "url": None, "addresses": candidates}
 
 
 def pbs_fingerprint(api_url: str, *, transport: httpx.BaseTransport | None = None) -> dict[str, Any]:

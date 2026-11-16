@@ -206,6 +206,31 @@ should reach them — and every call is additionally protected with an
   is set inside it.
 - Command blocks for hosts have **no copy button** (uBlock "ClickFix").
 
+## Language, time zone, PBS address, firewall (Phase 4.2)
+
+- UI language: English by default, French available (`src/language.ts`).
+  Precedence: account preference (`users.language`, Alembic `0004`,
+  `PUT /api/v1/auth/me/preferences`, returned by `/auth/me` and login) >
+  localStorage `pbo:language` > browser language on the very first load
+  only. Held by `AuthContext` (`language`, `setLanguage`), used by the wizard
+  and the legacy app. No UI text in code: `tests/language.test.ts` flags JSX
+  text / aria-label literals in the wizard, toasts and login page; API errors
+  are codes translated by the UI.
+- Time zone: `TIMEZONE` setting (validated IANA name, `app/core/timezones.py`,
+  fallback `Europe/Paris` for upgrades), chosen at the wizard's account step
+  (`POST /setup/admin` takes `language` + `timezone`). New plannings without a
+  zone get it; existing ones keep theirs.
+- PBS address: host-agent route `POST /pve/vm-addresses` (guest agent first,
+  then the NIC MACs from `qm config` in `ip neigh`, ping sweep of the bridge
+  /24 when missing); `GET /api/v1/setup/pbs/detect?vmid=` keeps the first IP
+  where `https://<ip>:8007` answers.
+- Agent installer: Proxmox firewall rules for port 8090 (`--no-firewall` /
+  `--firewall`), tagged `# pbo-agent` in `host.fw`, removed by `--uninstall`;
+  never enables the datacenter firewall.
+- Wizard: optional "notifications" step prepared between PBS and Done, hidden
+  by `NOTIFICATIONS_STEP_ENABLED = false` (`setup/logic.ts`); the API already
+  accepts the step.
+
 ## Real-time channel (read before touching disk reports, runs or polling)
 
 - Agent (host): `/etc/udev/rules.d/90-pbo-agent.rules` (written by

@@ -32,7 +32,7 @@ from agent.main import (
     spin_down_disk_result,
     version_payload,
 )
-from agent.pve_access import guest_addresses, provision_pve_access
+from agent.pve_access import guest_addresses, provision_pve_access, vm_addresses
 from agent.ntfy_notif import (
     HISTORY_DEFAULT_LIMIT,
     HISTORY_MAX_LIMIT,
@@ -94,6 +94,7 @@ ROUTE_ROLES: dict[str, frozenset[str]] = {
     # Setup wizard: pveum provisioning of pbo@pve!pbo, guest agent addresses.
     "/pve/provision-access": _HOST,
     "/pve/guest-addresses": _HOST,
+    "/pve/vm-addresses": _HOST,
     "/notifications/templates": _HOST,
     "/notifications/test": _HOST,
     "/notifications/history": _HOST,
@@ -216,6 +217,10 @@ class QemuConfigRequest(BaseModel):
 
 class GuestAddressesRequest(BaseModel):
     vmids: list[int] = Field(default_factory=list, max_length=64)
+
+
+class VmAddressesRequest(BaseModel):
+    vmid: int = Field(gt=0, le=999_999_999)
 
 
 class SpinDownDiskRequest(BaseModel):
@@ -566,6 +571,14 @@ def pve_guest_addresses(
     _: None = Depends(require_agent_token),
 ) -> Response:
     return _run_endpoint("pve-guest-addresses", lambda: guest_addresses(payload.vmids))
+
+
+@app.post("/pve/vm-addresses", response_model=None)
+def pve_vm_addresses(
+    payload: VmAddressesRequest,
+    _: None = Depends(require_agent_token),
+) -> Response:
+    return _run_endpoint("pve-vm-addresses", lambda: vm_addresses(payload.vmid))
 
 
 def _run_endpoint(command_name: str, action) -> Response:

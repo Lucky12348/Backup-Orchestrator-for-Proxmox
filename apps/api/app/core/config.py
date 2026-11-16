@@ -82,6 +82,8 @@ class Settings:
     # --- Operator values: stored in `app_settings` ---------------------------
     # Keep this block in sync with SETTING_SPECS in app/services/settings_service.py.
     auth_token_expire_minutes: int = 180
+    # IANA zone of new plannings (set by the setup wizard from the browser).
+    timezone: str = "Europe/Paris"
     notifications_enabled: bool = False
     ntfy_base_url: str = "https://ntfy.sh"
     ntfy_topic: str = ""

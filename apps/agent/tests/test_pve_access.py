@@ -225,3 +225,105 @@ class RouteTests(TestCase):
             response = TestClient(server.app).post("/pve/provision-access", headers={"X-Agent-Token": "t"})
         self.assertEqual(response.status_code, 500)
         self.assertIn("Create role failed", response.json()["message"])
+
+
+class VmAddressTests(TestCase):
+    CONFIG = (
+        "boot: order=scsi0\n"
+        "name: pbs\n"
+        "net0: virtio=BC:24:11:AA:BB:CC,bridge=vmbr0,firewall=1\n"
+        "net1: e1000=BC:24:11:00:00:01,bridge=vmbr1\n"
+        "[snap1]\n"
+        "net0: virtio=DE:AD:BE:EF:00:00,bridge=vmbr9\n"
+    )
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.conf = Path(self.tmp.name)
+        (self.conf / "110.conf").write_text("name: pbs\n")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_vm_nics_reads_current_config_only(self):
+        self.assertEqual(
+            pve_access.vm_nics(self.CONFIG),
+            [
+                {"net": "net0", "mac": "bc:24:11:aa:bb:cc", "bridge": "vmbr0"},
+                {"net": "net1", "mac": "bc:24:11:00:00:01", "bridge": "vmbr1"},
+            ],
+        )
+
+    def test_parse_ip_neigh(self):
+        output = (
+            "192.168.1.20 dev vmbr0 lladdr bc:24:11:aa:bb:cc REACHABLE\n"
+            "192.168.1.30 dev vmbr0 lladdr bc:24:11:aa:bb:cc STALE\n"
+            "192.168.1.99 dev vmbr0  FAILED\n"
+            "fe80::1 dev vmbr0 lladdr 00:11:22:33:44:55 router STALE\n"
+        )
+        self.assertEqual(pve_access.parse_ip_neigh(output), {"bc:24:11:aa:bb:cc": ["192.168.1.20", "192.168.1.30"]})
+
+    def test_sweep_is_capped_to_a_slash_24(self):
+        import ipaddress
+
+        hosts = pve_access.sweep_hosts(ipaddress.IPv4Interface("10.0.4.10/22"))
+        self.assertEqual(len(hosts), 253)
+        self.assertEqual((hosts[0], hosts[-1]), ("10.0.4.1", "10.0.4.254"))
+        self.assertNotIn("10.0.4.10", hosts)
+        self.assertEqual(len(pve_access.sweep_hosts(ipaddress.IPv4Interface("192.168.1.10/28"))), 13)
+
+    def _runner(self, *, neigh_before="", neigh_after="", guest=None):
+        calls = []
+        state = {"pinged": False}
+
+        def runner(command, timeout):
+            calls.append(command)
+            out = ""
+            if command[:2] == ["qm", "config"]:
+                out = self.CONFIG
+            elif command[:3] == ["qm", "guest", "cmd"]:
+                if guest is None:
+                    return subprocess.CompletedProcess(command, 255, "", "QEMU guest agent is not running")
+                out = guest
+            elif command[:3] == ["ip", "-4", "neigh"]:
+                out = neigh_after if state["pinged"] else neigh_before
+            elif command[:3] == ["ip", "-4", "-o"]:
+                out = f"5: {command[-1]}    inet 192.168.1.10/24 brd 192.168.1.255 scope global {command[-1]}\n"
+            elif command[0] == "ping":
+                state["pinged"] = True
+            return subprocess.CompletedProcess(command, 0, out, "")
+
+        return runner, calls
+
+    def test_mac_already_in_the_neighbour_table(self):
+        runner, calls = self._runner(neigh_before="192.168.1.20 dev vmbr0 lladdr bc:24:11:aa:bb:cc REACHABLE\n")
+        result = pve_access.vm_addresses(110, runner=runner, conf_dir=self.conf)
+        self.assertEqual(result["addresses"], [{"ip": "192.168.1.20", "mac": "bc:24:11:aa:bb:cc", "source": "neighbour"}])
+        self.assertFalse(any(c[0] == "ping" for c in calls))
+
+    def test_ping_sweep_fills_the_table(self):
+        runner, calls = self._runner(neigh_after="192.168.1.20 dev vmbr0 lladdr bc:24:11:aa:bb:cc REACHABLE\n")
+        result = pve_access.vm_addresses(110, runner=runner, conf_dir=self.conf)
+        self.assertEqual([a["ip"] for a in result["addresses"]], ["192.168.1.20"])
+        pings = [c for c in calls if c[0] == "ping"]
+        self.assertEqual(len(pings), 2 * 253)  # vmbr0 and vmbr1, one /24 each
+
+    def test_guest_agent_comes_first(self):
+        (self.conf / "110.conf").write_text("name: pbs\nagent: 1\n")
+        guest = json.dumps([{"name": "eth0", "ip-addresses": [{"ip-address-type": "ipv4", "ip-address": "192.168.1.21"}]}])
+        runner, _ = self._runner(neigh_before="192.168.1.20 dev vmbr0 lladdr bc:24:11:aa:bb:cc REACHABLE\n", guest=guest)
+        result = pve_access.vm_addresses(110, runner=runner, conf_dir=self.conf)
+        self.assertEqual([(a["ip"], a["source"]) for a in result["addresses"]], [("192.168.1.21", "guest-agent"), ("192.168.1.20", "neighbour")])
+
+    def test_nothing_found(self):
+        runner, _ = self._runner()
+        self.assertEqual(pve_access.vm_addresses(110, runner=runner, conf_dir=self.conf)["addresses"], [])
+
+    def test_route_is_host_only(self):
+        settings = AgentSettings(server_token="t", role="pbs")
+        server.app.dependency_overrides[server.get_settings] = lambda: settings
+        try:
+            response = TestClient(server.app).post("/pve/vm-addresses", json={"vmid": 110}, headers={"X-Agent-Token": "t"})
+        finally:
+            server.app.dependency_overrides.clear()
+        self.assertEqual(response.status_code, 404)

@@ -136,3 +136,15 @@ def authenticate(db: Session, username: str, password: str) -> User | None:
 
 def get_user(db: Session, username: str) -> User | None:
     return db.scalar(select(User).where(User.username == username))
+
+
+SUPPORTED_LANGUAGES = ("en", "fr")
+
+
+def set_user_language(db: Session, username: str, language: str | None) -> User | None:
+    user = get_user(db, username)
+    if user is None:
+        return None
+    user.language = language if language in SUPPORTED_LANGUAGES else None
+    db.commit()
+    return user

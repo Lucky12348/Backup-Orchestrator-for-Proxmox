@@ -277,3 +277,116 @@ def guest_addresses(
         "message": "Guest addresses collected.",
         "addresses": {str(vmid): results.get(vmid, []) for vmid in selected},
     }
+
+
+# --- Address of one VM without (or before) its guest agent -------------------
+#
+# Setup wizard, PBS step: find the IP of the chosen PBS VM. Order:
+# 1. QEMU guest agent, when enabled and answering (exact, no network traffic);
+# 2. the MAC addresses of net0..netN (`qm config`) looked up in the host's
+#    neighbour table (`ip neigh`); if a MAC is not there yet, one ping per
+#    address of the bridge's /24 fills the table (ARP answers even when the
+#    guest drops ICMP), then the table is read again.
+
+_NET_LINE_RE = re.compile(r"^net(\d+):\s*(\S+)", re.MULTILINE)
+_MAC_RE = re.compile(r"^[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}$")
+SWEEP_MAX_HOSTS = 254
+SWEEP_WORKERS = 64
+
+
+def vm_nics(config_text: str) -> list[dict[str, str]]:
+    """net0: virtio=BC:24:11:AA:BB:CC,bridge=vmbr0,firewall=1 → mac + bridge."""
+    current = config_text.split("\n[", 1)[0]  # ignore snapshot sections
+    nics = []
+    for index, value in _NET_LINE_RE.findall(current):
+        fields = dict(part.split("=", 1) for part in value.split(",") if "=" in part)
+        mac = next((item for item in fields.values() if _MAC_RE.match(item)), None)
+        if mac:
+            nics.append({"net": f"net{index}", "mac": mac.lower(), "bridge": fields.get("bridge", "")})
+    return nics
+
+
+def parse_ip_neigh(output: str) -> dict[str, list[str]]:
+    """`ip -4 neigh show` → {mac: [ipv4, …]} (resolved entries only)."""
+    table: dict[str, list[str]] = {}
+    for line in (output or "").splitlines():
+        parts = line.split()
+        if "lladdr" not in parts or not parts or parts[-1] in {"FAILED", "INCOMPLETE"}:
+            continue
+        try:
+            ipaddress.IPv4Address(parts[0])
+        except ValueError:
+            continue
+        mac = parts[parts.index("lladdr") + 1].lower()
+        table.setdefault(mac, [])
+        if parts[0] not in table[mac]:
+            table[mac].append(parts[0])
+    return table
+
+
+def bridge_interface(bridge: str, runner: Runner) -> ipaddress.IPv4Interface | None:
+    result = runner(["ip", "-4", "-o", "addr", "show", bridge], 10.0)
+    match = re.search(r"inet ([0-9.]+/\d+)", result.stdout or "")
+    return ipaddress.IPv4Interface(match.group(1)) if match else None
+
+
+def sweep_hosts(interface: ipaddress.IPv4Interface) -> list[str]:
+    """Addresses to ping: the bridge network, capped to the /24 around the host."""
+    network = interface.network
+    if network.num_addresses - 2 > SWEEP_MAX_HOSTS:
+        network = ipaddress.IPv4Network(f"{interface.ip}/24", strict=False)
+    return [str(host) for host in network.hosts() if host != interface.ip][:SWEEP_MAX_HOSTS]
+
+
+def ping_sweep(hosts: list[str], runner: Runner) -> None:
+    def ping(host: str) -> None:
+        try:
+            runner(["ping", "-c", "1", "-W", "1", "-q", host], 3.0)
+        except ProvisionError:
+            pass
+
+    with ThreadPoolExecutor(max_workers=SWEEP_WORKERS) as pool:
+        list(pool.map(ping, hosts))
+
+
+def vm_addresses(
+    vmid: int,
+    *,
+    runner: Runner | None = None,
+    conf_dir: Path = QEMU_CONF_DIR,
+) -> dict[str, Any]:
+    run = runner or _default_runner
+    config = _run(run, ["qm", "config", str(vmid)], step="Read VM config")
+    nics = vm_nics(config)
+    addresses: list[dict[str, str]] = []
+
+    def add(ip: str, mac: str | None, source: str) -> None:
+        if all(item["ip"] != ip for item in addresses):
+            addresses.append({"ip": ip, "mac": mac or "", "source": source})
+
+    if guest_agent_enabled(vmid, conf_dir):
+        try:
+            result = run(["qm", "guest", "cmd", str(vmid), "network-get-interfaces"], GUEST_AGENT_TIMEOUT_SECONDS)
+            if result.returncode == 0:
+                for ip in parse_guest_ipv4(result.stdout):
+                    add(ip, None, "guest-agent")
+        except ProvisionError:
+            pass
+
+    macs = [nic["mac"] for nic in nics]
+    if macs:
+        table = parse_ip_neigh(run(["ip", "-4", "neigh", "show"], 10.0).stdout or "")
+        if not any(mac in table for mac in macs):
+            hosts: list[str] = []
+            for bridge in sorted({nic["bridge"] for nic in nics if nic["bridge"]}):
+                interface = bridge_interface(bridge, run)
+                if interface is not None:
+                    hosts += sweep_hosts(interface)
+            if hosts:
+                ping_sweep(hosts, run)
+                table = parse_ip_neigh(run(["ip", "-4", "neigh", "show"], 10.0).stdout or "")
+        for nic in nics:
+            for ip in table.get(nic["mac"], []):
+                add(ip, nic["mac"], "neighbour")
+    logger.info("VM %s addresses: %s", vmid, ", ".join(f"{a['ip']} ({a['source']})" for a in addresses) or "none")
+    return {"ok": True, "message": "VM addresses collected.", "vmid": vmid, "nics": nics, "addresses": addresses}

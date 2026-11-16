@@ -68,6 +68,7 @@ _NOTIFY_FLAGS = (
 
 SETTING_SPECS: tuple[SettingSpec, ...] = (
     _spec("AUTH_TOKEN_EXPIRE_MINUTES", int, "auth"),
+    _spec("TIMEZONE", str, "general"),
     # Proxmox VE
     _spec("PVE_API_URL", str, "proxmox"),
     _spec("PVE_API_TOKEN_ID", str, "proxmox"),
@@ -197,6 +198,13 @@ def update_settings(db: Session, values: Mapping[str, Any], *, commit: bool = Tr
     prepared: dict[str, str | None] = {}
     for key, raw in values.items():
         spec = SPECS_BY_KEY[key]
+        if key == "TIMEZONE" and raw is not None:
+            from app.core.timezones import InvalidTimezoneError, validate_timezone
+
+            try:
+                raw = validate_timezone(str(raw))
+            except InvalidTimezoneError as exc:
+                raise SettingValidationError(str(exc)) from exc
         prepared[key] = None if raw is None else _serialize(spec, coerce_value(spec, raw))
 
     for key, stored in prepared.items():

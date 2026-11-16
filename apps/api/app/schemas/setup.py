@@ -21,7 +21,7 @@ class SetupProgressRead(BaseModel):
 
 
 class SetupProgressUpdate(BaseModel):
-    step: Literal["agent", "pve", "pbs", "done"] | None = None
+    step: Literal["agent", "pve", "pbs", "notifications", "done"] | None = None
     # Non-secret results only: keys that look like secrets are dropped server-side.
     data: dict[str, Any] | None = None
 
@@ -66,6 +66,15 @@ class PbsCandidatesRead(BaseModel):
     node: str
     suggested_vmid: int | None = None
     vms: list[PbsCandidateRead] = []
+
+
+class PbsDetectRead(BaseModel):
+    vmid: int
+    detected: bool
+    ip: str | None = None
+    source: str | None = None  # "guest-agent" | "neighbour"
+    url: str | None = None
+    addresses: list[dict[str, Any]] = []
 
 
 class PbsFingerprintRequest(BaseModel):
@@ -115,6 +124,9 @@ class ManualCommandsRead(BaseModel):
 class SetupAdminCreate(BaseModel):
     username: str = Field(min_length=3, max_length=64)
     password: str = Field(min_length=1, max_length=256)
+    # Chosen on the first wizard screen (language selector, browser time zone).
+    language: Literal["en", "fr"] | None = None
+    timezone: str | None = Field(default=None, max_length=64)
 
 
 class ConnectionProbeRequest(BaseModel):

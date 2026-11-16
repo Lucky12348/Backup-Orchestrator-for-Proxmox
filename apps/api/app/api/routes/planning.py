@@ -136,12 +136,25 @@ def get_calendar_occurrences(
     return sorted(occurrences, key=lambda item: item.window_starts_at)
 
 
+def _event_timezone(db: DbSession, value: str | None) -> str:
+    """Explicit zone (validated) or the app zone. Existing events keep theirs."""
+    from app.core.timezones import InvalidTimezoneError, validate_timezone
+    from app.services.settings_service import effective_settings
+
+    try:
+        return validate_timezone(value or effective_settings(db).timezone)
+    except InvalidTimezoneError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+
 @router.post("/events", response_model=ScheduledBackupEventRead)
 def create_event(payload: ScheduledBackupEventCreate, db: DbSession) -> ScheduledBackupEventRead:
     _validate_auto_eject_configuration(db, payload.disk_serial, payload.auto_eject_after_success)
     now = datetime.utcnow()
+    data = payload.model_dump()
+    data["timezone"] = _event_timezone(db, data.get("timezone"))
     event = ScheduledBackupEvent(
-        **payload.model_dump(),
+        **data,
         created_at=now,
         updated_at=now,
     )
@@ -165,6 +178,8 @@ def update_event(event_id: int, payload: ScheduledBackupEventUpdate, db: DbSessi
     if event is None or event.deleted_at is not None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scheduled event not found")
     values = payload.model_dump(exclude_unset=True)
+    if "timezone" in values:
+        values["timezone"] = _event_timezone(db, values["timezone"])
     _validate_auto_eject_configuration(
         db,
         values.get("disk_serial", event.disk_serial),

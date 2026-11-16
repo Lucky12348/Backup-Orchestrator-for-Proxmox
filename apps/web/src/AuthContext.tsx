@@ -1,5 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 
+import { initialLanguage, LANGUAGE_STORAGE_KEY, reconcileLanguage, type UiLanguage } from "./language";
+
 /**
  * Session state. The session itself is an HttpOnly cookie set by the API:
  * this code never sees the token, it only asks the API who is logged in.
@@ -13,8 +15,11 @@ interface AuthContextValue {
   /** First-run wizard finished (null while loading). Until then every page leads to /setup. */
   setupCompleted: boolean | null;
   markSetupCompleted: () => void;
+  /** UI language (English by default). Saved in this browser and on the account. */
+  language: UiLanguage;
+  setLanguage: (language: UiLanguage) => void;
   login: (username: string, password: string) => Promise<void>;
-  createAdmin: (username: string, password: string) => Promise<void>;
+  createAdmin: (username: string, password: string, options?: { timezone?: string }) => Promise<void>;
   logout: () => Promise<void>;
   /** Local-only reset after the API answered 401 (cookie expired). */
   markSessionExpired: () => void;
@@ -42,6 +47,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>("loading");
   const [username, setUsername] = useState<string | null>(null);
   const [setupCompleted, setSetupCompleted] = useState<boolean | null>(null);
+  const [language, setLanguageState] = useState<UiLanguage>(() =>
+    initialLanguage(safeStorage(), typeof navigator === "undefined" ? [] : navigator.languages ?? [navigator.language]),
+  );
+
+  const saveLocalLanguage = useCallback((value: UiLanguage) => {
+    setLanguageState(value);
+    try {
+      window.localStorage.setItem(LANGUAGE_STORAGE_KEY, value);
+    } catch {
+      /* private mode: this page only */
+    }
+    document.documentElement.lang = value;
+  }, []);
+
+  const pushAccountLanguage = useCallback((value: UiLanguage) => {
+    void fetch("/api/v1/auth/me/preferences", {
+      method: "PUT",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ language: value }),
+    }).catch(() => undefined);
+  }, []);
+
+  /** Account preference wins; an account without one adopts the local choice. */
+  const applyAccountLanguage = useCallback(
+    (account: string | null | undefined) => {
+      setLanguageState((local) => {
+        const { language: next, pushToAccount } = reconcileLanguage(account, local);
+        if (pushToAccount) pushAccountLanguage(next);
+        try {
+          window.localStorage.setItem(LANGUAGE_STORAGE_KEY, next);
+        } catch {
+          /* private mode */
+        }
+        return next;
+      });
+    },
+    [pushAccountLanguage],
+  );
+
+  useEffect(() => {
+    document.documentElement.lang = language;
+  }, [language]);
 
   const readSetupStatus = useCallback(async () => {
     const setup = await fetch("/api/v1/setup/status", { credentials: "same-origin" });
@@ -58,7 +106,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const setupData = await readSetupStatus();
       const me = await fetch("/api/v1/auth/me", { credentials: "same-origin" });
       if (me.ok) {
-        const data = (await me.json()) as { username: string };
+        const data = (await me.json()) as { username: string; language?: string | null };
+        applyAccountLanguage(data.language);
         setUsername(data.username);
         setStatus("authenticated");
         return;
@@ -69,7 +118,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUsername(null);
       setStatus("anonymous");
     }
-  }, [readSetupStatus]);
+  }, [readSetupStatus, applyAccountLanguage]);
 
   useEffect(() => {
     void refresh();
@@ -85,19 +134,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: body.toString(),
     });
-    if (!response.ok) throw await readError(response, "Authentication failed");
-    const data = (await response.json()) as { username: string };
+    if (!response.ok) {
+      // The status gives the translated message (401 bad credentials, 429 locked out).
+      throw Object.assign(await readError(response, "Authentication failed"), { status: response.status });
+    }
+    const data = (await response.json()) as { username: string; language?: string | null };
     await readSetupStatus().catch(() => setSetupCompleted(true));
+    applyAccountLanguage(data.language);
     setUsername(data.username);
     setStatus("authenticated");
-  }, [readSetupStatus]);
+  }, [readSetupStatus, applyAccountLanguage]);
 
-  const createAdmin = useCallback(async (user: string, password: string) => {
+  const createAdmin = useCallback(async (user: string, password: string, options?: { timezone?: string }) => {
     const response = await fetch("/api/v1/setup/admin", {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: user, password }),
+      // The language picked on the first wizard screen becomes the account's.
+      body: JSON.stringify({ username: user, password, language, timezone: options?.timezone || undefined }),
     });
     if (response.status === 409) {
       // Someone else finished setup first: fall back to the login screen.
@@ -109,7 +163,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSetupCompleted(false);
     setUsername(data.username);
     setStatus("authenticated");
-  }, [refresh]);
+  }, [refresh, language]);
 
   const logout = useCallback(async () => {
     try {
@@ -121,6 +175,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const markSetupCompleted = useCallback(() => setSetupCompleted(true), []);
+
+  const setLanguage = useCallback(
+    (value: UiLanguage) => {
+      saveLocalLanguage(value);
+      if (status === "authenticated") pushAccountLanguage(value);
+    },
+    [saveLocalLanguage, pushAccountLanguage, status],
+  );
 
   const markSessionExpired = useCallback(() => {
     setUsername(null);
@@ -135,6 +197,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated: status === "authenticated",
         setupCompleted,
         markSetupCompleted,
+        language,
+        setLanguage,
         login,
         createAdmin,
         logout,
@@ -144,6 +208,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       {children}
     </AuthContext.Provider>
   );
+}
+
+function safeStorage(): Storage | null {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
 }
 
 export function useAuth() {

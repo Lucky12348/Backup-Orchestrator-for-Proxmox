@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  ALL_WIZARD_STEPS,
   detectLanguage,
+  nextStep,
+  visibleSteps,
+  WIZARD_STEPS,
   formatCountdown,
   nextThemePreference,
   normalizeStep,
@@ -106,7 +110,7 @@ const SETUP_ERROR_CODES = [
   "bad_credentials", "fingerprint_mismatch", "unreachable", "pbs_too_old",
   "pbs_error", "token_check_failed", "invalid_input", "secret_required",
   "invalid_url", "invalid_fingerprint", "token_rejected", "api_error", "probe_failed",
-  "network", "validation", "password_required",
+  "network", "validation", "password_required", "invalid_timezone",
 ];
 
 test("every setup error code is translated in French and English", async () => {
@@ -117,4 +121,19 @@ test("every setup error code is translated in French and English", async () => {
     assert.deepEqual(missing, [], `${language}: missing ${missing.join(", ")}`);
   }
   assert.notEqual(WIZARD_TEXT.fr.errors.token_check_failed, WIZARD_TEXT.en.errors.token_check_failed);
+});
+
+
+test("the optional notifications step is prepared but hidden", () => {
+  assert.deepEqual([...ALL_WIZARD_STEPS], ["admin", "agent", "pve", "pbs", "notifications", "done"]);
+  assert.deepEqual([...WIZARD_STEPS], ["admin", "agent", "pve", "pbs", "done"]);
+  assert.equal(nextStep("pbs"), "done");
+  assert.equal(normalizeStep("notifications"), "pbs", "a stored hidden step resumes on PBS");
+  // Once enabled, it sits between PBS and Done.
+  assert.deepEqual(visibleSteps(true), ["admin", "agent", "pve", "pbs", "notifications", "done"]);
+  assert.equal(nextStep("pbs", true), "notifications");
+  assert.equal(nextStep("notifications", true), "done");
+  assert.equal(previousStep("notifications", true), "pbs");
+  assert.equal(normalizeStep("notifications", true), "notifications");
+  assert.equal(nextStep("done"), null);
 });

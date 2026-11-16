@@ -20,7 +20,8 @@ export function LoginPage({ t }: LoginPageProps) {
     try {
       await login(username, password);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Authentication failed");
+      const httpStatus = (err as { status?: number }).status;
+      setError(httpStatus === 401 ? t.login.invalid : httpStatus === 429 ? t.login.locked : t.login.failed);
     } finally {
       setLoading(false);
     }
@@ -35,14 +36,14 @@ export function LoginPage({ t }: LoginPageProps) {
         <div className="login-header">
           <div className="login-logo">PBO</div>
           <h1 className="login-title">{t.title}</h1>
-          <p className="login-subtitle">BACKUP ORCHESTRATION CONSOLE</p>
+          <p className="login-subtitle">{t.login.subtitle}</p>
         </div>
 
         <form className="login-form" onSubmit={handleSubmit}>
           {error && <div className="login-error">{error}</div>}
 
           <div className="login-field">
-            <label htmlFor="pbo-username">USERNAME</label>
+            <label htmlFor="pbo-username">{t.login.username}</label>
             <input
               id="pbo-username"
               type="text"
@@ -60,7 +61,7 @@ export function LoginPage({ t }: LoginPageProps) {
           </div>
 
           <div className="login-field">
-            <label htmlFor="pbo-password">PASSWORD</label>
+            <label htmlFor="pbo-password">{t.login.password}</label>
             <input
               id="pbo-password"
               type="password"
@@ -74,7 +75,7 @@ export function LoginPage({ t }: LoginPageProps) {
           </div>
 
           <button className="login-submit" type="submit" disabled={loading || !username || !password}>
-            {loading ? "AUTHENTICATING..." : "CONNECT ->"}
+            {loading ? t.login.submitting : t.login.submit}
           </button>
         </form>
       </div>

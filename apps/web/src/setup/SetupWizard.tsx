@@ -11,9 +11,10 @@ import { cn } from "../components/ui/utils";
 import { wizardApi, type PbsSummary, type PveSummary, type SetupProgress } from "./api";
 import { WIZARD_TEXT } from "./i18n";
 import {
-  detectLanguage,
   nextThemePreference,
+  nextStep,
   normalizeStep,
+  NOTIFICATIONS_STEP_ENABLED,
   previousStep,
   resolveTheme,
   stepIndex,
@@ -26,7 +27,9 @@ import { AdminStep } from "./steps/AdminStep";
 import { AgentStep } from "./steps/AgentStep";
 import { DoneStep } from "./steps/DoneStep";
 import { PbsStep } from "./steps/PbsStep";
+import { NotificationsStep } from "./steps/NotificationsStep";
 import { PveStep } from "./steps/PveStep";
+import { SUPPORTED_LANGUAGES, type UiLanguage } from "../language";
 
 const THEME_KEY = "pbo:theme";
 
@@ -66,17 +69,13 @@ function useTheme() {
  * reload resumes where the operator left off.
  */
 export function SetupWizard({ onFinished }: { onFinished: (path?: string) => void }) {
-  const { status: authStatus } = useAuth();
-  const language = useMemo(() => detectLanguage(navigator.languages ?? [navigator.language]), []);
+  // English by default; the selector below is on every screen, the first one included.
+  const { status: authStatus, language, setLanguage } = useAuth();
   const text = WIZARD_TEXT[language];
   const { preference, theme, cycle } = useTheme();
   const [progress, setProgress] = useState<SetupProgress | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [moving, setMoving] = useState(false);
-
-  useEffect(() => {
-    document.documentElement.lang = language;
-  }, [language]);
 
   const load = useCallback(async () => {
     setError(null);
@@ -129,6 +128,8 @@ export function SetupWizard({ onFinished }: { onFinished: (path?: string) => voi
               </div>
               <span className="text-sm font-medium text-muted">{text.product}</span>
             </div>
+            <div className="flex items-center gap-1">
+            <LanguageSwitch value={language} onChange={setLanguage} label={text.languageLabel} />
             <button
               type="button"
               onClick={cycle}
@@ -138,9 +139,10 @@ export function SetupWizard({ onFinished }: { onFinished: (path?: string) => voi
             >
               <ThemeIcon className="h-4 w-4" />
             </button>
+            </div>
           </header>
 
-          <Stepper current={step} labels={text.steps} />
+          <Stepper current={step} labels={text.steps} ariaLabel={text.stepsLabel} />
           <p className="mb-4 mt-6 text-[13px] text-faint">{text.stepOf(stepIndex(step) + 1, WIZARD_STEPS.length)}</p>
 
           <Card className={cn("overflow-hidden shadow-sm transition-opacity", moving && "pointer-events-none opacity-60")}>
@@ -173,8 +175,11 @@ export function SetupWizard({ onFinished }: { onFinished: (path?: string) => voi
                     saved={progress?.data.pbs}
                     onSaved={(summary) => mergeData("pbs", summary)}
                     onBack={back}
-                    onNext={() => void goTo("done")}
+                    onNext={() => void goTo(nextStep("pbs") ?? "done")}
                   />
+                ) : null}
+                {step === "notifications" && NOTIFICATIONS_STEP_ENABLED ? (
+                  <NotificationsStep onBack={back} onNext={() => void goTo(nextStep("notifications") ?? "done")} />
                 ) : null}
                 {step === "done" && progress ? <DoneStep progress={progress} language={language} onFinish={onFinished} /> : null}
                 {error && progress ? (
@@ -191,10 +196,32 @@ export function SetupWizard({ onFinished }: { onFinished: (path?: string) => voi
   );
 }
 
-function Stepper({ current, labels }: { current: WizardStep; labels: Record<WizardStep, string> }) {
+function LanguageSwitch({ value, onChange, label }: { value: UiLanguage; onChange: (value: UiLanguage) => void; label: string }) {
+  return (
+    <div role="radiogroup" aria-label={label} className="flex rounded-md border border-border p-0.5 text-[12px] font-medium">
+      {SUPPORTED_LANGUAGES.map((code) => (
+        <button
+          key={code}
+          type="button"
+          role="radio"
+          aria-checked={value === code}
+          onClick={() => onChange(code)}
+          className={cn(
+            "rounded px-2 py-1 uppercase transition-colors",
+            value === code ? "bg-subtle text-fg" : "text-faint hover:text-fg",
+          )}
+        >
+          {code}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Stepper({ current, labels, ariaLabel }: { current: WizardStep; labels: Record<WizardStep, string>; ariaLabel: string }) {
   const currentIndex = stepIndex(current);
   return (
-    <ol className="flex items-center gap-2" aria-label="Setup steps">
+    <ol className="flex items-center gap-2" aria-label={ariaLabel}>
       {WIZARD_STEPS.map((step, index) => {
         const done = index < currentIndex || current === "done";
         const active = index === currentIndex && current !== "done";

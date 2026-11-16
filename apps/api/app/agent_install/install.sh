@@ -32,6 +32,11 @@ CODE=""
 EXPECTED_FP=""
 ASSUME_YES=0
 UNINSTALL=0
+# Proxmox firewall rule limiting the agent port to the app: ask (default yes),
+# 1 = yes without asking (--firewall), 0 = no (--no-firewall).
+FIREWALL="ask"
+FIREWALL_MARK="# pbo-agent"
+PVE_NODES_DIR="/etc/pve/nodes"
 PURGE_PVE_ACCESS=0
 WORK_DIR=""
 
@@ -47,6 +52,8 @@ Usage: install.sh --code XXXX-XXXX [options]
   --listen-ip IP           listen on this address instead
   --role host|pbs          agent role (default host; pbs = legacy PBS agent mode)
   --app-url URL            override the app URL (default ${PBO_APP_URL})
+  --no-firewall            do not add the Proxmox firewall rule limiting port ${PORT} to the app
+  --firewall               add it without asking (default: asked, answer yes by default)
 
 Usage: install.sh --uninstall [--purge-pve-access]
 
@@ -88,6 +95,8 @@ parse_args() {
       --role) ROLE="${2:-}"; shift 2 ;;
       --app-url) PBO_APP_URL="${2:-}"; shift 2 ;;
       --uninstall) UNINSTALL=1; shift ;;
+      --no-firewall) FIREWALL=0; shift ;;
+      --firewall) FIREWALL=1; shift ;;
       --purge-pve-access) PURGE_PVE_ACCESS=1; shift ;;
       -h | --help) usage; exit 0 ;;
       *) usage >&2; die "unknown option: $1" ;;
@@ -256,6 +265,97 @@ confirm_app_certificate() {
     echo "Compare it with the fingerprint shown in the app (Agents > Add)."
     read -r -p "Does it match? [y/N] " answer </dev/tty || answer=""
     [[ "${answer}" =~ ^[YyOo]$ ]] || die "aborted: certificate not confirmed."
+  fi
+}
+
+# --- Proxmox firewall (host.fw) ---------------------------------------------
+# Two rules at the top of [RULES] in /etc/pve/nodes/<node>/host.fw, tagged
+# "# pbo-agent" so a re-install replaces them and --uninstall removes them:
+#   IN ACCEPT -source <app-ip> -p tcp -dport <port>   (the app)
+#   IN DROP -p tcp -dport <port>                       (everybody else)
+# The datacenter firewall is never switched on here: enabling it changes the
+# default policy for the whole cluster. If it is off, the rule is written but
+# inactive, and the installer says so.
+
+# IPv4 of the app, from its URL (literal address, or resolved name).
+app_ip_from_url() {
+  local host="${1#https://}"
+  host="${host%%/*}"
+  if [[ "${host}" == \[* ]]; then
+    host="${host#[}"
+    host="${host%%]*}"
+  else
+    host="${host%%:*}"
+  fi
+  if [[ "${host}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "${host}"
+  elif [[ "${host}" == *:* ]]; then
+    return 1  # IPv6 app address: not handled by this helper
+  else
+    getent ahostsv4 "${host}" 2>/dev/null | awk 'NR == 1 { print $1 }'
+  fi
+}
+
+remove_firewall_rules() {
+  local file="$1"
+  [[ -f "${file}" ]] || return 0
+  local tmp="${file}.pbo.tmp"
+  grep -vF -- "${FIREWALL_MARK}" "${file}" >"${tmp}" || true
+  cat "${tmp}" >"${file}"
+  rm -f "${tmp}"
+}
+
+write_firewall_rules() {
+  local file="$1" app_ip="$2" port="$3" tmp
+  local accept="IN ACCEPT -source ${app_ip} -p tcp -dport ${port} -log nolog ${FIREWALL_MARK}"
+  local drop="IN DROP -p tcp -dport ${port} -log nolog ${FIREWALL_MARK}"
+  mkdir -p "$(dirname "${file}")"
+  remove_firewall_rules "${file}"
+  tmp="${file}.pbo.tmp"
+  if [[ -f "${file}" ]] && grep -q '^\[RULES\]' "${file}"; then
+    # Insert right after [RULES]: our rules must come before any broader ACCEPT.
+    awk -v a="${accept}" -v d="${drop}" '{ print } /^\[RULES\]/ && !done { print a; print d; done = 1 }' "${file}" >"${tmp}"
+  else
+    { [[ -f "${file}" ]] && cat "${file}" && echo; printf '[RULES]\n%s\n%s\n' "${accept}" "${drop}"; } >"${tmp}"
+  fi
+  cat "${tmp}" >"${file}"
+  rm -f "${tmp}"
+}
+
+host_fw_file() {
+  echo "${PVE_NODES_DIR}/$(hostname -s)/host.fw"
+}
+
+configure_firewall() {
+  [[ "${ROLE}" == "host" ]] || return 0
+  if [[ "${FIREWALL}" == "ask" ]]; then
+    if ((ASSUME_YES)) || [[ ! -r /dev/tty ]]; then
+      FIREWALL=1
+    else
+      local answer
+      read -r -p "Restrict port ${PORT} to the app with the Proxmox firewall? [Y/n] " answer </dev/tty || answer=""
+      [[ "${answer}" =~ ^[Nn] ]] && FIREWALL=0 || FIREWALL=1
+    fi
+  fi
+  if [[ "${FIREWALL}" != 1 ]]; then
+    echo "NOTE: no firewall rule added (--no-firewall). Restrict port ${PORT} to the app yourself (docs/SECURITY.md)."
+    return 0
+  fi
+  local app_ip file
+  app_ip="$(app_ip_from_url "${PBO_APP_URL}")" || app_ip=""
+  if [[ -z "${app_ip}" ]]; then
+    echo "WARNING: cannot resolve the app address (${PBO_APP_URL}) to IPv4: no firewall rule added." >&2
+    return 0
+  fi
+  file="$(host_fw_file)"
+  write_firewall_rules "${file}" "${app_ip}" "${PORT}"
+  info "Proxmox firewall: port ${PORT} limited to ${app_ip} (${file})"
+  if command -v pve-firewall >/dev/null 2>&1; then
+    pve-firewall compile >/dev/null 2>&1 || echo "WARNING: pve-firewall compile reported an error: check ${file}." >&2
+    if ! pve-firewall status 2>/dev/null | grep -q "enabled/running"; then
+      echo "NOTE: the datacenter firewall is disabled, so this rule is not active yet."
+      echo "      Enable it in Datacenter > Firewall > Options after checking your other rules (docs/SECURITY.md)."
+    fi
   fi
 }
 
@@ -466,6 +566,13 @@ uninstall() {
     udevadm control --reload-rules 2>/dev/null || true
   fi
   rm -rf "${STATE_DIR}"
+  local fw_file
+  fw_file="$(host_fw_file)"
+  if [[ -f "${fw_file}" ]] && grep -qF -- "${FIREWALL_MARK}" "${fw_file}"; then
+    info "Removing the pbo-agent firewall rules from ${fw_file}"
+    remove_firewall_rules "${fw_file}"
+    pve-firewall compile >/dev/null 2>&1 || true
+  fi
   info "Removing ${INSTALL_DIR} and ${CONF_DIR}"
   rm -rf "${INSTALL_DIR}" "${CONF_DIR}"
   if ((PURGE_PVE_ACCESS)); then
@@ -498,12 +605,15 @@ main() {
   create_certificate
   register_agent
   install_services
+  configure_firewall
   verify
   legacy_notice
   echo
   info "Agent installed (${ROLE}): https://${LISTEN_IP}:${PORT}"
   echo "    Agent certificate fingerprint: ${AGENT_FP}"
-  echo "    Only the app needs to reach port ${PORT}: restrict it in the Proxmox firewall."
+  if [[ "${FIREWALL}" != 1 ]]; then
+    echo "    Only the app needs to reach port ${PORT}: restrict it in the Proxmox firewall."
+  fi
 }
 
 # PBO_INSTALL_SOURCED=1 lets tests source the functions without running.

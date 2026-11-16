@@ -45,7 +45,8 @@ const DEFAULT_FORM: EventForm = {
   datastore: "",
   recurrence_type: "weekly",
   recurrence_config: null,
-  timezone: "Europe/Paris",
+  // Empty = the app time zone (chosen in the setup wizard), applied by the API.
+  timezone: "",
   window_starts_at: "",
   window_duration_minutes: 300,
   notify_before_minutes: 60,

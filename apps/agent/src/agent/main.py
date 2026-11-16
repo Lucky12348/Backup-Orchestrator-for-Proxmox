@@ -71,6 +71,7 @@ AGENT_CAPABILITIES = {
     "ntfy-notifications",
     "pve-provision-access",
     "pve-guest-addresses",
+    "pve-vm-addresses",
     "usb-hotplug-report",
 }
 
