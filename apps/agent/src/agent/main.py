@@ -25,6 +25,7 @@ import httpx
 import uvicorn
 
 from agent import hotplug
+from agent.usb_location import usb_location
 
 
 logging.basicConfig(
@@ -72,6 +73,7 @@ AGENT_CAPABILITIES = {
     "pve-provision-access",
     "pve-guest-addresses",
     "pve-vm-addresses",
+    "disk-usb-location",
     "usb-hotplug-report",
 }
 
@@ -1399,6 +1401,9 @@ def discover_real_disks(settings: AgentSettings) -> list[dict[str, Any]]:
             candidate_type=candidate_type,
             detection_reason=detection_reason,
             mount_lookup=mount_lookup,
+            # Physical USB port (sysfs): the app passes THIS port through to
+            # the PBS VM instead of guessing from Proxmox's USB list.
+            usb_location=usb_location(device_name(device), udev_props=udev_props),
         )
         if disk_report:
             discovered.append(disk_report)
@@ -2037,6 +2042,7 @@ def build_disk_report(
     candidate_type: str,
     detection_reason: str,
     mount_lookup: dict[str, str],
+    usb_location: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     partition_info = derive_partition_info(device, mount_lookup)
     model_name = first_value(device.get("model"), udev_props.get("ID_MODEL"))
@@ -2058,6 +2064,33 @@ def build_disk_report(
         "candidate_type": candidate_type,
         "trusted": False,
         "connected": True,
+        "usb_location": usb_location,
+    }
+
+
+def disk_usb_location_result(serial: str | None, device: str | None) -> dict[str, Any]:
+    """Where is this disk plugged NOW? Checked right before the USB passthrough
+    (it may have been unplugged and plugged into another port)."""
+    node = None
+    for identifier in (serial, device):
+        if not identifier:
+            continue
+        try:
+            node, _ = resolve_disk(identifier)
+            break
+        except FileNotFoundError:
+            continue
+    if node is None:
+        return {"ok": True, "found": False, "message": "Disk not found on the Proxmox host."}
+    name = str(node.get("kname") or node.get("name") or "")
+    location = usb_location(name, udev_props=load_udev_properties(name))
+    return {
+        "ok": True,
+        "found": True,
+        "device": name,
+        "serial": node.get("serial"),
+        "usb_location": location,
+        "message": f"/dev/{name} is at USB port {location['port_id']}." if location else f"/dev/{name} is not a USB disk.",
     }
 
 

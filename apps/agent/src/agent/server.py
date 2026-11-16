@@ -13,6 +13,7 @@ from agent.main import (
     build_command_failure_payload,
     check_source_datastore,
     current_timestamp,
+    disk_usb_location_result,
     eject_dedicated_pbs_datastore_result,
     filesystem_usage_result,
     inspect_disk_result,
@@ -91,6 +92,7 @@ ROUTE_ROLES: dict[str, frozenset[str]] = {
     "/qemu/usb/detach": _HOST,
     "/qemu/config": _HOST,
     "/disk/spin-down": _HOST,
+    "/disk/usb-location": _HOST,
     # Setup wizard: pveum provisioning of pbo@pve!pbo, guest agent addresses.
     "/pve/provision-access": _HOST,
     "/pve/guest-addresses": _HOST,
@@ -217,6 +219,11 @@ class QemuConfigRequest(BaseModel):
 
 class GuestAddressesRequest(BaseModel):
     vmids: list[int] = Field(default_factory=list, max_length=64)
+
+
+class DiskUsbLocationRequest(BaseModel):
+    serial: str | None = Field(default=None, max_length=255)
+    device: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9]{1,31}$")
 
 
 class VmAddressesRequest(BaseModel):
@@ -571,6 +578,14 @@ def pve_guest_addresses(
     _: None = Depends(require_agent_token),
 ) -> Response:
     return _run_endpoint("pve-guest-addresses", lambda: guest_addresses(payload.vmids))
+
+
+@app.post("/disk/usb-location", response_model=None)
+def disk_usb_location(
+    payload: DiskUsbLocationRequest,
+    _: None = Depends(require_agent_token),
+) -> Response:
+    return _run_endpoint("disk-usb-location", lambda: disk_usb_location_result(payload.serial, payload.device))
 
 
 @app.post("/pve/vm-addresses", response_model=None)

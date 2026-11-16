@@ -186,9 +186,10 @@ class DiskHandoffUsbMatchTests(TestCase):
             )
 
         self.assertEqual(raised.exception.status_code, 409)
-        self.assertIn("Ambiguous Proxmox USB passthrough candidates", raised.exception.detail)
-        self.assertIn("usbpath=5", raised.exception.detail)
-        self.assertIn("usbpath=6", raised.exception.detail)
+        self.assertEqual(raised.exception.code, "usb_device_ambiguous")
+        self.assertIn("Ambiguous Proxmox USB passthrough candidates", raised.exception.technical)
+        self.assertIn("usbpath=5", raised.exception.technical)
+        self.assertIn("usbpath=6", raised.exception.technical)
 
     def test_attach_verification_accepts_config_after_three_polls(self):
         client = _FakeProxmoxClient([{}, {}, {"usb0": "host=1-9,usb3=0"}])

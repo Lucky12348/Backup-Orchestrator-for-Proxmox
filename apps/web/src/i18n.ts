@@ -271,8 +271,25 @@ export const translations = {
       pbs_agent_outdated: "The PBS agent is too old: update it.",
       unknown: "Not ready.",
     },
-    usbDeviceNotFoundStep: "USB disk not found",
-    usbDeviceNotFound: "Disk not found in the Proxmox USB device list. The details (USB devices seen) are in the run log.",
+    // USB handoff failure codes (run step), see src/handoff.ts.
+    handoff: {
+      usb_device_not_found: {
+        step: "USB disk not found",
+        message: "Disk not found in the Proxmox USB device list. The details (USB devices seen) are in the run log.",
+      },
+      usb_location_not_in_proxmox: {
+        step: "USB port not found",
+        message: "The disk's USB port is not in the Proxmox USB device list. The details are in the run log.",
+      },
+      disk_not_plugged: {
+        step: "Disk unplugged",
+        message: "The disk is no longer plugged into the Proxmox host. Plug it back in, then retry.",
+      },
+      usb_device_ambiguous: {
+        step: "Several USB candidates",
+        message: "Several USB devices could be this disk. Update the host agent (it reports the exact USB port), or unplug the other USB storage devices.",
+      },
+    },
     pbsApiComponent: "PBS (API)",
     pbsApiNoAgent: "PBS is driven through its REST API: no PBS agent is needed.",
     externalBackupAutoEject: "Automatically eject the disk once the backup succeeds",
@@ -758,8 +775,24 @@ export const translations = {
       pbs_agent_outdated: "L'agent PBS est trop ancien : mettez-le à jour.",
       unknown: "Pas prêt.",
     },
-    usbDeviceNotFoundStep: "Disque USB introuvable",
-    usbDeviceNotFound: "Disque introuvable dans la liste USB de Proxmox. Le détail (périphériques USB vus) est dans le journal du run.",
+    handoff: {
+      usb_device_not_found: {
+        step: "Disque USB introuvable",
+        message: "Disque introuvable dans la liste USB de Proxmox. Le détail (périphériques USB vus) est dans le journal du run.",
+      },
+      usb_location_not_in_proxmox: {
+        step: "Port USB introuvable",
+        message: "Le port USB du disque n'apparaît pas dans la liste USB de Proxmox. Le détail est dans le journal du run.",
+      },
+      disk_not_plugged: {
+        step: "Disque débranché",
+        message: "Le disque n'est plus branché sur l'hôte Proxmox. Rebranchez-le, puis réessayez.",
+      },
+      usb_device_ambiguous: {
+        step: "Plusieurs candidats USB",
+        message: "Plusieurs périphériques USB pourraient être ce disque. Mettez à jour l'agent hôte (il indique le port USB exact) ou débranchez les autres supports USB.",
+      },
+    },
     pbsApiComponent: "PBS (API)",
     pbsApiNoAgent: "PBS est piloté par son API REST : aucun agent PBS n'est nécessaire.",
     externalBackupAutoEject: "Ejecter automatiquement le disque une fois la sauvegarde reussie",

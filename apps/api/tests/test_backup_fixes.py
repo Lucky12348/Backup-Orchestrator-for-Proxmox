@@ -113,6 +113,7 @@ def test_handoff_keeps_a_clear_message_and_logs_the_usb_devices(monkeypatch):
     monkeypatch.setattr(
         "app.services.disk_handoff.get_settings", lambda: SimpleNamespace(pve_node_name="pve", pbs_execution_vm_id=110)
     )
+    monkeypatch.setattr("app.services.disk_handoff.current_usb_location", lambda db, disk, progress=None: None)
     logged = []
     disk = _disk(mount_path=None)
     with pytest.raises(DiskHandoffError) as info:
@@ -120,8 +121,7 @@ def test_handoff_keeps_a_clear_message_and_logs_the_usb_devices(monkeypatch):
     assert info.value.detail == "Disk not found in the Proxmox USB device list."
     assert info.value.code == USB_DEVICE_NOT_FOUND
     assert "disk not connected" not in str(info.value.detail)
-    assert logged and logged[0][0] == "handoff_disk"
-    assert "SOMETHING-ELSE" in logged[0][1] and "Available USB devices" in logged[0][1]
+    assert any(step == "handoff_disk" and "SOMETHING-ELSE" in message and "Available USB devices" in message for step, message in logged)
 
 
 def test_run_failure_keeps_code_and_technical_detail(session_factory, monkeypatch):

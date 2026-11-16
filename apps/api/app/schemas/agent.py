@@ -11,6 +11,21 @@ class AgentHeartbeatCreate(BaseModel):
     observed_at: datetime
 
 
+class AgentUsbLocation(BaseModel):
+    """Physical USB port of the disk, read by the host agent in sysfs."""
+
+    busnum: int = Field(ge=0, le=999)
+    devpath: str = Field(pattern=r"^\d+(?:\.\d+)*$", max_length=64)
+    port_id: str = Field(pattern=r"^\d+-\d+(?:\.\d+)*$", max_length=70)
+    device: str | None = Field(default=None, max_length=32)
+    vendor_id: str | None = Field(default=None, max_length=16)
+    product_id: str | None = Field(default=None, max_length=16)
+    serial: str | None = Field(default=None, max_length=255)
+    manufacturer: str | None = Field(default=None, max_length=255)
+    product: str | None = Field(default=None, max_length=255)
+    id_path: str | None = Field(default=None, max_length=255)
+
+
 class AgentDiskReportItem(BaseModel):
     serial_number: str = Field(max_length=255)
     display_name: str = Field(max_length=255)
@@ -25,6 +40,7 @@ class AgentDiskReportItem(BaseModel):
     candidate_type: str | None = Field(default=None, max_length=64)
     trusted: bool = False
     connected: bool
+    usb_location: AgentUsbLocation | None = None
 
 
 class AgentHotplugEvent(BaseModel):

@@ -320,6 +320,13 @@ journalctl -u pbo-agent-report.service -n 50
   `autosnap = no` on their template, for sanoid), or destroy the extra
   snapshots first (`zfs list -t snapshot -o name rpool/data/vm-<id>-disk-0`).
   Nothing in PBO creates ZFS snapshots.
+- **Backup run fails at the USB handoff ("Several USB candidates", "USB disk
+  not found")**: the Proxmox USB list often has no USB serial (QEMU disks,
+  many enclosures). Recent host agents report the exact USB port of each disk
+  (read in sysfs) and the app passes that port through; re-run the agent
+  install command if the agent predates it. Check what the agent sees with
+  `journalctl -u pbo-agent-report.service` and the port in
+  `readlink -f /sys/block/sdX/device` (the `N-M` component).
 - **Agent port 8090 reachable from other machines**: the installer adds a
   Proxmox firewall rule (see section 4); it is only active when the datacenter
   firewall is enabled.

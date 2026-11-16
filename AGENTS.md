@@ -249,6 +249,25 @@ should reach them — and every call is additionally protected with an
   the front. `/system/version` returns `pbs_mode` (Settings shows
   "PBS (API)" in API mode).
 
+## Disk ↔ USB port (Phase 4.4, read before touching the USB passthrough)
+
+- The host agent reports, for each USB disk, its physical USB location read
+  in sysfs (`apps/agent/src/agent/usb_location.py`: walk up from
+  `/sys/block/<dev>/device` to the USB device with `busnum` + `devpath`) →
+  `usb_location` (`port_id` "2-3" = QEMU `host=` syntax, vendor/product,
+  USB serial if any, udev `ID_PATH`). Stored on `external_disks.usb_location`
+  (+ `usb_location_seen_at`; Alembic `0005`, idempotent because that table is
+  still created by `create_all`).
+- Handoff order (`disk_handoff.handoff_disk_to_pbs`): ask the agent where the
+  disk is NOW (`POST /disk/usb-location`, host role; the disk may have moved
+  to another port) → that exact port in `/hardware/usb` (`resolve_usb_device`,
+  error `usb_location_not_in_proxmox` if absent, never a guess) → only without
+  a location: serial matching, then the "guess" fallback, which excludes every
+  non-storage device (known USB class other than 0x00/0x08/0xef/0xff, HID,
+  hubs, tablet/keyboard/mouse… by name) and refuses ambiguity
+  (`usb_device_ambiguous`). Codes are translated by the UI (`src/handoff.ts`,
+  messages must match the API constants — a test checks it).
+
 ## Real-time channel (read before touching disk reports, runs or polling)
 
 - Agent (host): `/etc/udev/rules.d/90-pbo-agent.rules` (written by
@@ -578,7 +597,8 @@ The image (`infra/docker/api.Dockerfile`) is built from the **repository root**
   disk events from reports, run.* hooks, agent presence).
 - `apps/agent/tests/` (9 files, incl. `test_agent_role.py`,
   `test_registered_agent.py`, `test_pve_access.py` with simulated `pveum`,
-  `test_hotplug.py` for the hot-plug diff and debounce),
+  `test_hotplug.py` for the hot-plug diff and debounce, `test_usb_location.py`
+  for the sysfs walk),
   `apps/app-maintenance-agent/tests/` (1 file).
 - Nothing has been run against a real PBS in API mode yet: the fake follows the
   documented schema; points the schema leaves open are marked [U] in

@@ -186,6 +186,9 @@ def ingest_agent_disk_report(db: Session, payload: AgentDiskReportCreate) -> lis
         disk.connected = True if _is_pbs_handoff_disk(disk) else item.connected
         disk.presence_state = "present" if disk.connected else "absent"
         disk.last_seen_at = observed_at
+        if item.usb_location is not None:
+            disk.usb_location = item.usb_location.model_dump()
+            disk.usb_location_seen_at = observed_at
         disk.source = "agent"
         disk.reported_by_hostname = payload.hostname
         disk.active = True

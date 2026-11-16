@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from time import sleep
 from typing import Any, Callable
 
@@ -74,7 +75,13 @@ def handoff_disk_to_pbs(
     settings = get_settings()
     client = ProxmoxClient(settings)
     try:
-        device = _find_matching_usb_device(client.list_usb_devices(settings.pve_node_name), disk)
+        # 1. Where is the disk plugged right now (host agent, sysfs)? It may have
+        #    moved to another port since the last report.
+        location = current_usb_location(db, disk, progress)
+        # 2. That exact port in Proxmox's USB list; serial matching and the
+        #    "guess" fallback only when the location is unknown.
+        device = resolve_usb_device(client.list_usb_devices(settings.pve_node_name), disk, location)
+        _report(progress, "handoff_disk", f"USB device chosen by {device.get('source', 'serial')}: {device['mapping']}.")
     except DiskHandoffError as exc:
         # Clear message for the operator, technical detail (USB devices seen) in the run log.
         _report(progress, "handoff_disk", exc.technical)
@@ -427,6 +434,99 @@ def _has_vendor_product_mapping(device: dict[str, str]) -> bool:
     return _vendor_product_mapping(device) is not None
 
 
+# A location reported by the agent is trusted without re-asking for this long
+# (only used when the agent cannot be asked: old agent, timeout).
+USB_LOCATION_MAX_AGE = timedelta(minutes=15)
+USB_LOCATION_NOT_IN_PROXMOX = "usb_location_not_in_proxmox"
+DISK_NOT_PLUGGED = "disk_not_plugged"
+USB_DEVICE_AMBIGUOUS = "usb_device_ambiguous"
+USB_DEVICE_AMBIGUOUS_MESSAGE = (
+    "Several USB devices could be this disk. Update the host agent (it reports the exact USB port), "
+    "or unplug the other USB storage devices."
+)
+
+
+def _stored_location(disk: Any) -> dict[str, Any] | None:
+    location = getattr(disk, "usb_location", None)
+    return location if isinstance(location, dict) and location.get("port_id") else None
+
+
+def _stored_location_is_recent(disk: Any, now: datetime) -> bool:
+    seen_at = getattr(disk, "usb_location_seen_at", None)
+    return bool(_stored_location(disk) and seen_at and now - seen_at <= USB_LOCATION_MAX_AGE)
+
+
+def current_usb_location(
+    db: Session | None,
+    disk: Any,
+    progress: ProgressCallback | None = None,
+    *,
+    agent_client: Any | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any] | None:
+    """Ask the host agent where the disk is plugged NOW (it may have been
+    unplugged and plugged into another port). Falls back to the last reported
+    location while it is recent, then to None (serial matching)."""
+    now = now or datetime.utcnow()
+    stored = _stored_location(disk)
+    try:
+        client = agent_client or get_host_agent_client()
+        payload = client.post(
+            "/disk/usb-location",
+            {"serial": disk.serial_number, "device": (stored or {}).get("device")},
+        ).payload
+    except HostAgentError as exc:
+        if _stored_location_is_recent(disk, now):
+            _report(progress, "handoff_disk", f"Host agent cannot confirm the USB port ({exc}); using the port reported {stored['port_id']}.")
+            return stored
+        _report(progress, "handoff_disk", f"Host agent cannot confirm the USB port ({exc}); matching by serial instead.")
+        return None
+    if not payload.get("found"):
+        raise DiskHandoffError(
+            DISK_NOT_PLUGGED,
+            "The disk is no longer plugged into the Proxmox host.",
+            technical=str(payload.get("message") or "Host agent did not find the disk."),
+            status_code=status.HTTP_409_CONFLICT,
+        )
+    location = payload.get("usb_location")
+    if not isinstance(location, dict) or not location.get("port_id"):
+        _report(progress, "handoff_disk", "The host agent sees the disk but not as a USB device; matching by serial.")
+        return None
+    if stored and stored.get("port_id") != location.get("port_id"):
+        _report(
+            progress,
+            "handoff_disk",
+            f"Disk moved from USB port {stored['port_id']} to {location['port_id']}: using the new port.",
+        )
+    disk.usb_location = location
+    disk.usb_location_seen_at = now
+    if db is not None:
+        db.add(disk)
+        db.commit()
+    return location
+
+
+def resolve_usb_device(
+    devices: list[dict[str, Any]], disk: Any, location: dict[str, Any] | None
+) -> dict[str, str]:
+    """Deterministic when the USB port is known: host=<busnum>-<port path>,
+    checked against Proxmox's list. Serial / guess only without a location."""
+    if location and location.get("port_id"):
+        port_id = str(location["port_id"])
+        for raw_device in devices:
+            if _qemu_usb_host_mapping(raw_device) == port_id:
+                return {**_build_usb_match(raw_device, port_id), "source": "usb_location"}
+        raise DiskHandoffError(
+            USB_LOCATION_NOT_IN_PROXMOX,
+            "The disk's USB port is not in the Proxmox USB device list.",
+            technical=(
+                f"Host agent reports disk `{disk.serial_number}` at USB port {port_id} "
+                f"(/dev/{location.get('device') or '?'}); Proxmox lists: {_summarize_usb_devices(devices)}"
+            ),
+        )
+    return _find_matching_usb_device(devices, disk)
+
+
 def _find_matching_usb_device(devices: list[dict[str, Any]], disk: ExternalDisk) -> dict[str, str]:
     strict_match = _find_strict_serial_match(devices, disk)
     if strict_match:
@@ -483,14 +583,14 @@ def _find_safe_fallback_usb_match(devices: list[dict[str, Any]], disk: ExternalD
         if mapping:
             return _build_usb_match(matches[0], mapping)
     if len(matches) > 1:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                "Ambiguous Proxmox USB passthrough candidates matched "
-                f"disk serial `{disk.serial_number}`"
-                f"{_disk_identity_suffix(disk)}. "
-                f"Matched USB devices: {_summarize_usb_devices(matches)}"
-            ),
+        technical = (
+            "Ambiguous Proxmox USB passthrough candidates matched "
+            f"disk serial `{disk.serial_number}`"
+            f"{_disk_identity_suffix(disk)}. "
+            f"Matched USB devices: {_summarize_usb_devices(matches)}"
+        )
+        raise DiskHandoffError(
+            USB_DEVICE_AMBIGUOUS, USB_DEVICE_AMBIGUOUS_MESSAGE, technical=technical, status_code=status.HTTP_409_CONFLICT
         )
     return None
 
@@ -583,15 +683,50 @@ def _selected_usb_detail(device: dict[str, str]) -> str:
     return f" ({summary})"
 
 
+# USB device classes that can hold a disk: 0x00 (defined per interface, most
+# USB-SATA bridges), 0x08 mass storage, 0xef (misc/composite), 0xff (vendor).
+# Any other KNOWN class (HID 0x03, hub 0x09, audio, video, CDC…) is not a disk.
+STORAGE_CAPABLE_USB_CLASSES = {0x00, 0x08, 0xEF, 0xFF}
+
+
+def _usb_class_number(device: dict[str, Any]) -> int | None:
+    raw = (_candidate_value(device, "class", "classid", "usbclass", "usb_class") or "").strip().casefold()
+    if not raw:
+        return None
+    if raw in {"hid"}:
+        return 0x03
+    if raw in {"hub"}:
+        return 0x09
+    if raw in {"mass storage", "storage"}:
+        return 0x08
+    try:
+        return int(raw, 16) if raw.startswith("0x") else int(raw)
+    except ValueError:
+        return None
+
+
 def _is_forbidden_usb_passthrough_candidate(device: dict[str, Any]) -> bool:
-    usb_class = (_candidate_value(device, "class", "classid", "usbclass", "usb_class") or "").casefold()
-    if usb_class in {"3", "03", "0x03", "9", "09", "0x09", "hid", "hub"}:
+    usb_class = _usb_class_number(device)
+    if usb_class is not None and usb_class not in STORAGE_CAPABLE_USB_CLASSES:
         return True
 
     text = _normalized_usb_text(device)
     forbidden_terms = (
         "keyboard",
         "mouse",
+        "tablet",
+        "touchscreen",
+        "touchpad",
+        "trackpad",
+        "pointer",
+        "joystick",
+        "gamepad",
+        "yubikey",
+        "token",
+        "dongle",
+        "modem",
+        "serial converter",
+        "uart",
         "ups",
         "uninterruptible",
         "power supply",

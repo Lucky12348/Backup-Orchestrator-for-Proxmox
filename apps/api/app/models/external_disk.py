@@ -50,6 +50,11 @@ class ExternalDisk(Base):
     pbs_filesystem_type: Mapped[str | None] = mapped_column(String(64))
     prepared_as_pbs_datastore: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     presence_state: Mapped[str] = mapped_column(String(16), nullable=False, default="absent")
+    # Physical USB port reported by the host agent (sysfs): {"port_id": "2-3",
+    # "busnum": 2, "devpath": "3", "device": "sdb", "vendor_id", "product_id",
+    # "serial", "id_path"…}. Used for a deterministic USB passthrough.
+    usb_location: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    usb_location_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
     last_detection_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False))
 
     assignments = relationship("DiskAssignment", back_populates="disk", cascade="all, delete-orphan")
