@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useConfirm } from "../ui/confirm";
 
 import {
   checkMaintenanceComponent,
@@ -155,6 +156,7 @@ function renderLogs(logs: MaintenanceCommandResult[], t: SettingsPageProps["t"])
 }
 
 export function SettingsPage({ t }: SettingsPageProps) {
+  const confirm = useConfirm();
   const [components, setComponents] = useState<MaintenanceComponentStatus[]>([]);
   const [meta, setMeta] = useState<Record<MaintenanceComponent, ComponentMeta>>(initialMeta);
   const [notificationStatus, setNotificationStatus] = useState<NotificationStatus | null>(null);
@@ -247,7 +249,13 @@ export function SettingsPage({ t }: SettingsPageProps) {
 
   async function updateComponent(component: MaintenanceComponent) {
     const warning = component === "app" ? t.maintenanceAppRestartWarning : t.maintenanceConfirmUpdate;
-    if (!window.confirm(warning)) return;
+    const ok = await confirm({
+      title: t.confirmDialogs.updateTitle,
+      description: warning,
+      confirmLabel: t.confirmDialogs.update,
+      tone: component === "app" ? "warning" : "info",
+    });
+    if (!ok) return;
 
     setBanner(null);
     try {
@@ -275,7 +283,13 @@ export function SettingsPage({ t }: SettingsPageProps) {
 
   async function updateAllComponents() {
     if (anyBusy) return;
-    if (!window.confirm(t.maintenanceAppRestartWarning)) return;
+    const ok = await confirm({
+      title: t.confirmDialogs.updateTitle,
+      description: t.maintenanceAppRestartWarning,
+      confirmLabel: t.confirmDialogs.update,
+      tone: "warning",
+    });
+    if (!ok) return;
 
     setBanner(null);
     const counts = { already: 0, updated: 0, failed: 0 };
@@ -529,7 +543,13 @@ export function SettingsPage({ t }: SettingsPageProps) {
   }
 
   async function resetNotificationPreferenceDefaults() {
-    if (!window.confirm(t.notificationResetConfirm)) return;
+    const ok = await confirm({
+      title: t.confirmDialogs.resetTitle,
+      description: t.notificationResetConfirm,
+      confirmLabel: t.confirmDialogs.reset,
+      tone: "warning",
+    });
+    if (!ok) return;
     setNotificationSaving(true);
     setNotificationResult(null);
     try {

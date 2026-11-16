@@ -41,3 +41,6 @@ coverage/
 
 # Local database / misc
 *.sqlite3
+
+# Compiled components for apps/web/tests/components.test.ts
+apps/web/tests/.build/

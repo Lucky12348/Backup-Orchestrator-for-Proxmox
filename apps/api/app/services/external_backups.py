@@ -17,6 +17,7 @@ from app.services.external_backup_agent import AgentCommandError, AgentCompatibi
 from app.services.external_backup_agent import get_external_backup_agent_bridge
 from app.services.external_backup_execution import build_export_target_path, get_external_backup_execution_service
 from app.services.notifications import notify_backup_failure, notify_backup_success
+from app.services.run_log import is_progress_line
 from app.services.pbs_progress import parse_pbs_progress_line, summarize_pbs_failure
 
 
@@ -500,6 +501,27 @@ def append_external_backup_run_log(
     if line and line != clean_message:
         entry_parts.append(line.rstrip())
     entry = " ".join(entry_parts)
+    progress_line = line or clean_message
+
+    if is_progress_line(progress_line):
+        # B22: "percentage done" / "Chunkstore create: n%" feed the progress bar,
+        # they are not journal lines.
+        run.current_step = clean_step
+        run.last_log_at = now
+        _apply_progress_line(run, progress_line, now)
+        db.add(run)
+        db.commit()
+        db.refresh(run)
+        return run
+    previous = (run.stderr_log if stream == "stderr" else run.stdout_log) or ""
+    if _entry_body(previous.rsplit("\n", 1)[-1]) == _entry_body(entry):
+        # B22: identical consecutive line (TASK OK, Wiping…): kept once.
+        run.last_log_at = now
+        _apply_progress_line(run, progress_line, now)
+        db.add(run)
+        db.commit()
+        db.refresh(run)
+        return run
 
     if stream == "stderr":
         run.stderr_log = _append_log(run.stderr_log, entry)
@@ -590,6 +612,14 @@ def _merge_logs(*values: str | None) -> str | None:
     return merged or None
 
 
+def _entry_body(entry: str) -> str:
+    """Log line without its leading `[timestamp]`."""
+    text = entry.strip()
+    if text.startswith("[") and "] " in text:
+        return text.split("] ", 1)[1]
+    return text
+
+
 def _append_log(existing: str | None, entry: str) -> str:
     if not existing:
         return entry
@@ -606,6 +636,11 @@ def _apply_progress_text(run: ExternalBackupRun, text: str | None) -> None:
 
 def _apply_progress_line(run: ExternalBackupRun, line: str | None, now: datetime) -> None:
     update = parse_pbs_progress_line(line)
+    if update.sync_started:
+        # A new phase starts: the datastore creation percentage is not the sync's.
+        run.progress_percent = 0.0
+    if update.chunkstore_percent is not None:
+        run.progress_percent = update.chunkstore_percent
     if update.progress_percent is not None:
         run.progress_percent = update.progress_percent
     if update.total_groups is not None:
@@ -618,10 +653,17 @@ def _apply_progress_line(run: ExternalBackupRun, line: str | None, now: datetime
         run.current_snapshot = update.current_snapshot
     if update.current_archive is not None:
         run.current_archive = update.current_archive
-    if update.downloaded_bytes is not None:
-        run.downloaded_bytes = update.downloaded_bytes
-    if update.current_speed is not None:
-        run.current_speed = update.current_speed
+    if update.summary:
+        # B23: the totals of the sync come from PBS's "Summary:" line.
+        if update.downloaded_bytes is not None:
+            run.downloaded_bytes = update.downloaded_bytes
+        if update.current_speed is not None:
+            run.current_speed = update.current_speed
+    elif update.downloaded_bytes is not None and "Summary:" not in (run.stdout_log or ""):
+        # Live: each "downloaded" line is one archive → cumulative transferred bytes.
+        run.downloaded_bytes = (run.downloaded_bytes or 0) + update.downloaded_bytes
+        if update.current_speed is not None:
+            run.current_speed = update.current_speed
     if update.pbs_sync_job_id is not None:
         run.pbs_sync_job_id = update.pbs_sync_job_id
     if update.pbs_remote_id is not None:

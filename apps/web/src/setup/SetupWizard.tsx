@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Check, Loader2, Monitor, Moon, Sun } from "lucide-react";
 
-import "@fontsource-variable/geist";
-import "@fontsource-variable/geist-mono";
-import "./wizard.css";
 
 import { useAuth } from "../AuthContext";
 import { Card } from "../components/ui/card";
@@ -119,7 +116,7 @@ export function SetupWizard({ onFinished }: { onFinished: (path?: string) => voi
 
   return (
     <TextContext.Provider value={text}>
-      <div id="pbo-wizard" data-theme={theme}>
+      <div id="pbo-wizard" className="pbo-ui" data-theme={theme}>
         <div className="mx-auto flex min-h-screen w-full max-w-[640px] flex-col px-4 pb-16 pt-6 sm:px-6 sm:pt-10">
           <header className="mb-8 flex items-center justify-between">
             <div className="flex items-center gap-2.5">

@@ -7,6 +7,13 @@ import { PageHeader } from "../components/PageHeader";
 import { StatusBadge } from "../components/StatusBadge";
 import { EJECT_NOT_FINISHED_STEP, retryableEjectRunIds } from "../ejectRetry";
 import { useEvents } from "../useEvents";
+import { openRunModal } from "../runs/openRun";
+
+/** "main → pbo-pbotesta" (B23), the target alone for eject runs. */
+function datastoreLabel(run: ExternalBackupRun): string {
+  const target = run.target_datastore ?? run.datastore_name;
+  return run.source_datastore ? `${run.source_datastore} → ${target}` : target;
+}
 
 import { handoffMessage, handoffStepLabel } from "../handoff";
 import { formatDateTime, getBackupStatusTone } from "../utils";
@@ -110,6 +117,9 @@ export function ActivityPage({
                     <td>{formatDateTime(run.finished_at, language, t.notAvailable)}</td>
                     <td>{formatExternalBackupMessage(run.message, t) ?? t.notAvailable}</td>
                     <td>
+                      <button className="action-button" onClick={() => openRunModal(run.id)} type="button">
+                        {t.runModal.open}
+                      </button>
                       <ExternalBackupRunDetails run={run} language={language} t={t} />
                     </td>
                   </tr>
@@ -344,7 +354,7 @@ function ExternalBackupRunDetails({
           <strong>{t.externalBackupTargetPath}:</strong> {liveRun.target_path}
         </p>
         <p>
-          <strong>{t.pbsDatastore}:</strong> {liveRun.datastore_name}
+          <strong>{t.pbsDatastore}:</strong> {datastoreLabel(liveRun)}
         </p>
         <p>
           <strong>{t.externalBackupReturnCode}:</strong> {liveRun.return_code ?? t.notAvailable}

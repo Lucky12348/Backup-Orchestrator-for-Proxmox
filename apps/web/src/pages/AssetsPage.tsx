@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useConfirm } from "../ui/confirm";
 
 import {
   createProxmoxBackupJob,
@@ -131,6 +132,10 @@ function toFormValues(form: JobFormState): ProxmoxBackupJobFormValues {
   };
 }
 
+function fillText(template: string, values: Record<string, string>): string {
+  return template.replace(/\{(\w+)\}/g, (whole, key: string) => values[key] ?? whole);
+}
+
 export function AssetsPage({
   data,
   language,
@@ -141,6 +146,7 @@ export function AssetsPage({
   onBackupJobSelectionChange,
   onRefresh,
 }: AssetPageProps) {
+  const confirm = useConfirm();
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<"all" | "vm" | "ct">("all");
   const [protectedFilter, setProtectedFilter] = useState<"all" | "protected" | "unprotected" | "ignored">(
@@ -184,10 +190,16 @@ export function AssetsPage({
     });
   }
 
-  function saveSelection() {
+  async function saveSelection() {
     const job = data.proxmoxBackupJobs.find((item) => item.job_id === manageJobId);
     if (!job) return;
-    if (!window.confirm(`Modifier la selection du job Proxmox ${job.schedule ?? ""}/${job.storage ?? ""} ?`)) {
+    const ok = await confirm({
+      title: t.confirmDialogs.jobSelectionTitle,
+      description: fillText(t.confirmDialogs.jobSelectionText, { job: `${job.schedule ?? ""} / ${job.storage ?? ""}` }),
+      confirmLabel: t.confirmDialogs.save,
+      tone: "warning",
+    });
+    if (!ok) {
       return;
     }
     onBackupJobSelectionChange(job.job_id, Array.from(selectionDraft).sort((a, b) => a - b));
@@ -263,7 +275,13 @@ export function AssetsPage({
   }
 
   async function requestDeleteJob(job: ProxmoxBackupJob) {
-    if (!window.confirm(`Supprimer definitivement le job Proxmox ${job.schedule ?? ""} / ${job.storage ?? ""} ?`)) {
+    const ok = await confirm({
+      title: t.confirmDialogs.jobDeleteTitle,
+      description: fillText(t.confirmDialogs.jobDeleteText, { job: `${job.schedule ?? ""} / ${job.storage ?? ""}` }),
+      confirmLabel: t.confirmDialogs.delete,
+      tone: "danger",
+    });
+    if (!ok) {
       return;
     }
     setJobDeleting(job.job_id);

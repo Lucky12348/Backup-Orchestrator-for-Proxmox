@@ -320,6 +320,34 @@ export function getExternalBackupRun(runId: number) {
   return request<ExternalBackupRun>(`/external-backups/runs/${runId}`);
 }
 
+export interface RunJournalEntry {
+  at: string | null;
+  step: string | null;
+  source: "pbo" | "pbs";
+  level: "info" | "ok" | "warn" | "err";
+  code: string | null;
+  params: Record<string, string>;
+  text: string;
+  count: number;
+}
+
+export interface RunJournal {
+  run_id: number;
+  entries: RunJournalEntry[];
+  summary: { text: string; transferred_bytes: number | null; rate_bytes_per_second: number | null; no_new_data: boolean } | null;
+  source_datastore: string | null;
+  target_datastore: string | null;
+}
+
+/** Readable journal (progress lines removed, duplicates collapsed, coded PBO messages). */
+export function getRunJournal(runId: number) {
+  return request<RunJournal>(`/external-backups/runs/${runId}/log`);
+}
+
+export function cancelExternalBackupRun(runId: number) {
+  return request<{ run_id: number; cancel_requested: boolean }>(`/external-backups/runs/${runId}/cancel`, { method: "POST" });
+}
+
 export function cleanupExternalBackupRuns(keepLast = 10) {
   return request<{ deleted: number; keep_last: number }>(
     `/external-backups/runs/cleanup?keep_last=${keepLast}`,

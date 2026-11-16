@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>PBO – Tableau de bord</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.app{--bg:#09090B;--surface:#111114;--subtle:#18181C;--hover:#202026;--border:#26262C;--border2:#3A3A42;--text:#FAFAFA;--text2:#A1A1AA;--muted:#8B8B94;--accent:#7C6CFF;--accent-s:rgba(124,108,255,.14);--accent-t:#B0A7FF;--ok:#22C55E;--ok-s:rgba(34,197,94,.14);--ok-t:#4ADE80;--warn:#F59E0B;--warn-s:rgba(245,158,11,.14);--warn-t:#FBBF24;--err:#EF4444;--err-s:rgba(239,68,68,.14);--err-t:#F87171;font-family:'Geist',system-ui,sans-serif;color:var(--text);background:var(--bg)}
+.app.light{--bg:#FAFAFA;--surface:#FFFFFF;--subtle:#F4F4F5;--hover:#ECECEF;--border:#E4E4E7;--border2:#D4D4D8;--text:#09090B;--text2:#52525B;--muted:#6B6B74;--accent:#5B4BEB;--accent-s:rgba(91,75,235,.10);--accent-t:#4B3BD8;--ok:#16A34A;--ok-s:rgba(22,163,74,.10);--ok-t:#15803D;--warn:#D97706;--warn-s:rgba(217,119,6,.12);--warn-t:#B45309;--err:#DC2626;--err-s:rgba(220,38,38,.10);--err-t:#B91C1C}
+.app a{color:inherit;text-decoration:none}
+.nav:hover{background:var(--hover)}
+.btn:hover{filter:brightness(1.12)}
+.row:hover{background:var(--subtle)}
+.tip:hover .tipbox,.tip:focus-within .tipbox{display:block !important}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{animation:spin 1s linear infinite}
+</style>
+</helmet>
+<div class="app {{themeCls}}" style="display: flex; flex-wrap: wrap; min-height: 1080px; width: 100%;">
+
+<aside style="flex: 1 1 248px; box-sizing: border-box; background: var(--surface); border-right: 1px solid var(--border); padding: 20px 16px 16px; display: flex; flex-direction: column; gap: 2px;">
+  <div style="display: flex; align-items: center; gap: 10px; padding: 0 6px 20px;">
+    <div style="width: 32px; height: 32px; border-radius: 9px; background: var(--accent); display: flex; align-items: center; justify-content: center; color: #fff;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg></div>
+    <div style="display: flex; flex-direction: column;"><span style="font-size: 15px; font-weight: 600;">PBO</span><span style="font-size: 12px; color: var(--muted);">Backup Orchestrator</span></div>
+  </div>
+  <div style="font-size: 11px; font-weight: 500; letter-spacing: .04em; color: var(--muted); padding: 8px 10px 6px;">VUE D’ENSEMBLE</div>
+  <a href="Main.dc.html" class="nav" style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; background: var(--hover); color: var(--text); font-size: 14px; font-weight: 500;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>Tableau de bord</a>
+  <a href="#" class="nav" style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; color: var(--text2); font-size: 14px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01"/><path d="M6 18h.01"/></svg>Ressources</a>
+  <a href="Disks.dc.html" class="nav" style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; color: var(--text2); font-size: 14px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><path d="M6 16h.01"/><path d="M10 16h.01"/></svg><span style="flex-grow: 1;">Disques</span><span style="font-size: 11px; font-weight: 500; padding: 1px 7px; border-radius: 99px; background: var(--warn-s); color: var(--warn-t);">1 nouveau</span></a>
+  <a href="Planning.dc.html" class="nav" style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; color: var(--text2); font-size: 14px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>Planification</a>
+  <a href="#" class="nav" style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; color: var(--text2); font-size: 14px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>Activité</a>
+  <div style="font-size: 11px; font-weight: 500; letter-spacing: .04em; color: var(--muted); padding: 18px 10px 6px;">CONFIGURATION</div>
+  <a href="#" class="nav" style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; color: var(--text2); font-size: 14px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg>Intégrations</a>
+  <a href="#" class="nav" style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; color: var(--text2); font-size: 14px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>Notifications</a>
+  <a href="#" class="nav" style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; color: var(--text2); font-size: 14px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg>Réglages</a>
+  <div style="flex-grow: 1; min-height: 24px;"></div>
+  <div style="background: var(--accent-s); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px;">
+    <span style="font-size: 13px; font-weight: 500; color: var(--accent-t);">Mise à jour disponible</span>
+    <span style="font-size: 12px; color: var(--text2);">v1.3.0 · tapez « update » dans le LXC</span>
+  </div>
+  <div style="display: flex; align-items: center; gap: 10px; padding: 12px 6px 0;">
+    <div style="width: 30px; height: 30px; border-radius: 99px; background: var(--hover); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600;">A</div>
+    <div style="display: flex; flex-direction: column; flex-grow: 1;"><span style="font-size: 13px; font-weight: 500;">admin</span><span style="font-size: 12px; color: var(--muted);">Administrateur</span></div>
+    <button aria-label="Se déconnecter" style="background: none; border: 0; color: var(--muted); cursor: pointer; padding: 6px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg></button>
+  </div>
+</aside>
+
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column;">
+  <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 28px; border-bottom: 1px solid var(--border); min-height: 60px; box-sizing: border-box;">
+    <div style="display: flex; align-items: center; gap: 8px; flex-grow: 1; font-size: 14px;"><span style="color: var(--muted);">PBO</span><span style="color: var(--muted);">/</span><span style="font-weight: 500;">Tableau de bord</span></div>
+    <label style="display: flex; align-items: center; gap: 8px; width: 240px; height: 34px; box-sizing: border-box; padding: 0 8px 0 10px; border-radius: 8px; background: var(--subtle); border: 1px solid var(--border); color: var(--muted);">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      <input aria-label="Rechercher" placeholder="Rechercher une VM, un disque…" style="flex-grow: 1; min-width: 0; background: none; border: 0; outline: none; color: var(--text); font: inherit; font-size: 13px;">
+      <span style="font-family: 'Geist Mono', monospace; font-size: 11px; border: 1px solid var(--border2); border-radius: 4px; padding: 0 5px;">⌘K</span>
+    </label>
+    <a href="LiveRun.dc.html" class="btn" style="display: flex; align-items: center; gap: 10px; padding: 6px 12px 6px 10px; border-radius: 99px; background: var(--accent-s); border: 1px solid rgba(124,108,255,.35); color: var(--accent-t); font-size: 13px; font-weight: 500;">
+      <svg class="spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.22-8.56"/></svg>
+      Sauvegarde externe · WD 4 To
+      <span style="width: 64px; height: 4px; border-radius: 99px; background: rgba(124,108,255,.25); overflow: hidden; display: block;"><span style="display: block; width: 42%; height: 100%; background: var(--accent); border-radius: 99px;"></span></span>
+      <span style="font-family: 'Geist Mono', monospace; font-size: 12px;">42 %</span>
+    </a>
+    <button aria-label="Changer de thème" onClick="{{toggleTheme}}" style="width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--border); background: none; color: var(--text2); display: flex; align-items: center; justify-content: center; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></button>
+    <button aria-label="Notifications" style="position: relative; width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--border); background: none; color: var(--text2); display: flex; align-items: center; justify-content: center; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span style="position: absolute; top: 7px; right: 8px; width: 7px; height: 7px; border-radius: 99px; background: var(--err);"></span></button>
+  </header>
+
+  <div style="padding: 28px; display: flex; flex-direction: column; gap: 24px; max-width: 1240px; width: 100%; box-sizing: border-box;">
+    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px;">
+      <h1 style="margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -0.02em;">Tableau de bord</h1>
+      <span class="tip" style="position: relative; display: inline-flex;">
+        <button aria-label="À propos de cette page" style="width: 22px; height: 22px; border-radius: 99px; border: 1px solid var(--border2); background: none; color: var(--muted); font: inherit; font-size: 12px; font-weight: 600; cursor: help; display: flex; align-items: center; justify-content: center; padding: 0;">i</button>
+        <span class="tipbox" role="tooltip" style="display: none; position: absolute; left: 0; top: 30px; width: 300px; z-index: 10; padding: 10px 12px; border-radius: 10px; background: var(--hover); border: 1px solid var(--border2); font-size: 13px; line-height: 1.45; color: var(--text2); box-shadow: 0 8px 24px rgba(0,0,0,.35);">L’état de protection de vos VM et conteneurs, ce qui doit être fait et la prochaine rotation de disque.</span>
+      </span>
+      <span style="flex-grow: 1;"></span>
+      <a href="Planning.dc.html" class="btn" style="display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 8px; background: var(--subtle); border: 1px solid var(--border); font-size: 14px; font-weight: 500;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>Planifier</a>
+      <a href="LiveRun.dc.html" class="btn" style="display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 8px; background: var(--accent); color: #fff; font-size: 14px; font-weight: 500;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3 20 12 6 21Z"/></svg>Lancer une sauvegarde</a>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: stretch;">
+      <section aria-label="État de protection" style="flex: 2 1 520px; min-width: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; display: flex; flex-direction: column;">
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 28px; padding: 28px;">
+          <div style="position: relative; width: 132px; height: 132px; flex: none;">
+            <svg width="132" height="132" viewBox="0 0 132 132" aria-hidden="true"><circle cx="66" cy="66" r="56" fill="none" stroke="var(--subtle)" stroke-width="12"/><circle cx="66" cy="66" r="56" fill="none" stroke="var(--ok)" stroke-width="12" stroke-linecap="round" stroke-dasharray="351.9 351.9" transform="rotate(-90 66 66)"/></svg>
+            <div style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;"><span style="font-size: 30px; font-weight: 600; letter-spacing: -0.03em;">100 %</span><span style="font-size: 12px; color: var(--muted);">couverture</span></div>
+          </div>
+          <div style="flex: 1 1 260px; display: flex; flex-direction: column; gap: 10px;">
+            <span style="font-size: 24px; font-weight: 600; letter-spacing: -0.02em;">Tout est protégé</span>
+            <span style="font-size: 15px; color: var(--text2); line-height: 1.5;">Vos 11 VM et conteneurs ont une copie sur disque externe de moins de 7 jours.</span>
+            <span style="font-size: 13px; color: var(--muted);">Dernière copie réussie il y a 2 h · 2 ressources ignorées</span>
+          </div>
+        </div>
+        <a href="LiveRun.dc.html" class="row" style="display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 16px 28px; border-top: 1px solid var(--border);">
+          <svg class="spin" style="color: var(--accent-t); flex: none;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.22-8.56"/></svg>
+          <span style="font-size: 14px; font-weight: 500;">Sauvegarde en cours sur WD 4 To</span>
+          <span style="flex: 1 1 120px; height: 6px; border-radius: 99px; background: var(--subtle); overflow: hidden; display: block;"><span style="display: block; width: 42%; height: 100%; border-radius: 99px; background: var(--accent);"></span></span>
+          <span style="font-size: 13px; font-family: 'Geist Mono', monospace; color: var(--text2);">42 % · ~16 min</span>
+          <span style="font-size: 13px; font-weight: 500; color: var(--accent-t);">Suivre</span>
+        </a>
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 18px; padding: 14px 28px; border-top: 1px solid var(--border); font-size: 13px; color: var(--text2);">
+          <span style="display: flex; align-items: center; gap: 8px;"><span style="width: 7px; height: 7px; border-radius: 99px; background: var(--ok);"></span>Proxmox VE</span>
+          <span style="display: flex; align-items: center; gap: 8px;"><span style="width: 7px; height: 7px; border-radius: 99px; background: var(--ok);"></span>Backup Server</span>
+          <span style="display: flex; align-items: center; gap: 8px;"><span style="width: 7px; height: 7px; border-radius: 99px; background: var(--ok);"></span>Agent hôte</span>
+          <span style="flex-grow: 1;"></span>
+          <span style="color: var(--muted);">Tout est connecté</span>
+        </div>
+      </section>
+
+      <div style="flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 20px;">
+        <section style="background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 22px; display: flex; flex-direction: column; gap: 14px;">
+          <span style="font-size: 13px; color: var(--muted);">Prochaine rotation</span>
+          <div style="display: flex; flex-direction: column; gap: 4px;"><span style="font-size: 24px; font-weight: 600; letter-spacing: -0.02em;">Dimanche 22 nov.</span><span style="font-size: 14px; color: var(--text2);">09:00 · Backup externe hebdo</span></div>
+          <div style="display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 10px; background: var(--subtle);">
+            <svg style="color: var(--text2); flex: none;" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><path d="M6 16h.01"/><path d="M10 16h.01"/></svg>
+            <div style="display: flex; flex-direction: column; flex-grow: 1;"><span style="font-size: 14px; font-weight: 500;">Toshiba 3 To</span><span style="font-size: 12px; color: var(--warn-t);">À brancher avant dimanche</span></div>
+          </div>
+        </section>
+        <section style="background: var(--surface); border: 1px solid var(--border); border-radius: 16px; display: flex; flex-direction: column; flex-grow: 1;">
+          <div style="display: flex; align-items: center; gap: 8px; padding: 18px 22px 8px;"><span style="font-size: 15px; font-weight: 600; flex-grow: 1;">À traiter</span><span style="font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 99px; background: var(--warn-s); color: var(--warn-t);">2</span></div>
+          <a href="Disks.dc.html" class="row" style="display: flex; align-items: center; gap: 12px; padding: 12px 22px;">
+            <span style="width: 8px; height: 8px; border-radius: 99px; background: var(--warn); flex: none;"></span>
+            <span style="font-size: 14px; flex-grow: 1;">Nouveau disque : SanDisk 1 To</span>
+            <span style="font-size: 13px; color: var(--accent-t);">Examiner</span>
+          </a>
+          <a href="Planning.dc.html" class="row" style="display: flex; align-items: center; gap: 12px; padding: 12px 22px 16px;">
+            <span style="width: 8px; height: 8px; border-radius: 99px; background: var(--err); flex: none;"></span>
+            <span style="font-size: 14px; flex-grow: 1;">Rotation de ce matin manquée</span>
+            <span style="font-size: 13px; color: var(--accent-t);">Voir</span>
+          </a>
+        </section>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 20px;">
+      <section style="flex: 1 1 400px; min-width: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; display: flex; flex-direction: column;">
+        <div style="display: flex; align-items: center; padding: 18px 22px 10px;"><h2 style="margin: 0; font-size: 15px; font-weight: 600; flex-grow: 1;">Disques de rotation</h2><a href="Disks.dc.html" style="font-size: 13px; color: var(--accent-t);">Tous les disques</a></div>
+        <sc-for list="{{disks}}" as="d" hint-placeholder-count="2">
+          <a href="Disks.dc.html" class="row" style="display: flex; align-items: center; gap: 14px; padding: 14px 22px;">
+            <div style="display: flex; flex-direction: column; gap: 2px; width: 140px; flex: none;"><span style="font-size: 14px; font-weight: 500;">{{d.name}}</span><span style="font-size: 12px; color: {{d.stateC}};">{{d.state}}</span></div>
+            <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0;">
+              <div style="height: 6px; border-radius: 99px; background: var(--subtle); overflow: hidden;"><div style="width: {{d.w}}; height: 100%; border-radius: 99px; background: var(--text2); opacity: .55;"></div></div>
+              <span style="font-size: 12px; color: var(--muted);">{{d.cap}}</span>
+            </div>
+            <span style="font-size: 12px; color: var(--muted); width: 92px; text-align: right;">{{d.last}}</span>
+          </a>
+        </sc-for>
+      </section>
+      <section style="flex: 1 1 400px; min-width: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; display: flex; flex-direction: column;">
+        <div style="display: flex; align-items: center; padding: 18px 22px 10px;"><h2 style="margin: 0; font-size: 15px; font-weight: 600; flex-grow: 1;">Dernières exécutions</h2><a href="#" style="font-size: 13px; color: var(--accent-t);">Historique</a></div>
+        <sc-for list="{{runs}}" as="r" hint-placeholder-count="4">
+          <a href="LiveRun.dc.html" class="row" style="display: flex; align-items: center; gap: 12px; padding: 11px 22px;">
+            <span style="width: 18px; height: 18px; border-radius: 99px; flex: none; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; background: {{r.bg}}; color: {{r.fg}};">{{r.mark}}</span>
+            <span style="font-size: 14px; flex-grow: 1; min-width: 0;">{{r.title}}</span>
+            <span style="font-size: 12px; color: var(--muted);">{{r.when}}</span>
+          </a>
+        </sc-for>
+      </section>
+    </div>
+  </div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["dark","light"],"default":"dark"},"$preview":{"width":1440,"height":1080}}'>
+class Component extends DCLogic {
+  constructor(p){ super(p); this.state = { theme: null }; }
+  renderVals() {
+    const theme = this.state.theme || this.props.theme || 'dark';
+    const tone = { ok: ['var(--ok-s)','var(--ok-t)','✓'], err: ['var(--err-s)','var(--err-t)','✕'], run: ['var(--accent-s)','var(--accent-t)','•'] };
+    const runs = [
+      ['run','Sauvegarde manuelle · WD 4 To','en cours'],
+      ['ok','Sauvegarde manuelle · WD 4 To','auj. 14:02'],
+      ['err','Rotation hebdo · Toshiba non branché','auj. 09:00'],
+      ['ok','Sauvegarde Proxmox → pbs8to','auj. 03:00'],
+      ['ok','Rotation hebdo · Toshiba 3 To','8 nov.']
+    ].map(([t,title,when]) => ({ title, when, bg: tone[t][0], fg: tone[t][1], mark: tone[t][2] }));
+    return {
+      themeCls: theme === 'light' ? 'light' : 'dark',
+      toggleTheme: () => this.setState({ theme: theme === 'light' ? 'dark' : 'light' }),
+      runs,
+      disks: [
+        { name: 'WD 4 To', state: 'Branché · en cours', stateC: 'var(--accent-t)', w: '20%', cap: '2,9 To libres sur 3,66 To', last: 'auj. 14:02' },
+        { name: 'Toshiba 3 To', state: 'Débranché', stateC: 'var(--muted)', w: '70%', cap: '0,8 To libres sur 2,73 To', last: '8 nov.' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

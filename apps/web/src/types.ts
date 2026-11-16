@@ -276,6 +276,11 @@ export interface ExternalBackupRun {
   pbs_task_upid: string | null;
   elapsed_seconds: number | null;
   auto_eject_after_success: boolean;
+  /** "main → pbo-pbotesta" (eject runs only know the target). */
+  source_datastore?: string | null;
+  target_datastore?: string | null;
+  /** The running PBS task can be stopped (API mode). */
+  cancellable?: boolean;
   mode: ExternalBackupMode;
   created_at: string;
 }

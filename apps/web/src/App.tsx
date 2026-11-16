@@ -6,10 +6,10 @@ import { getExternalBackupPreview, AUTH_EXPIRED_EVENT } from "./api";
 import { AuthProvider, useAuth } from "./AuthContext";
 import { LoginPage } from "./pages/LoginPage";
 import { SETUP_PATH, setupRedirect } from "./setup/logic";
-import { AppShell } from "./components/AppShell";
+import { AppShellV2 } from "./shell/AppShellV2";
+import { expectRunModal, openRunModal } from "./runs/openRun";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { ErrorBanner } from "./components/ErrorBanner";
-import { GlobalToasts } from "./components/GlobalToasts";
 import { LoadingBlock } from "./components/LoadingBlock";
 import { useAppData } from "./hooks/useAppData";
 import { translations, type Language } from "./i18n";
@@ -200,8 +200,11 @@ function AuthenticatedApp() {
           </label>
         ),
         onConfirm: () => {
-          void startExternalBackup(disk.id, t.externalBackupSummary, autoEjectAfterSuccessRef.current);
           closeConfirm();
+          // Long action: follow it in the live run modal.
+          void startExternalBackup(disk.id, t.externalBackupSummary, autoEjectAfterSuccessRef.current).then((run) => {
+            if (run) openRunModal(run.id);
+          });
         },
       });
     } catch (previewError) {
@@ -221,7 +224,11 @@ function AuthenticatedApp() {
       confirmLabel: t.ejectDiskAction,
       cancelLabel: t.cancel,
       tone: "warning",
-      onConfirm: () => { void ejectDisk(disk.id, t.ejectDiskSuccess); closeConfirm(); },
+      onConfirm: () => {
+        closeConfirm();
+        expectRunModal(); // the eject run id arrives over SSE
+        void ejectDisk(disk.id, t.ejectDiskSuccess);
+      },
     });
   }
 
@@ -249,8 +256,7 @@ function AuthenticatedApp() {
 
   return (
     <>
-      <AppShell language={language} onLanguageChange={handleLanguageChange} t={t}>
-        <GlobalToasts language={language} />
+      <AppShellV2 language={language} onLanguageChange={handleLanguageChange} t={t} disks={data.disks} vms={data.vms}>
         {bannerError ? (
           <ErrorBanner dismissLabel={t.dismiss} message={bannerError} onDismiss={clearBannerError} />
         ) : null}
@@ -307,7 +313,10 @@ function AuthenticatedApp() {
                 language={language}
                 onCleanupOldRunsRequest={handleActivityCleanupRequest}
                 isEjecting={(diskId) => isSaving(`disk-eject-${diskId}`)}
-                onRetryEject={(diskId) => void ejectDisk(diskId, t.ejectDiskSuccess)}
+                onRetryEject={(diskId) => {
+                  expectRunModal();
+                  void ejectDisk(diskId, t.ejectDiskSuccess);
+                }}
                 t={t}
               />
             }
@@ -316,7 +325,6 @@ function AuthenticatedApp() {
           <Route element={<NotificationsPage language={language} t={t} />} path="/notifications" />
           <Route element={<SettingsPage t={t} />} path="/settings" />
         </Routes>
-      </AppShell>
 
       <ConfirmModal
         cancelLabel={confirmState?.cancelLabel ?? t.cancel}
@@ -329,6 +337,7 @@ function AuthenticatedApp() {
         title={confirmState?.title ?? ""}
         tone={confirmState?.tone ?? "warning"}
       />
+      </AppShellV2>
     </>
   );
 }

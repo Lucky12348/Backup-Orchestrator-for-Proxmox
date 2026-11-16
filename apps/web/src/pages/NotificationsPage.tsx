@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useConfirm } from "../ui/confirm";
 
 import {
   getHostNotifHistory,
@@ -65,6 +66,7 @@ function errorMessage(error: unknown) {
 }
 
 export function NotificationsPage({ language, t }: NotificationsPageProps) {
+  const confirm = useConfirm();
   const h = t.hostNotif;
   const [tab, setTab] = useState<Tab>("templates");
   const [baseline, setBaseline] = useState<HostNotifTemplates | null>(null);
@@ -158,9 +160,15 @@ export function NotificationsPage({ language, t }: NotificationsPageProps) {
     setExpanded(code);
   }
 
-  function deleteEvent(code: string) {
+  async function deleteEvent(code: string) {
     if (isBuiltinEvent(code)) return;
-    if (!window.confirm(fill(h.deleteConfirm, { code }))) return;
+    const ok = await confirm({
+      title: t.confirmDialogs.eventDeleteTitle,
+      description: fill(h.deleteConfirm, { code }),
+      confirmLabel: t.confirmDialogs.delete,
+      tone: "danger",
+    });
+    if (!ok) return;
     setDraft((current) => {
       if (!current) return current;
       const events = { ...current.events };

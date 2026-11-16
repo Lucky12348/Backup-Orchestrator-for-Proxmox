@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>PBO – Disques</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.app{--bg:#09090B;--surface:#111114;--subtle:#18181C;--hover:#202026;--border:#26262C;--border2:#3A3A42;--text:#FAFAFA;--text2:#A1A1AA;--muted:#8B8B94;--accent:#7C6CFF;--accent-s:rgba(124,108,255,.14);--accent-t:#B0A7FF;--ok:#22C55E;--ok-s:rgba(34,197,94,.14);--ok-t:#4ADE80;--warn:#F59E0B;--warn-s:rgba(245,158,11,.14);--warn-t:#FBBF24;--err:#EF4444;--err-s:rgba(239,68,68,.14);--err-t:#F87171;font-family:'Geist',system-ui,sans-serif;color:var(--text);background:var(--bg)}
+.app.light{--bg:#FAFAFA;--surface:#FFFFFF;--subtle:#F4F4F5;--hover:#ECECEF;--border:#E4E4E7;--border2:#D4D4D8;--text:#09090B;--text2:#52525B;--muted:#6B6B74;--accent:#5B4BEB;--accent-s:rgba(91,75,235,.10);--accent-t:#4B3BD8;--ok:#16A34A;--ok-s:rgba(22,163,74,.10);--ok-t:#15803D;--warn:#D97706;--warn-s:rgba(217,119,6,.12);--warn-t:#B45309;--err:#DC2626;--err-s:rgba(220,38,38,.10);--err-t:#B91C1C}
+.app a{color:inherit;text-decoration:none}
+.nav:hover{background:var(--hover)}
+.btn:hover{filter:brightness(1.12)}
+.card:hover{border-color:var(--border2)}
+.tip:hover .tipbox,.tip:focus-within .tipbox{display:block !important}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{animation:spin 1s linear infinite}
+</style>
+</helmet>
+<div class="app {{themeCls}}" style="display: flex; flex-wrap: wrap; min-height: 1100px; width: 100%;">
+
+<aside style="flex: 1 1 248px; box-sizing: border-box; background: var(--surface); border-right: 1px solid var(--border); padding: 20px 16px 16px; display: flex; flex-direction: column; gap: 2px;">
+  <div style="display: flex; align-items: center; gap: 10px; padding: 0 6px 20px;">
+    <div style="width: 32px; height: 32px; border-radius: 9px; background: var(--accent); display: flex; align-items: center; justify-content: center; color: #fff;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg></div>
+    <div style="display: flex; flex-direction: column;"><span style="font-size: 15px; font-weight: 600;">PBO</span><span style="font-size: 12px; color: var(--muted);">Backup Orchestrator</span></div>
+  </div>
+  <div style="font-size: 11px; font-weight: 500; letter-spacing: .04em; color: var(--muted); padding: 8px 10px 6px;">VUE D’ENSEMBLE</div>
+  <a href="Main.dc.html" class="nav" style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; color: var(--text2); font-size: 14px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>Tableau de bord</a>
+  <a href="#" class="nav" style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; color: var(--text2); font-size: 14px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01"/><path d="M6 18h.01"/></svg>Ressources</a>
+  <a href="Disks.dc.html" class="nav" style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; background: var(--hover); color: var(--text); font-size: 14px; font-weight: 500;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><path d="M6 16h.01"/><path d="M10 16h.01"/></svg><span style="flex-grow: 1;">Disques</span><span style="font-size: 11px; font-weight: 500; padding: 1px 7px; border-radius: 99px; background: var(--warn-s); color: var(--warn-t);">1 nouveau</span></a>
+  <a href="Planning.dc.html" class="nav" style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; color: var(--text2); font-size: 14px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>Planification</a>
+  <a href="#" class="nav" style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; color: var(--text2); font-size: 14px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>Activité</a>
+  <div style="font-size: 11px; font-weight: 500; letter-spacing: .04em; color: var(--muted); padding: 18px 10px 6px;">CONFIGURATION</div>
+  <a href="#" class="nav" style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; color: var(--text2); font-size: 14px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg>Intégrations</a>
+  <a href="#" class="nav" style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; color: var(--text2); font-size: 14px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>Notifications</a>
+  <a href="#" class="nav" style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; color: var(--text2); font-size: 14px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg>Réglages</a>
+  <div style="flex-grow: 1; min-height: 24px;"></div>
+  <div style="display: flex; align-items: center; gap: 10px; padding: 12px 6px 0;">
+    <div style="width: 30px; height: 30px; border-radius: 99px; background: var(--hover); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600;">A</div>
+    <div style="display: flex; flex-direction: column; flex-grow: 1;"><span style="font-size: 13px; font-weight: 500;">admin</span><span style="font-size: 12px; color: var(--muted);">Administrateur</span></div>
+  </div>
+</aside>
+
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column;">
+  <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 28px; border-bottom: 1px solid var(--border); min-height: 60px; box-sizing: border-box;">
+    <div style="display: flex; align-items: center; gap: 8px; flex-grow: 1; font-size: 14px;"><span style="color: var(--muted);">PBO</span><span style="color: var(--muted);">/</span><span style="font-weight: 500;">Disques</span></div>
+    <a href="LiveRun.dc.html" class="btn" style="display: flex; align-items: center; gap: 10px; padding: 6px 12px 6px 10px; border-radius: 99px; background: var(--accent-s); border: 1px solid rgba(124,108,255,.35); color: var(--accent-t); font-size: 13px; font-weight: 500;"><svg class="spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.22-8.56"/></svg>Sauvegarde externe · WD 4 To<span style="font-family: 'Geist Mono', monospace; font-size: 12px;">42 %</span></a>
+    <button aria-label="Changer de thème" onClick="{{toggleTheme}}" style="width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--border); background: none; color: var(--text2); display: flex; align-items: center; justify-content: center; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></button>
+  </header>
+
+  <div style="padding: 28px; display: flex; flex-direction: column; gap: 18px; max-width: 1280px; width: 100%; box-sizing: border-box;">
+    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px;">
+      <h1 style="margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -0.02em;">Disques</h1>
+      <span class="tip" style="position: relative; display: inline-flex;">
+        <button aria-label="À propos de cette page" style="width: 22px; height: 22px; border-radius: 99px; border: 1px solid var(--border2); background: none; color: var(--muted); font: inherit; font-size: 12px; font-weight: 600; cursor: help; display: flex; align-items: center; justify-content: center; padding: 0;">i</button>
+        <span class="tipbox" role="tooltip" style="display: none; position: absolute; left: 0; top: 30px; width: 320px; z-index: 10; padding: 10px 12px; border-radius: 10px; background: var(--hover); border: 1px solid var(--border2); font-size: 13px; line-height: 1.45; color: var(--text2); box-shadow: 0 8px 24px rgba(0,0,0,.35);">PBO détecte automatiquement les disques USB branchés sur l’hôte. Un disque inconnu attend votre décision ; un disque défaillant est rejeté automatiquement et n’est jamais utilisé.</span>
+      </span>
+      <span style="flex-grow: 1;"></span>
+      <button class="btn" style="font: inherit; display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 8px; background: var(--subtle); border: 1px solid var(--border); color: var(--text); font-size: 14px; font-weight: 500; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.22-8.56"/><path d="M21 3v6h-6"/></svg>Relancer la détection</button>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; border-bottom: 1px solid var(--border);">
+      <div role="tablist" aria-label="Filtrer les disques" style="display: flex; flex-wrap: wrap; gap: 22px; flex-grow: 1;">
+        <sc-for list="{{tabs}}" as="t" hint-placeholder-count="5">
+          <button role="tab" aria-selected="{{t.sel}}" onClick="{{t.pick}}" style="font: inherit; font-size: 14px; font-weight: 500; padding: 10px 0 12px; margin-bottom: -1px; border: 0; background: none; cursor: pointer; color: {{t.fg}}; box-shadow: {{t.line}}; display: flex; gap: 8px; align-items: center;">{{t.label}}<span style="font-size: 11px; font-weight: 600; min-width: 18px; padding: 1px 6px; border-radius: 99px; background: {{t.cntBg}}; color: {{t.cntFg}};">{{t.n}}</span></button>
+        </sc-for>
+      </div>
+      <label style="display: flex; align-items: center; gap: 8px; width: 220px; height: 32px; box-sizing: border-box; padding: 0 10px; margin-bottom: 8px; border-radius: 8px; background: var(--subtle); border: 1px solid var(--border); color: var(--muted);">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <input aria-label="Filtrer par nom ou série" placeholder="Nom ou n° de série" style="flex-grow: 1; min-width: 0; background: none; border: 0; outline: none; color: var(--text); font: inherit; font-size: 13px;">
+      </label>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start;">
+      <div style="flex: 999 1 460px; min-width: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px;">
+        <sc-for list="{{disks}}" as="d" hint-placeholder-count="4">
+          <button onClick="{{d.pick}}" class="card" style="font: inherit; text-align: left; color: inherit; cursor: pointer; background: var(--surface); border: 1px solid {{d.bd}}; box-shadow: {{d.ring}}; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 12px;">
+            <div style="display: flex; align-items: flex-start; gap: 12px; width: 100%;">
+              <div style="flex: none; width: 38px; height: 38px; border-radius: 10px; background: {{d.iconBg}}; color: {{d.iconFg}}; display: flex; align-items: center; justify-content: center;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><path d="M6 16h.01"/><path d="M10 16h.01"/></svg></div>
+              <div style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0;"><span style="font-size: 15px; font-weight: 600;">{{d.name}}</span><span style="font-size: 12px; color: var(--muted);">{{d.model}}</span></div>
+              <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; padding: 3px 10px 3px 8px; border-radius: 99px; background: {{d.stBg}}; color: {{d.stFg}}; white-space: nowrap;"><span style="width: 6px; height: 6px; border-radius: 99px; background: {{d.stDot}};"></span>{{d.status}}</span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 6px; width: 100%;">
+              <div style="display: flex; font-size: 12px; color: var(--text2);"><span style="flex-grow: 1;">{{d.capLeft}}</span><span style="font-family: 'Geist Mono', monospace;">{{d.capRight}}</span></div>
+              <div style="height: 6px; border-radius: 99px; background: var(--subtle); overflow: hidden;"><div style="width: {{d.capW}}; height: 100%; border-radius: 99px; background: {{d.capC}};"></div></div>
+            </div>
+            <span style="font-size: 13px; color: {{d.noteC}};">{{d.note}}</span>
+            <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+              <sc-for list="{{d.tags}}" as="g" hint-placeholder-count="2"><span style="font-size: 11px; padding: 2px 8px; border-radius: 6px; background: var(--subtle); color: var(--text2);">{{g}}</span></sc-for>
+            </div>
+          </button>
+        </sc-for>
+      </div>
+
+      <aside aria-label="Détail du disque" style="flex: 1 1 340px; max-width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; display: flex; flex-direction: column;">
+        <div style="padding: 18px; display: flex; flex-direction: column; gap: 4px; border-bottom: 1px solid var(--border);">
+          <span style="font-size: 12px; color: var(--muted);">Disque sélectionné</span>
+          <span style="font-size: 17px; font-weight: 600;">{{sel.name}}</span>
+          <span style="font-size: 13px; color: var(--text2);">{{sel.summary}}</span>
+        </div>
+
+        <sc-if value="{{sel.isNew}}" hint-placeholder-val="{{ false }}">
+          <div style="padding: 18px; display: flex; flex-direction: column; gap: 12px; border-bottom: 1px solid var(--border);">
+            <div style="display: flex; gap: 10px; padding: 12px; border-radius: 10px; background: var(--warn-s); color: var(--warn-t); font-size: 13px; line-height: 1.45;"><svg style="flex: none; margin-top: 1px;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><span>Ce disque contient une partition exFAT « Photos-2024 » (412 Go utilisés). L’approuver comme disque de rotation <b>effacera tout son contenu</b>.</span></div>
+            <label for="confirm-name" style="font-size: 13px; color: var(--text2);">Tapez <b style="color: var(--text); font-family: 'Geist Mono', monospace;">SanDisk</b> pour confirmer</label>
+            <input id="confirm-name" onInput="{{onType}}" placeholder="SanDisk" style="font: inherit; font-size: 14px; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--border2); background: var(--bg); color: var(--text); outline: none;">
+            <button disabled="{{cantApprove}}" class="btn" style="font: inherit; font-size: 14px; font-weight: 500; padding: 10px 14px; border-radius: 8px; border: 0; background: var(--err); color: #fff; cursor: pointer; opacity: {{approveOpacity}};">Formater et approuver</button>
+            <div style="display: flex; gap: 8px;">
+              <button class="btn" style="flex: 1; font: inherit; font-size: 13px; font-weight: 500; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--subtle); color: var(--text); cursor: pointer;">Ignorer ce disque</button>
+              <button class="btn" style="flex: 1; font: inherit; font-size: 13px; font-weight: 500; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--subtle); color: var(--text); cursor: pointer;">Toujours rejeter</button>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{sel.isWd}}" hint-placeholder-val="{{ true }}">
+          <div style="padding: 18px; display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid var(--border);">
+            <a href="LiveRun.dc.html" class="btn" style="display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 14px; border-radius: 8px; background: var(--accent); color: #fff; font-size: 14px; font-weight: 500;"><svg class="spin" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.22-8.56"/></svg>Suivre la sauvegarde · 42 %</a>
+            <button class="btn" style="font: inherit; font-size: 13px; font-weight: 500; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--subtle); color: var(--text2); cursor: not-allowed; display: flex; align-items: center; justify-content: center; gap: 8px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4 4 14h16Z"/><path d="M4 19h16"/></svg>Éjecter (après la sauvegarde)</button>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{sel.isRejected}}" hint-placeholder-val="{{ false }}">
+          <div style="padding: 18px; display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid var(--border);">
+            <div style="padding: 12px; border-radius: 10px; background: var(--err-s); color: var(--err-t); font-size: 13px; line-height: 1.45;">Rejeté automatiquement : taille rapportée 0 o. Le port, le câble ou l’alimentation USB est probablement défaillant.</div>
+            <button class="btn" style="font: inherit; font-size: 13px; font-weight: 500; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--subtle); color: var(--text); cursor: pointer;">Relancer la détection</button>
+          </div>
+        </sc-if>
+
+        <div style="padding: 14px 18px 6px; font-size: 13px; font-weight: 600;">Historique</div>
+        <sc-for list="{{sel.history}}" as="h" hint-placeholder-count="3">
+          <div style="display: flex; align-items: center; gap: 10px; padding: 6px 18px; font-size: 13px;"><span style="width: 7px; height: 7px; border-radius: 99px; background: {{h.c}};"></span><span style="flex-grow: 1; color: var(--text2);">{{h.t}}</span><span style="font-size: 12px; color: var(--muted);">{{h.d}}</span></div>
+        </sc-for>
+
+        <details style="margin-top: 10px; border-top: 1px solid var(--border);">
+          <summary style="padding: 14px 18px; font-size: 13px; font-weight: 500; color: var(--text2); cursor: pointer;">Identifiants techniques</summary>
+          <div style="padding: 0 18px 16px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; font-size: 12px;">
+            <sc-for list="{{sel.tech}}" as="x" hint-placeholder-count="4"><span style="color: var(--muted);">{{x.k}}</span><span style="font-family: 'Geist Mono', monospace; color: var(--text2); overflow-wrap: anywhere;">{{x.v}}</span></sc-for>
+          </div>
+        </details>
+      </aside>
+    </div>
+  </div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["dark","light"],"default":"dark"},"$preview":{"width":1440,"height":1100}}'>
+class Component extends DCLogic {
+  constructor(p){ super(p); this.state = { theme: null, tab: 'all', sel: 'wd', typed: '' }; }
+  renderVals() {
+    const st = this.state;
+    const theme = st.theme || this.props.theme || 'dark';
+    const T = { ok: ['var(--ok-s)','var(--ok-t)','var(--ok)'], run: ['var(--accent-s)','var(--accent-t)','var(--accent)'], warn: ['var(--warn-s)','var(--warn-t)','var(--warn)'], err: ['var(--err-s)','var(--err-t)','var(--err)'], off: ['var(--subtle)','var(--text2)','var(--muted)'] };
+    const D = [
+      { id: 'wd', groups: ['plugged','approved'], name: 'WD 4 To', model: 'WDC WD40NMZW · USB 3.0', tone: 'run', status: 'Sauvegarde en cours', capLeft: '727 Go utilisés · 2,9 To libres', capRight: '3,66 To', capW: '20%', note: 'Disque de rotation · datastore PBS prêt', tags: ['Branché','Approuvé','Rotation A'],
+        summary: 'Branché sur l’hôte promox · visible dans PBS', history: [['ok','Sauvegarde réussie · 312 Go','15 nov. 14:02'],['ok','Sauvegarde réussie · 298 Go','1 nov. 09:34'],['ok','Approuvé et préparé','28 mai']],
+        tech: [['Série','WXD2DA1L1E7C'],['Série USB','WD-WXD2DA1L1E7C'],['Modèle','WDC WD40NMZW-59BCBS0'],['Chemin hôte','/dev/disk/by-id/usb-WD_…7C'],['USB','bus 2 · port 3'],['Datastore','pbo-wxd2da1l1e7c']] },
+      { id: 'tosh', groups: ['approved'], name: 'Toshiba 3 To', model: 'TOSHIBA MQ03UBB300 · USB 3.0', tone: 'off', status: 'Débranché', capLeft: '1,9 To utilisés · 0,8 To libres', capRight: '2,73 To', capW: '70%', note: 'Attendu dimanche 22 nov. à 09:00 — pensez à le brancher', tags: ['Approuvé','Rotation B'],
+        summary: 'Vu pour la dernière fois le 8 nov.', history: [['err','Rotation manquée : non branché','15 nov. 09:00'],['ok','Sauvegarde réussie · 301 Go','8 nov. 09:41']],
+        tech: [['Série','Z87CTEM3T'],['Modèle','TOSHIBA MQ03UBB300'],['Datastore','pbo-z87ctem3t']] },
+      { id: 'sandisk', groups: ['plugged','review'], name: 'SanDisk Extreme 1 To', model: 'SanDisk SDSSDE61 · USB 3.2', tone: 'warn', status: 'À examiner', capLeft: 'Contient des données (exFAT)', capRight: '931 Go', capW: '44%', note: 'Nouveau disque détecté ce matin à 08:41', tags: ['Branché','Inconnu'],
+        summary: 'Branché il y a 8 h · en attente de votre décision', history: [['warn','Détecté pour la première fois','15 nov. 08:41']],
+        tech: [['Série','32343133464E3335'],['Modèle','SanDisk SDSSDE61-1T00'],['Système de fichiers','exFAT « Photos-2024 »']] },
+      { id: 'game', groups: ['rejected'], name: 'Game Drive', model: 'Seagate Game Drive · USB', tone: 'err', status: 'Rejeté', capLeft: 'Capacité illisible', capRight: '0 o', capW: '0%', note: 'Taille rapportée 0 o : câble ou port USB probablement défaillant', tags: ['Rejet automatique'],
+        summary: 'Vu pour la dernière fois le 31 mai', history: [['err','Rejeté automatiquement · taille 0 o','31 mai 21:29']],
+        tech: [['Série','575844324441314C31453743'],['Modèle','Game Drive']] }
+    ];
+    const counts = { all: D.length, plugged: 2, approved: 2, review: 1, rejected: 1 };
+    const tabs = [['all','Tous'],['plugged','Branchés'],['approved','Approuvés'],['review','À examiner'],['rejected','Rejetés']].map(([k,label]) => ({ label, n: counts[k], pick: () => this.setState({ tab: k }),
+      sel: st.tab === k ? 'true' : 'false', fg: st.tab === k ? 'var(--text)' : 'var(--muted)', line: st.tab === k ? 'inset 0 -2px 0 var(--accent)' : 'none',
+      cntBg: k === 'review' ? 'var(--warn-s)' : st.tab === k ? 'var(--accent-s)' : 'var(--subtle)', cntFg: k === 'review' ? 'var(--warn-t)' : st.tab === k ? 'var(--accent-t)' : 'var(--muted)' }));
+    const disks = D.filter(d => st.tab === 'all' || d.groups.indexOf(st.tab) >= 0).map(d => { const t = T[d.tone]; return { ...d,
+      stBg: t[0], stFg: t[1], stDot: t[2], iconBg: t[0], iconFg: t[1], capC: d.tone === 'err' ? 'var(--err)' : d.tone === 'warn' ? 'var(--warn)' : 'var(--accent)',
+      noteC: d.tone === 'err' ? 'var(--err-t)' : d.tone === 'warn' ? 'var(--warn-t)' : 'var(--text2)',
+      bd: st.sel === d.id ? 'var(--accent)' : 'var(--border)', ring: st.sel === d.id ? '0 0 0 3px rgba(124,108,255,.18)' : 'none',
+      pick: () => this.setState({ sel: d.id, typed: '' }) }; });
+    const s = D.find(d => d.id === st.sel);
+    const hc = { ok: 'var(--ok)', err: 'var(--err)', warn: 'var(--warn)' };
+    const ok = st.typed.trim() === 'SanDisk';
+    return {
+      themeCls: theme === 'light' ? 'light' : 'dark',
+      toggleTheme: () => this.setState({ theme: theme === 'light' ? 'dark' : 'light' }),
+      tabs, disks,
+      sel: { name: s.name, summary: s.summary, isNew: s.id === 'sandisk', isWd: s.id === 'wd', isRejected: s.id === 'game',
+        history: s.history.map(([c,t,d]) => ({ c: hc[c], t, d })), tech: s.tech.map(([k,v]) => ({ k, v })) },
+      onType: (e) => this.setState({ typed: e.target.value }),
+      cantApprove: !ok, approveOpacity: ok ? '1' : '0.4'
+    };
+  }
+}
+</script>
+</body>
+</html>

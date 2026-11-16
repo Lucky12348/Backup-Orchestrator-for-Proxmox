@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import { ConfirmDialog } from "../ui/confirm";
+
 interface ConfirmModalProps {
   open: boolean;
   title: string;
@@ -12,49 +14,15 @@ interface ConfirmModalProps {
   extra?: ReactNode;
 }
 
-export function ConfirmModal({
-  open,
-  title,
-  description,
-  confirmLabel,
-  cancelLabel,
-  tone = "warning",
-  onConfirm,
-  onCancel,
-  extra,
-}: ConfirmModalProps) {
-  if (!open) {
-    return null;
-  }
-
+/** Legacy API kept; rendered with the shadcn AlertDialog (src/ui/confirm.tsx). */
+export function ConfirmModal({ open, title, description, confirmLabel, cancelLabel, tone = "warning", onConfirm, onCancel, extra }: ConfirmModalProps) {
   return (
-    <div className="modal-backdrop" role="presentation" onClick={onCancel}>
-      <section
-        aria-modal="true"
-        aria-labelledby="confirm-modal-title"
-        className="modal-card"
-        role="dialog"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="modal-header">
-          <p className={`modal-tone modal-tone-${tone}`} id="confirm-modal-title">
-            {title}
-          </p>
-          <button aria-label={cancelLabel} className="icon-button" onClick={onCancel} type="button">
-            x
-          </button>
-        </div>
-        <p className="modal-description">{description}</p>
-        {extra}
-        <div className="modal-actions">
-          <button className="ghost-button" onClick={onCancel} type="button">
-            {cancelLabel}
-          </button>
-          <button className={`action-button action-${tone}`} onClick={onConfirm} type="button">
-            {confirmLabel}
-          </button>
-        </div>
-      </section>
-    </div>
+    <ConfirmDialog
+      open={open}
+      options={{ title, description, confirmLabel, tone, extra }}
+      cancelLabel={cancelLabel}
+      onConfirm={onConfirm}
+      onCancel={onCancel}
+    />
   );
 }

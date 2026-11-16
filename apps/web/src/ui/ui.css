@@ -1,0 +1,145 @@
+/*
+ * New UI layer (Tailwind + shadcn/ui): setup wizard, AppShell v2, live run
+ * modal, toasts, dialogs. Everything is scoped to `.pbo-ui`; the legacy pages
+ * shown inside the shell (`.pbo-legacy`) keep their own styles.css.
+ * Tokens = docs/design/mockups (dark + light).
+ */
+/* `base` without preflight (disabled in tailwind.config.js) only declares the
+   --tw-* variables that transform / shadow / ring utilities rely on. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.pbo-ui,
+.pbo-ui[data-theme="dark"] {
+  --pbo-bg: 9 9 11; /* #09090B */
+  --pbo-surface: 17 17 20; /* #111114 */
+  --pbo-subtle: 24 24 28; /* #18181C */
+  --pbo-hover: 32 32 38; /* #202026 */
+  --pbo-border: 38 38 44; /* #26262C */
+  --pbo-border-strong: 58 58 66; /* #3A3A42 */
+  --pbo-fg: 250 250 250; /* #FAFAFA */
+  --pbo-muted: 161 161 170; /* #A1A1AA */
+  --pbo-faint: 139 139 148; /* #8B8B94 */
+  --pbo-accent: 124 108 255; /* #7C6CFF */
+  --pbo-accent-fg: 255 255 255;
+  --pbo-accent-text: 176 167 255; /* #B0A7FF */
+  --pbo-success: 34 197 94; /* #22C55E */
+  --pbo-success-text: 74 222 128; /* #4ADE80 */
+  --pbo-warning: 245 158 11; /* #F59E0B */
+  --pbo-warning-text: 251 191 36; /* #FBBF24 */
+  --pbo-danger: 239 68 68; /* #EF4444 */
+  --pbo-danger-text: 248 113 113; /* #F87171 */
+  --pbo-console: 5 5 6; /* #050506 */
+  --pbo-console-fg: 212 212 216; /* #D4D4D8 */
+  color-scheme: dark;
+}
+
+.pbo-ui[data-theme="light"] {
+  --pbo-bg: 250 250 250;
+  --pbo-surface: 255 255 255;
+  --pbo-subtle: 244 244 245;
+  --pbo-hover: 236 236 239; /* #ECECEF */
+  --pbo-border: 228 228 231;
+  --pbo-border-strong: 212 212 216; /* #D4D4D8 */
+  --pbo-fg: 9 9 11;
+  --pbo-muted: 82 82 91;
+  --pbo-faint: 107 107 116;
+  --pbo-accent: 91 75 235;
+  --pbo-accent-fg: 255 255 255;
+  --pbo-accent-text: 75 59 216; /* #4B3BD8 */
+  --pbo-success: 22 163 74;
+  --pbo-success-text: 21 128 61; /* #15803D */
+  --pbo-warning: 217 119 6;
+  --pbo-warning-text: 180 83 9; /* #B45309 */
+  --pbo-danger: 220 38 38;
+  --pbo-danger-text: 185 28 28; /* #B91C1C */
+  --pbo-console: 24 24 27; /* #18181B */
+  --pbo-console-fg: 228 228 231;
+  color-scheme: light;
+}
+
+.pbo-ui {
+  background: rgb(var(--pbo-bg));
+  color: rgb(var(--pbo-fg));
+  font-family: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scoped reset (Tailwind preflight equivalent), never inside .pbo-legacy.
+   Selectors are wrapped in :where() so the reset weighs only `.pbo-ui`
+   (0,1,0) and every utility (`.pbo-ui .x`, 0,2,0) wins over it. */
+.pbo-ui :where(:not(.pbo-legacy, .pbo-legacy *)),
+.pbo-ui :where(:not(.pbo-legacy, .pbo-legacy *))::before,
+.pbo-ui :where(:not(.pbo-legacy, .pbo-legacy *))::after {
+  box-sizing: border-box;
+  border-width: 0;
+  border-style: solid;
+  border-color: rgb(var(--pbo-border));
+}
+
+.pbo-ui :where(h1, h2, h3, h4, p, pre, ol, ul, dl, dd, figure):where(:not(.pbo-legacy *)) {
+  margin: 0;
+}
+
+.pbo-ui :where(ol, ul):where(:not(.pbo-legacy *)) {
+  list-style: none;
+  padding: 0;
+}
+
+.pbo-ui :where(button, input, select, textarea):where(:not(.pbo-legacy *)) {
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  margin: 0;
+}
+
+.pbo-ui :where(button):where(:not(.pbo-legacy *)) {
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+}
+
+.pbo-ui :where(a):where(:not(.pbo-legacy *)) {
+  color: inherit;
+  text-decoration: none;
+}
+
+.pbo-ui :where(button:disabled) {
+  cursor: not-allowed;
+}
+
+.pbo-ui :where(code, pre, kbd, .font-mono) {
+  font-family: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.pbo-ui :where(svg):where(:not(.pbo-legacy *)) {
+  display: block;
+  flex-shrink: 0;
+}
+
+.pbo-ui :focus-visible {
+  outline: 2px solid rgb(var(--pbo-accent));
+  outline-offset: 2px;
+}
+
+.pbo-ui ::selection {
+  background: rgb(var(--pbo-accent) / 0.3);
+}
+
+/* The legacy pages keep their dark styles.css look inside the shell. */
+.pbo-legacy {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--t1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pbo-ui * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

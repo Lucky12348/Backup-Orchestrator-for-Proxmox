@@ -4,8 +4,9 @@ from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, status
 from sqlalchemy import select
 
 from app.api.dependencies import DbSession
+from app.auth import CurrentUser
 from app.core.config import get_settings
-from app.models import ExternalDisk
+from app.models import BackupRunStatus, ExternalDisk
 from app.schemas import (
     ExternalBackupRunLogRequest,
     ExternalBackupRunRead,
@@ -15,8 +16,8 @@ from app.schemas import (
 from app.services.agent_registry import authenticate_callback, has_active_agent
 from app.services.external_backups import (
     append_external_backup_run_log,
-    cleanup_external_export_objects,
     cleanup_external_backup_runs,
+    cleanup_external_export_objects,
     cleanup_legacy_external_export_objects,
     delete_external_backup_run,
     execute_external_backup_run,
@@ -26,7 +27,6 @@ from app.services.external_backups import (
     list_external_backup_runs,
     run_external_backup,
 )
-
 
 router = APIRouter(prefix="/external-backups", tags=["external-backups"])
 public_callback_router = APIRouter(prefix="/external-backups", tags=["external-backups"])
@@ -51,7 +51,7 @@ def start_run(
     )
     background_tasks.add_task(execute_external_backup_run, run.id)
     disk = db.get(ExternalDisk, run.disk_id)
-    return _build_summary(run, disk.display_name if disk is not None else f"Disk {run.disk_id}")
+    return _build_summary(run, disk.display_name if disk is not None else f"Disk {run.disk_id}", disk)
 
 
 @router.get("/readiness/{disk_id}")
@@ -69,12 +69,16 @@ def get_readiness(disk_id: int, db: DbSession) -> dict[str, object]:
 @router.get("/runs", response_model=list[ExternalBackupRunSummaryRead])
 def get_runs(db: DbSession) -> list[ExternalBackupRunSummaryRead]:
     runs = list_external_backup_runs(db)
-    disk_names = {
-        disk.id: disk.display_name
+    disks = {
+        disk.id: disk
         for disk in db.scalars(select(ExternalDisk).where(ExternalDisk.id.in_([run.disk_id for run in runs])))
     }
     return [
-        _build_summary(run, disk_names.get(run.disk_id, f"Disk {run.disk_id}"))
+        _build_summary(
+            run,
+            disks[run.disk_id].display_name if run.disk_id in disks else f"Disk {run.disk_id}",
+            disks.get(run.disk_id),
+        )
         for run in runs
     ]
 
@@ -103,7 +107,43 @@ def cleanup_temporary_objects() -> dict[str, object]:
 @router.get("/runs/{run_id}", response_model=ExternalBackupRunRead)
 def get_run(run_id: int, db: DbSession) -> ExternalBackupRunRead:
     run = get_external_backup_run(db, run_id)
-    return ExternalBackupRunRead.model_validate(run)
+    read = ExternalBackupRunRead.model_validate(run)
+    return read.model_copy(update=_run_extras(run, db.get(ExternalDisk, run.disk_id)))
+
+
+@router.get("/runs/{run_id}/log")
+def get_run_log(run_id: int, db: DbSession) -> dict[str, object]:
+    """Readable journal (progress lines removed, duplicates collapsed, PBO
+    messages coded for translation, PBS lines marked) + Summary statistics."""
+    from app.services.run_log import run_journal
+
+    run = get_external_backup_run(db, run_id)
+    return run_journal(run, db.get(ExternalDisk, run.disk_id))
+
+
+@router.post("/runs/{run_id}/cancel", status_code=status.HTTP_202_ACCEPTED)
+def cancel_run(run_id: int, db: DbSession, username: CurrentUser) -> dict[str, object]:
+    """Stop the running PBS sync task (API mode). Snapshots already copied stay
+    valid; the run then fails and the disk is left attached (eject it after)."""
+    from app.services.pbs_client import PBSClient
+
+    run = get_external_backup_run(db, run_id)
+    if run.status not in (BackupRunStatus.PENDING, BackupRunStatus.RUNNING):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": "run_not_running", "message": "This run is not running."})
+    settings = get_settings()
+    if settings.pbs_mode != "api" or not run.pbs_task_upid:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "cancel_not_supported", "message": "This run cannot be cancelled now (no PBS task to stop yet, or PBS_MODE=agent)."},
+        )
+    append_external_backup_run_log(db, run.id, step=run.current_step, message=f"Cancellation requested by {username}.")
+    try:
+        PBSClient(settings).stop_task(run.pbs_task_upid)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail={"code": "cancel_failed", "message": f"PBS refused to stop the task: {exc}"}
+        ) from exc
+    return {"run_id": run.id, "cancel_requested": True}
 
 
 @router.delete("/runs/{run_id}", status_code=204)
@@ -150,7 +190,7 @@ def append_run_log(
     return ExternalBackupRunRead.model_validate(run)
 
 
-def _build_summary(run, disk_name: str) -> ExternalBackupRunSummaryRead:
+def _build_summary(run, disk_name: str, disk=None) -> ExternalBackupRunSummaryRead:  # noqa: ANN001
     return ExternalBackupRunSummaryRead(
         id=run.id,
         disk_id=run.disk_id,
@@ -187,4 +227,15 @@ def _build_summary(run, disk_name: str) -> ExternalBackupRunSummaryRead:
         auto_eject_after_success=run.auto_eject_after_success,
         mode=run.mode,
         created_at=run.created_at,
+        **_run_extras(run, disk),
     )
+
+
+def _run_extras(run, disk) -> dict[str, object]:  # noqa: ANN001
+    from app.services.run_log import datastore_pair
+
+    running = run.status in (BackupRunStatus.PENDING, BackupRunStatus.RUNNING)
+    return {
+        **datastore_pair(run, disk),
+        "cancellable": bool(running and run.pbs_task_upid and get_settings().pbs_mode == "api"),
+    }

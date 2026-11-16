@@ -249,6 +249,44 @@ should reach them — and every call is additionally protected with an
   the front. `/system/version` returns `pbs_mode` (Settings shows
   "PBS (API)" in API mode).
 
+## New UI layer and live run modal (Phase 5a, read before touching the web UI)
+
+- Visual reference: `docs/design/mockups/*.html` (validated mockups: tokens,
+  spacing, radii, Geist). Reproduce them; do not invent a style.
+- Tailwind + shadcn/ui (Radix) + lucide-react + Geist, scoped to `.pbo-ui`
+  (`important: ".pbo-ui"` in `tailwind.config.js`, tokens + scoped reset in
+  `src/ui/ui.css`, reset wrapped in `:where()` so utilities always win;
+  `@tailwind base` is kept for the `--tw-*` variables, preflight stays off).
+  `content` lists the new dirs (`src/setup`, `src/shell`, `src/runs`,
+  `src/ui`, `src/components/ui`) and a few shared legacy components by name —
+  never a legacy page.
+- `AppShellV2` (`src/shell/`, d'après dashboard.html) wraps every page;
+  legacy pages render inside `.pbo-legacy` (their own styles.css, no reset)
+  until their redesign. Radix portals target a div inside the `.pbo-ui` root
+  (`src/ui/portal.tsx`, `usePortalContainer`): a portal to `body` would lose
+  the tokens and utilities.
+- Global UI kit: `useToast()` (`src/ui/toast.tsx`), `useConfirm()`
+  (`src/ui/confirm.tsx`, shadcn AlertDialog — **never `window.confirm`**),
+  `InfoTip` (page titles have no subtitle: an "i" tooltip), `EmptyState`,
+  `LoadingBlock`, `PageHeader`.
+- Live run modal (`src/runs/`, d'après live-run-modal.html):
+  `RunMonitorProvider` follows runs over SSE (`monitorReducer`, pure), the
+  modal reads `GET /external-backups/runs/{id}` + `/log`; "Minimize" turns it
+  into the top-bar pill. Any long action opens it: `openRunModal(runId)` when
+  the id is known, `expectRunModal()` before an action whose run arrives over
+  SSE (eject). Cancel = `POST /external-backups/runs/{id}/cancel` (API mode,
+  stops the PBS task; `cancellable` on the run).
+- Run journal (B22/B23, `apps/api/app/services/run_log.py`): progress lines
+  are not journal lines (also not stored any more:
+  `append_external_backup_run_log`), consecutive duplicates collapse, PBO
+  messages have stable codes (`PBO_MESSAGES` ↔ `runLog` in `i18n.ts`, tested
+  both ways), PBS lines are verbatim and tagged, totals come from PBS's
+  `Summary:` line, runs expose `source_datastore` → `target_datastore`.
+  Fixtures: `docs/design/fixtures/` (real pve-test logs + generated
+  `*.journal.json`, kept in sync by `test_journal_json_fixtures_are_up_to_date`).
+- Web tests: pure modules with `node:test`; components are compiled with
+  esbuild and rendered with `react-dom/server` (`tests/components.test.ts`).
+
 ## Disk ↔ USB port (Phase 4.4, read before touching the USB passthrough)
 
 - The host agent reports, for each USB disk, its physical USB location read
@@ -604,9 +642,11 @@ The image (`infra/docker/api.Dockerfile`) is built from the **repository root**
   documented schema; points the schema leaves open are marked [U] in
   `docs/PBS_API.md`. The install/update/agent shell scripts are only
   shellchecked: they have not been run on a real LXC / PVE host from CI.
-- `apps/web/tests/` (5 files, `node:test`, incl. `setupWizard.test.ts`:
-  `/setup` redirect, resume, error messages; `liveDisks.test.ts`: step-5 disk
-  cards and toasts): `npm test` runs them (Node ≥ 22.18
+- `apps/web/tests/` (`node:test`, incl. `setupWizard.test.ts`: `/setup`
+  redirect, resume, error messages; `liveDisks.test.ts`: step-5 disk cards;
+  `runModel.test.ts`: live run steps/stats/resources/journal on the real
+  logs + SSE state; `components.test.ts`: rendered components;
+  `language.test.ts`: no hard-coded UI text in the new UI): `npm test` runs them (Node ≥ 22.18
   executes the `.ts` files natively).
 
 CI: `.github/workflows/ci.yml` — ruff (blocking only on E9/F63/F7/F82; default

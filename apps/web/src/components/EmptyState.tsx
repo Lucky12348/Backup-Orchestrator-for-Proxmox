@@ -1,13 +1,23 @@
+import { Inbox } from "lucide-react";
+
 interface EmptyStateProps {
   title: string;
   description?: string;
 }
 
+/**
+ * Empty state of the legacy pages (inside their dark cards): new layout and
+ * icon, but the legacy palette (styles.css variables) so it matches the card
+ * in both shell themes until each page is redesigned.
+ */
 export function EmptyState({ title, description }: EmptyStateProps) {
   return (
-    <div className="empty-state-block">
-      <p className="empty-state-title">{title}</p>
-      {description ? <p className="empty-state-description">{description}</p> : null}
+    <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-[color:var(--bd2)] bg-transparent px-6 py-10 text-center">
+      <span className="mb-1 flex h-10 w-10 items-center justify-center rounded-full bg-[color:var(--bg2)] text-[color:var(--t3)]">
+        <Inbox className="h-5 w-5" />
+      </span>
+      <p className="m-0 text-[15px] font-medium text-[color:var(--t1)]">{title}</p>
+      {description ? <p className="m-0 max-w-[460px] text-[13px] leading-relaxed text-[color:var(--t2)]">{description}</p> : null}
     </div>
   );
 }

@@ -63,7 +63,8 @@ test("after login the account preference wins; an account without one adopts the
 // a translation table. JSX text nodes and aria-label/title literals are flagged.
 
 const SRC = join(import.meta.dirname, "..", "src");
-const ALLOWED_TEXT = new Set(["PBO", "×"]);
+// Brand, keyboard hint, language codes, the "i" button, the PBS tag, symbols.
+const ALLOWED_TEXT = new Set(["PBO", "×", "Backup Orchestrator", "⌘K", "EN", "FR", "i", "PBS", "/", "%", "→"]);
 
 function tsxFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -74,7 +75,7 @@ function tsxFiles(dir: string): string[] {
 }
 
 // TypeScript between ">" and "<" (comparisons, generics, arrow functions) is not text.
-const CODE_LIKE = /&&|\|\||=>|!==|===|\(event|ChangeEvent|\.length|\?\s*\(/;
+const CODE_LIKE = /&&|\|\||=>|!==|===|\(event|ChangeEvent|\.length|\?\s*\(|^(?:Promise|Record|Array|Partial|Set|Map|HTMLElement)$/;
 
 function textOffenders(source: string): string[] {
   const clean = source.replace(/\{\/\*[\s\S]*?\*\/\}/g, "");
@@ -94,10 +95,12 @@ test("the hard-coded text detector works", () => {
   assert.deepEqual(textOffenders("<div>PBO</div>{/* a comment with <b>words</b> */}"), []);
 });
 
-test("no hard-coded text in the wizard, toasts and login page", () => {
+test("no hard-coded text in the new UI (wizard, shell, live run modal, UI kit) and the login page", () => {
   const files = [
     ...tsxFiles(join(SRC, "setup")),
-    join(SRC, "components", "GlobalToasts.tsx"),
+    ...tsxFiles(join(SRC, "shell")),
+    ...tsxFiles(join(SRC, "runs")),
+    ...tsxFiles(join(SRC, "ui")),
     join(SRC, "pages", "LoginPage.tsx"),
   ];
   const offenders = files.flatMap((file) => textOffenders(readFileSync(file, "utf8")).map((item) => `${file}: ${item}`));

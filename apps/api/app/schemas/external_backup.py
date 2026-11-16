@@ -48,6 +48,11 @@ class ExternalBackupRunRead(UTCDateTimeModel):
     elapsed_seconds: int | None
     auto_eject_after_success: bool
     mode: ExternalBackupMode
+    # "main → pbo-pbotesta" (eject runs only know the target).
+    source_datastore: str | None = None
+    target_datastore: str | None = None
+    # The running PBS task can be stopped (API mode, task known).
+    cancellable: bool = False
     created_at: datetime
 
 
@@ -86,6 +91,11 @@ class ExternalBackupRunSummaryRead(UTCDateTimeModel):
     elapsed_seconds: int | None
     auto_eject_after_success: bool
     mode: ExternalBackupMode
+    # "main → pbo-pbotesta" (eject runs only know the target).
+    source_datastore: str | None = None
+    target_datastore: str | None = None
+    # The running PBS task can be stopped (API mode, task known).
+    cancellable: bool = False
     created_at: datetime
 
 

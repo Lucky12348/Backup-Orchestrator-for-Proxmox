@@ -123,7 +123,9 @@ def test_full_flow_prepare_sync_eject_and_reuse(db, session_factory):
     assert fake.sync_jobs == {}  # temporary job removed after the run
     db.refresh(run)
     assert "sync group vm/101 (2 of 2)" in run.stdout_log  # PBS task log copied into the run log
-    assert "percentage done: 100.00%" in run.stdout_log
+    # B22: progress lines feed the bar, not the journal.
+    assert "percentage done" not in run.stdout_log
+    assert run.progress_percent == 100.0
 
     ejected = backend.post("/eject-dedicated-pbs-datastore", {"serial": SERIAL, "datastore_name": TARGET, "mount_path": "", "callback_run_id": run.id})
     assert ejected.message == EJECT_OK_MESSAGE

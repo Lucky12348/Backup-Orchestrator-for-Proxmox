@@ -1,0 +1,387 @@
+{
+  "entries": [
+    {
+      "at": "2026-11-16T01:39:54Z",
+      "step": "starting",
+      "source": "pbo",
+      "level": "info",
+      "code": "run_created",
+      "params": {},
+      "text": "External backup run created. Background execution will start shortly.",
+      "count": 1
+    },
+    {
+      "at": "2026-11-16T01:39:54Z",
+      "step": "starting",
+      "source": "pbo",
+      "level": "info",
+      "code": "run_starting",
+      "params": {},
+      "text": "Starting external backup execution.",
+      "count": 1
+    },
+    {
+      "at": "2026-11-16T01:39:54Z",
+      "step": "handoff_disk",
+      "source": "pbo",
+      "level": "info",
+      "code": "handoff_start",
+      "params": {},
+      "text": "Handing off USB disk to PBS VM.",
+      "count": 1
+    },
+    {
+      "at": "2026-11-16T01:39:55Z",
+      "step": "handoff_disk",
+      "source": "pbo",
+      "level": "info",
+      "code": "handoff_usb_chosen",
+      "params": {
+        "method": "usb_location",
+        "port": "3-1"
+      },
+      "text": "USB device chosen by usb_location: 3-1.",
+      "count": 1
+    },
+    {
+      "at": "2026-11-16T01:39:55Z",
+      "step": "handoff_disk",
+      "source": "pbo",
+      "level": "info",
+      "code": "handoff_mapping",
+      "params": {
+        "mapping": "3-1",
+        "serial": "PBOTESTA"
+      },
+      "text": "Selected USB mapping `3-1` for `PBOTESTA`.",
+      "count": 1
+    },
+    {
+      "at": "2026-11-16T01:39:55Z",
+      "step": "handoff_disk",
+      "source": "pbo",
+      "level": "info",
+      "code": "handoff_attach_payload",
+      "params": {
+        "payload": "usb0=host=3-1,usb3=1"
+      },
+      "text": "Attach payload: `usb0=host=3-1,usb3=1`.",
+      "count": 1
+    },
+    {
+      "at": "2026-11-16T01:39:56Z",
+      "step": "handoff_disk",
+      "source": "pbo",
+      "level": "ok",
+      "code": "handoff_attach_response",
+      "params": {
+        "detail": "message=QEMU USB passthrough attached.; command=qm set 100 -usb0 host=3-1,usb3=1; stdout=update VM 100: -usb0 host=3-1,usb3=1; stderr=None"
+      },
+      "text": "Host agent USB attach response: `message=QEMU USB passthrough attached.; command=qm set 100 -usb0 host=3-1,usb3=1; stdout=update VM 100: -usb0 host=3-1,usb3=1; stderr=None`.",
+      "count": 1
+    },
+    {
+      "at": "2026-11-16T01:39:57Z",
+      "step": "handoff_disk",
+      "source": "pbo",
+      "level": "info",
+      "code": "handoff_verify",
+      "params": {
+        "n": "1",
+        "total": "15",
+        "slot": "usb0",
+        "value": "host=3-1,usb3=1"
+      },
+      "text": "VM config verification attempt 1/15 for `usb0`: `host=3-1,usb3=1`.",
+      "count": 1
+    },
+    {
+      "at": "2026-11-16T01:39:57Z",
+      "step": "inspect_disk",
+      "source": "pbo",
+      "level": "warn",
+      "code": "inspect_retry_failed",
+      "params": {
+        "n": "1",
+        "total": "60",
+        "reason": "Disk `PBOTEST-a` is not visible on PBS."
+      },
+      "text": "PBS inspect retry 1/60 failed: Disk `PBOTEST-a` is not visible on PBS.",
+      "count": 1
+    },
+    {
+      "at": "2026-11-16T01:39:59Z",
+      "step": "inspect_disk",
+      "source": "pbo",
+      "level": "info",
+      "code": "inspect_retry_identifier",
+      "params": {
+        "n": "2",
+        "total": "60",
+        "identifier": "PBOTESTA"
+      },
+      "text": "PBS inspect retry 2/60 used identifier `PBOTESTA`.",
+      "count": 1
+    },
+    {
+      "at": "2026-11-16T01:39:59Z",
+      "step": "inspect_disk",
+      "source": "pbo",
+      "level": "ok",
+      "code": "inspect_retry_ok",
+      "params": {
+        "n": "2",
+        "total": "60",
+        "device": "/dev/sdc"
+      },
+      "text": "PBS inspect retry 2/60 succeeded: /dev/sdc.",
+      "count": 1
+    },
+    {
+      "at": "2026-11-16T01:39:59Z",
+      "step": "handoff_disk",
+      "source": "pbo",
+      "level": "info",
+      "code": "disk_visible",
+      "params": {
+        "device": "/dev/sdc"
+      },
+      "text": "Disk is now visible on PBS as /dev/sdc.",
+      "count": 1
+    },
+    {
+      "at": "2026-11-16T01:39:59Z",
+      "step": "inspect_disk",
+      "source": "pbo",
+      "level": "info",
+      "code": "inspect_disk",
+      "params": {},
+      "text": "Inspecting disk on PBS agent.",
+      "count": 1
+    },
+    {
+      "at": "2026-11-16T01:40:00Z",
+      "step": "prepare_dedicated_datastore",
+      "source": "pbo",
+      "level": "info",
+      "code": "prepare_datastore",
+      "params": {},
+      "text": "Preparing or reusing dedicated PBS datastore.",
+      "count": 1
+    },
+    {
+      "at": "2026-11-16T01:40:00Z",
+      "step": "prepare_dedicated_datastore",
+      "source": "pbo",
+      "level": "ok",
+      "code": "datastore_reused",
+      "params": {},
+      "text": "Existing dedicated PBS datastore reused. No formatting performed.",
+      "count": 1
+    },
+    {
+      "at": "2026-11-16T01:40:00Z",
+      "step": "run_export",
+      "source": "pbo",
+      "level": "info",
+      "code": "export_start",
+      "params": {},
+      "text": "Starting PBS datastore export to dedicated disk.",
+      "count": 1
+    },
+    {
+      "at": null,
+      "step": "run_export",
+      "source": "pbo",
+      "level": "info",
+      "code": "disk_visible",
+      "params": {
+        "device": "/dev/sdc"
+      },
+      "text": "Disk is now visible on PBS as /dev/sdc.",
+      "count": 1
+    },
+    {
+      "at": null,
+      "step": "run_export",
+      "source": "pbo",
+      "level": "info",
+      "code": "target_path_requested",
+      "params": {
+        "path": "/mnt/datastore/pbo-pbotesta"
+      },
+      "text": "Requested target path: /mnt/datastore/pbo-pbotesta",
+      "count": 1
+    },
+    {
+      "at": null,
+      "step": "run_export",
+      "source": "pbo",
+      "level": "info",
+      "code": "target_path_actual",
+      "params": {
+        "path": "/mnt/datastore/pbo-pbotesta"
+      },
+      "text": "Actual datastore path: /mnt/datastore/pbo-pbotesta",
+      "count": 1
+    },
+    {
+      "at": "2026-11-16T02:40:00+01:00",
+      "step": "run_export",
+      "source": "pbs",
+      "level": "info",
+      "code": null,
+      "params": {},
+      "text": "Starting datastore sync job '-:main:pbo-pbotesta::pbo-sync-7'",
+      "count": 1
+    },
+    {
+      "at": "2026-11-16T02:40:00+01:00",
+      "step": "run_export",
+      "source": "pbs",
+      "level": "info",
+      "code": null,
+      "params": {},
+      "text": "sync datastore 'pbo-pbotesta' from 'main'",
+      "count": 1
+    },
+    {
+      "at": "2026-11-16T02:40:00+01:00",
+      "step": "run_export",
+      "source": "pbs",
+      "level": "info",
+      "code": null,
+      "params": {},
+      "text": "Syncing datastore 'main', root namespace into datastore 'pbo-pbotesta', root namespace",
+      "count": 1
+    },
+    {
+      "at": "2026-11-16T02:40:00+01:00",
+      "step": "run_export",
+      "source": "pbs",
+      "level": "info",
+      "code": null,
+      "params": {},
+      "text": "Found 2 groups to sync (out of 2 total)",
+      "count": 1
+    },
+    {
+      "at": "2026-11-16T02:40:00+01:00",
+      "step": "run_export",
+      "source": "pbs",
+      "level": "info",
+      "code": null,
+      "params": {},
+      "text": "[ct/101]: re-sync snapshot 2026-11-15T18:47:31Z",
+      "count": 1
+    },
+    {
+      "at": "2026-11-16T02:40:00+01:00",
+      "step": "run_export",
+      "source": "pbs",
+      "level": "warn",
+      "code": null,
+      "params": {},
+      "text": "[ct/101]: 2026-11-15T18:47:31Z: no data changes",
+      "count": 1
+    },
+    {
+      "at": "2026-11-16T02:40:00+01:00",
+      "step": "run_export",
+      "source": "pbs",
+      "level": "info",
+      "code": null,
+      "params": {},
+      "text": "[ct/102]: re-sync snapshot 2026-11-15T18:47:55Z",
+      "count": 1
+    },
+    {
+      "at": "2026-11-16T02:40:00+01:00",
+      "step": "run_export",
+      "source": "pbs",
+      "level": "warn",
+      "code": null,
+      "params": {},
+      "text": "[ct/102]: 2026-11-15T18:47:55Z: no data changes",
+      "count": 1
+    },
+    {
+      "at": "2026-11-16T02:40:00+01:00",
+      "step": "run_export",
+      "source": "pbs",
+      "level": "info",
+      "code": null,
+      "params": {},
+      "text": "Finished syncing root namespace, current progress: 2 groups, 0 snapshots",
+      "count": 1
+    },
+    {
+      "at": "2026-11-16T02:40:00+01:00",
+      "step": "run_export",
+      "source": "pbs",
+      "level": "info",
+      "code": null,
+      "params": {},
+      "text": "Summary: sync job found no new data to pull",
+      "count": 1
+    },
+    {
+      "at": "2026-11-16T02:40:00+01:00",
+      "step": "run_export",
+      "source": "pbs",
+      "level": "info",
+      "code": null,
+      "params": {},
+      "text": "sync job '-:main:pbo-pbotesta::pbo-sync-7' end",
+      "count": 1
+    },
+    {
+      "at": "2026-11-16T02:40:00+01:00",
+      "step": "run_export",
+      "source": "pbs",
+      "level": "info",
+      "code": null,
+      "params": {},
+      "text": "queued notification (id=ed9797e8-a965-4379-9b37-6ce3eaf7a251)",
+      "count": 1
+    },
+    {
+      "at": "2026-11-16T02:40:00+01:00",
+      "step": "run_export",
+      "source": "pbs",
+      "level": "ok",
+      "code": null,
+      "params": {},
+      "text": "TASK OK",
+      "count": 1
+    },
+    {
+      "at": "2026-11-16T01:40:03Z",
+      "step": "success",
+      "source": "pbo",
+      "level": "ok",
+      "code": "success_summary",
+      "params": {
+        "device": "/dev/sdc"
+      },
+      "text": "Disk is now visible on PBS as /dev/sdc. PBS local sync job completed.",
+      "count": 1
+    },
+    {
+      "at": "2026-11-16T01:40:08Z",
+      "step": "auto_eject",
+      "source": "pbo",
+      "level": "ok",
+      "code": "auto_ejected",
+      "params": {},
+      "text": "Disk ejected automatically after a successful backup.",
+      "count": 1
+    }
+  ],
+  "summary": {
+    "text": "sync job found no new data to pull",
+    "transferred_bytes": 0,
+    "rate_bytes_per_second": null,
+    "no_new_data": true
+  }
+}

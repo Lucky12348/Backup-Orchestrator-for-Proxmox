@@ -289,6 +289,10 @@ class PBSClient:
         data = self._get(f"nodes/{PBS_NODE}/tasks", params=params)
         return data if isinstance(data, list) else []
 
+    def stop_task(self, upid: str) -> None:
+        """DELETE /nodes/{node}/tasks/{upid}: ask PBS to abort a running task."""
+        self._request("DELETE", f"nodes/{PBS_NODE}/tasks/{_seg(upid)}")
+
     def task_status(self, upid: str) -> dict:
         data = self._get(f"nodes/{PBS_NODE}/tasks/{_seg(upid)}/status")
         return data if isinstance(data, dict) else {}

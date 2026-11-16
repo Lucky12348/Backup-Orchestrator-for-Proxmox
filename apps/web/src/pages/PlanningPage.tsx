@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useConfirm } from "../ui/confirm";
 import type { MouseEvent } from "react";
 
 import {
@@ -55,6 +56,7 @@ const DEFAULT_FORM: EventForm = {
 };
 
 export function PlanningPage({ data, t }: PlanningPageProps) {
+  const confirm = useConfirm();
   const [events, setEvents] = useState(data.scheduledBackupEvents);
   const [runs, setRuns] = useState(data.scheduledBackupRuns);
   const [occurrences, setOccurrences] = useState<ScheduledBackupCalendarOccurrence[]>([]);
@@ -199,7 +201,12 @@ export function PlanningPage({ data, t }: PlanningPageProps) {
   }
 
   async function deleteEvent(event: ScheduledBackupEvent) {
-    const confirmed = window.confirm("Supprimer cet evenement ? L'historique des runs sera conserve.");
+    const confirmed = await confirm({
+      title: t.confirmDialogs.planningDeleteTitle,
+      description: t.confirmDialogs.planningDeleteText,
+      confirmLabel: t.confirmDialogs.delete,
+      tone: "danger",
+    });
     if (!confirmed) return;
     await action(`delete-${event.id}`, () => deleteScheduledBackupEvent(event.id));
   }

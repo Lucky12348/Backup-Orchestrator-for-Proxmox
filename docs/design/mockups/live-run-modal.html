@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>PBO – Suivi en direct d’une sauvegarde</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.app{--bg:#09090B;--surface:#111114;--subtle:#18181C;--hover:#202026;--border:#26262C;--border2:#3A3A42;--text:#FAFAFA;--text2:#A1A1AA;--muted:#8B8B94;--accent:#7C6CFF;--accent-s:rgba(124,108,255,.14);--accent-t:#B0A7FF;--ok:#22C55E;--ok-s:rgba(34,197,94,.14);--ok-t:#4ADE80;--warn:#F59E0B;--warn-s:rgba(245,158,11,.14);--warn-t:#FBBF24;--err:#EF4444;--err-s:rgba(239,68,68,.14);--err-t:#F87171;--console:#050506;--console-t:#D4D4D8;font-family:'Geist',system-ui,sans-serif;color:var(--text);background:var(--bg)}
+.app.light{--bg:#FAFAFA;--surface:#FFFFFF;--subtle:#F4F4F5;--hover:#ECECEF;--border:#E4E4E7;--border2:#D4D4D8;--text:#09090B;--text2:#52525B;--muted:#6B6B74;--accent:#5B4BEB;--accent-s:rgba(91,75,235,.10);--accent-t:#4B3BD8;--ok:#16A34A;--ok-s:rgba(22,163,74,.10);--ok-t:#15803D;--warn:#D97706;--warn-s:rgba(217,119,6,.12);--warn-t:#B45309;--err:#DC2626;--err-s:rgba(220,38,38,.10);--err-t:#B91C1C;--console:#18181B;--console-t:#E4E4E7}
+.app a{color:inherit;text-decoration:none}
+.btn:hover{filter:brightness(1.12)}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.spin{animation:spin 1s linear infinite}
+.pulse{animation:pulse 1.6s ease-in-out infinite}
+</style>
+</helmet>
+<div class="app {{themeCls}}" style="position: relative; min-height: 1000px; width: 100%; display: flex; flex-wrap: wrap; overflow: hidden;">
+
+  <aside aria-hidden="true" style="flex: 1 1 248px; box-sizing: border-box; background: var(--surface); border-right: 1px solid var(--border); padding: 20px 16px; display: flex; flex-direction: column; gap: 10px;">
+    <div style="display: flex; align-items: center; gap: 10px; padding-bottom: 14px;"><div style="width: 32px; height: 32px; border-radius: 9px; background: var(--accent);"></div><span style="font-weight: 600;">PBO</span></div>
+    <div style="height: 34px; border-radius: 8px; background: var(--hover);"></div>
+    <div style="height: 34px; border-radius: 8px; background: var(--subtle); opacity: .5;"></div>
+    <div style="height: 34px; border-radius: 8px; background: var(--subtle); opacity: .5;"></div>
+    <div style="height: 34px; border-radius: 8px; background: var(--subtle); opacity: .5;"></div>
+  </aside>
+  <div aria-hidden="true" style="flex: 999 1 560px; min-width: 0; padding: 88px 28px 28px; display: flex; flex-direction: column; gap: 16px;">
+    <div style="height: 28px; width: 260px; border-radius: 8px; background: var(--subtle);"></div>
+    <div style="height: 96px; border-radius: 14px; background: var(--accent-s);"></div>
+    <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px;"><div style="height: 130px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border);"></div><div style="height: 130px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border);"></div><div style="height: 130px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border);"></div><div style="height: 130px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border);"></div></div>
+    <div style="height: 320px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border);"></div>
+  </div>
+
+  <div style="position: absolute; inset: 0; background: rgba(0,0,0,.6); backdrop-filter: blur(3px); display: flex; align-items: flex-start; justify-content: center; padding: 48px 20px; box-sizing: border-box;">
+    <div role="dialog" aria-modal="true" aria-labelledby="run-title" style="width: 100%; max-width: 1040px; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: 0 24px 80px rgba(0,0,0,.5); display: flex; flex-direction: column; overflow: hidden;">
+
+      <div style="display: flex; flex-wrap: wrap; align-items: flex-start; gap: 14px; padding: 20px 22px 16px;">
+        <div style="width: 40px; height: 40px; border-radius: 10px; background: {{hdr.bg}}; color: {{hdr.fg}}; display: flex; align-items: center; justify-content: center;">
+          <sc-if value="{{running}}" hint-placeholder-val="{{ true }}"><svg class="spin" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.22-8.56"/></svg></sc-if>
+          <sc-if value="{{isDone}}" hint-placeholder-val="{{ false }}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></sc-if>
+          <sc-if value="{{isCancelled}}" hint-placeholder-val="{{ false }}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></sc-if>
+        </div>
+        <div style="flex: 1 1 300px; display: flex; flex-direction: column; gap: 4px;">
+          <h2 id="run-title" style="margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.01em;">{{hdr.title}}</h2>
+          <span style="font-size: 13px; color: var(--text2);">Manuelle · lancée par admin à 16:12 · Disque WD 4 To <span style="font-family: 'Geist Mono', monospace; color: var(--muted);">WXD2DA1L1E7C</span> → datastore pbo-wxd2da1l1e7c</span>
+        </div>
+        <a href="Main.dc.html" class="btn" style="display: flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border); font-size: 13px; font-weight: 500; color: var(--text2);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14h6v6"/><path d="M20 10h-6V4"/><path d="m14 10 7-7"/><path d="m3 21 7-7"/></svg>Réduire</a>
+        <a href="Main.dc.html" aria-label="Fermer" style="width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--muted);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></a>
+      </div>
+
+      <div style="padding: 0 22px 18px; display: flex; flex-direction: column; gap: 10px;">
+        <div style="display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;">
+          <span style="font-size: 40px; font-weight: 600; letter-spacing: -0.03em; font-variant-numeric: tabular-nums;">{{pctLabel}}</span>
+          <span style="font-size: 13px; color: var(--text2); font-family: 'Geist Mono', monospace;">{{stats}}</span>
+        </div>
+        <div style="height: 8px; border-radius: 99px; background: var(--subtle); overflow: hidden;"><div style="width: {{pctW}}; height: 100%; border-radius: 99px; background: {{barColor}}; transition: width .5s ease;"></div></div>
+      </div>
+
+      <ol aria-label="Étapes" style="list-style: none; margin: 0; padding: 14px 22px; display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--bg);">
+        <sc-for list="{{steps}}" as="s" hint-placeholder-count="6">
+          <li style="display: flex; align-items: center; gap: 10px;">
+            <span style="flex: none; width: 26px; height: 26px; border-radius: 99px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; background: {{s.bg}}; color: {{s.fg}}; border: 1px solid {{s.bd}};">{{s.mark}}</span>
+            <span style="display: flex; flex-direction: column; min-width: 0;"><span style="font-size: 13px; font-weight: 500; color: {{s.tc}};">{{s.label}}</span><span style="font-size: 11px; color: var(--muted);">{{s.sub}}</span></span>
+          </li>
+        </sc-for>
+      </ol>
+
+      <div style="display: flex; flex-wrap: wrap; min-height: 380px;">
+        <div style="flex: 1 1 320px; min-width: 0; border-right: 1px solid var(--border); display: flex; flex-direction: column;">
+          <div style="display: flex; align-items: center; padding: 12px 18px; font-size: 13px; font-weight: 600;"><span style="flex-grow: 1;">Ressources</span><span style="font-weight: 400; color: var(--muted);">{{doneCount}} / 11 terminées</span></div>
+          <div style="display: flex; flex-direction: column; overflow: auto; max-height: 360px;">
+            <sc-for list="{{items}}" as="it" hint-placeholder-count="11">
+              <div style="display: flex; align-items: center; gap: 10px; padding: 8px 18px; background: {{it.rowBg}};">
+                <span style="flex: none; width: 18px; height: 18px; border-radius: 99px; display: flex; align-items: center; justify-content: center; font-size: 10px; background: {{it.bg}}; color: {{it.fg}};">{{it.mark}}</span>
+                <span style="font-size: 11px; font-family: 'Geist Mono', monospace; color: var(--muted); width: 44px;">{{it.kind}}/{{it.id}}</span>
+                <span style="font-size: 13px; flex-grow: 1; min-width: 0; color: {{it.tc}};">{{it.name}}</span>
+                <span style="font-size: 12px; font-family: 'Geist Mono', monospace; color: var(--muted);">{{it.right}}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="flex: 1.6 1 420px; min-width: 0; display: flex; flex-direction: column; background: var(--console);">
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--border);">
+            <span style="font-size: 13px; font-weight: 600; color: var(--console-t); flex-grow: 1; display: flex; align-items: center; gap: 8px;"><span class="pulse" style="width: 7px; height: 7px; border-radius: 99px; background: {{liveDot}};"></span>Journal en direct</span>
+            <sc-for list="{{filters}}" as="f" hint-placeholder-count="3">
+              <button onClick="{{f.pick}}" style="font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 99px; cursor: pointer; border: 1px solid {{f.bd}}; background: {{f.bg}}; color: {{f.fg}};">{{f.label}}</button>
+            </sc-for>
+            <button aria-label="Télécharger le journal" style="background: none; border: 0; color: var(--muted); cursor: pointer; padding: 4px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="m7 10 5 5 5-5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg></button>
+          </div>
+          <div style="flex-grow: 1; padding: 10px 14px; display: flex; flex-direction: column; justify-content: flex-end; gap: 3px; font-family: 'Geist Mono', monospace; font-size: 12px; line-height: 1.55; min-height: 320px;">
+            <sc-for list="{{logs}}" as="l" hint-placeholder-count="12">
+              <div style="display: flex; gap: 10px;"><span style="color: #71717A; flex: none;">{{l.t}}</span><span style="flex: none; width: 38px; color: {{l.c}};">{{l.lvl}}</span><span style="color: var(--console-t); min-width: 0;">{{l.msg}}</span></div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+
+      <sc-if value="{{confirmCancel}}" hint-placeholder-val="{{ false }}">
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 22px; background: var(--err-s); border-top: 1px solid var(--border);">
+          <span style="font-size: 13px; color: var(--err-t); flex-grow: 1;">Annuler la sauvegarde ? Les ressources déjà copiées restent valides, le disque sera ensuite éjecté proprement.</span>
+          <button onClick="{{keepGoing}}" class="btn" style="font: inherit; font-size: 13px; font-weight: 500; padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer;">Continuer</button>
+          <button onClick="{{doCancel}}" class="btn" style="font: inherit; font-size: 13px; font-weight: 500; padding: 7px 12px; border-radius: 8px; border: 0; background: var(--err); color: #fff; cursor: pointer;">Oui, annuler</button>
+        </div>
+      </sc-if>
+
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 14px 22px; border-top: 1px solid var(--border);">
+        <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text2); cursor: pointer;"><input type="checkbox" checked style="accent-color: var(--accent); width: 16px; height: 16px;">Éjecter le disque à la fin</label>
+        <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text2); cursor: pointer;"><input type="checkbox" checked style="accent-color: var(--accent); width: 16px; height: 16px;">Me notifier à la fin</label>
+        <span style="flex-grow: 1;"></span>
+        <sc-if value="{{running}}" hint-placeholder-val="{{ true }}">
+          <button onClick="{{askCancel}}" class="btn" style="font: inherit; font-size: 14px; font-weight: 500; padding: 9px 14px; border-radius: 8px; border: 0; background: var(--err-s); color: var(--err-t); cursor: pointer;">Annuler la sauvegarde</button>
+          <a href="Main.dc.html" class="btn" style="display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 8px; background: var(--accent); color: #fff; font-size: 14px; font-weight: 500;">Réduire et continuer</a>
+        </sc-if>
+        <sc-if value="{{finished}}" hint-placeholder-val="{{ false }}">
+          <button onClick="{{replay}}" class="btn" style="font: inherit; font-size: 14px; font-weight: 500; padding: 9px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--subtle); color: var(--text); cursor: pointer;">Rejouer la démo</button>
+          <a href="Main.dc.html" class="btn" style="display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 8px; background: var(--accent); color: #fff; font-size: 14px; font-weight: 500;">Fermer</a>
+        </sc-if>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["dark","light"],"default":"dark"},"speed":{"editor":"range","min":1,"max":6,"step":1,"default":2,"section":"Démo"},"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  constructor(p) {
+    super(p);
+    this.ITEMS = [
+      ['vm',111,'agents',22],['vm',105,'backup-orchestrator',18],['vm',102,'WindowsServer2025',96],['ct',103,'backupSyncthing',29],
+      ['vm',108,'game-icarus',41],['vm',109,'services',17],['ct',110,'n8n',9],['ct',112,'photos',60],['ct',104,'pi-hole',4],['ct',101,'nginxproxymanager',3],['vm',106,'ntfy-Notif',6]
+    ];
+    this.TOTAL = 305;
+    this.state = this.initial();
+  }
+  initial() {
+    const L = (t,lvl,msg) => ({ t, lvl, msg });
+    return {
+      pct: 42, phase: 'sync', extra: 0, clock: 16*3600+23*60+40, filter: 'all', confirmCancel: false,
+      logs: [
+        L('16:12:03','INFO','Démarrage · déclenché manuellement par admin'),
+        L('16:12:03','INFO','Disque détecté : WD WD40NMZW · série WXD2DA1L1E7C · 3,66 To'),
+        L('16:12:04','OK','Contrôles de sécurité : disque approuvé, aucune tâche PBS active'),
+        L('16:12:06','INFO','Passthrough USB vers VM 100 (pbs) · usb1=host=2-3'),
+        L('16:12:11','OK','Datastore amovible « pbo-wxd2da1l1e7c » monté'),
+        L('16:12:12','INFO','Sync local pbs8to → pbo-wxd2da1l1e7c (11 groupes)'),
+        L('16:12:13','INFO','[vm/111 agents] synchronisation…'),
+        L('16:14:10','OK','[vm/111 agents] 22,1 Go · 3 snapshots'),
+        L('16:14:11','INFO','[vm/105 backup-orchestrator] synchronisation…'),
+        L('16:15:49','OK','[vm/105 backup-orchestrator] 18,0 Go · 3 snapshots'),
+        L('16:15:50','INFO','[vm/102 WindowsServer2025] synchronisation…'),
+        L('16:19:02','WARN','[vm/102] 1 284 chunks déjà présents ignorés (déduplication)')
+      ],
+      announced: { 0: true, 1: true, 2: true }
+    };
+  }
+  componentDidMount() { this.timer = setInterval(() => this.tick(), 700); }
+  componentWillUnmount() { clearInterval(this.timer); }
+  fmt(s) { const h = Math.floor(s/3600)%24, m = Math.floor(s/60)%60, x = s%60; return [h,m,x].map(n => String(n).padStart(2,'0')).join(':'); }
+  tick() {
+    const st = this.state;
+    if (st.phase === 'done' || st.phase === 'cancelled' || st.confirmCancel) return;
+    const speed = this.props.speed ?? 2;
+    const clock = st.clock + 6;
+    const logs = st.logs.slice();
+    const add = (lvl,msg) => logs.push({ t: this.fmt(clock), lvl, msg });
+    if (st.phase === 'sync') {
+      const pct = Math.min(100, st.pct + 0.6 * speed);
+      const moved = pct / 100 * this.TOTAL;
+      const announced = { ...st.announced };
+      let cum = 0;
+      this.ITEMS.forEach(([k,id,name,size], i) => {
+        const end = cum + size;
+        if (moved >= end && !announced['d'+i]) { announced['d'+i] = true; add('OK', `[${k}/${id} ${name}] ${size.toFixed(1).replace('.',',')} Go · 3 snapshots`); }
+        if (moved > cum && !announced[i]) { announced[i] = true; add('INFO', `[${k}/${id} ${name}] synchronisation…`); }
+        cum = end;
+      });
+      if (pct >= 100) { add('OK','Synchronisation terminée · 305 Go'); add('INFO','Vérification des index et du nombre de snapshots…'); this.setState({ pct, phase: 'verify', extra: 0, clock, logs: logs.slice(-40), announced }); return; }
+      this.setState({ pct, clock, logs: logs.slice(-40), announced });
+    } else if (st.phase === 'verify') {
+      if (st.extra >= 3) { add('OK','Vérification OK · 33 snapshots, 0 erreur'); add('INFO','Démontage du datastore (mode maintenance « unmount »)…'); this.setState({ phase: 'eject', extra: 0, clock, logs: logs.slice(-40) }); return; }
+      this.setState({ extra: st.extra + 1, clock });
+    } else if (st.phase === 'eject') {
+      if (st.extra === 1) add('OK','Datastore démonté, passthrough USB retiré de la VM 100');
+      if (st.extra >= 3) { add('OK','Disque mis en veille · vous pouvez le débrancher'); add('OK','Terminé en 34 min · notification envoyée'); this.setState({ phase: 'done', clock, logs: logs.slice(-40) }); return; }
+      this.setState({ extra: st.extra + 1, clock, logs: logs.slice(-40) });
+    }
+  }
+  renderVals() {
+    const st = this.state;
+    const theme = this.props.theme || 'dark';
+    const phase = st.phase;
+    const running = phase === 'sync' || phase === 'verify' || phase === 'eject';
+    const moved = st.pct / 100 * this.TOTAL;
+    const order = ['detect','pass','mount','sync','verify','eject'];
+    const cur = phase === 'done' ? 6 : phase === 'cancelled' ? 3 : order.indexOf(phase);
+    const labels = [['Détection','WD 4 To · approuvé'],['Passthrough','USB → VM 100'],['Montage','datastore amovible'],['Synchronisation', phase === 'sync' ? Math.floor(st.pct) + ' %' : (phase === 'cancelled' ? 'interrompue' : '305 Go')],['Vérification','index & snapshots'],['Éjection sûre','démontage + veille']];
+    const steps = labels.map(([label, sub], i) => {
+      const done = i < cur, active = i === cur && running, failed = phase === 'cancelled' && i === 3;
+      return { label, sub,
+        mark: done ? '✓' : failed ? '!' : String(i+1),
+        bg: done ? 'var(--ok-s)' : active ? 'var(--accent)' : failed ? 'var(--warn-s)' : 'transparent',
+        fg: done ? 'var(--ok-t)' : active ? '#fff' : failed ? 'var(--warn-t)' : 'var(--muted)',
+        bd: done ? 'transparent' : active ? 'var(--accent)' : 'var(--border2)',
+        tc: (done || active) ? 'var(--text)' : 'var(--muted)' };
+    });
+    let cum = 0, doneCount = 0;
+    const items = this.ITEMS.map(([kind,id,name,size]) => {
+      const start = cum, end = cum + size; cum = end;
+      const isDone = moved >= end, isRun = moved > start && moved < end && phase === 'sync';
+      if (isDone) doneCount++;
+      const ip = isRun ? Math.floor((moved - start) / size * 100) : 0;
+      return { kind, id, name,
+        mark: isDone ? '✓' : isRun ? '•' : '',
+        bg: isDone ? 'var(--ok-s)' : isRun ? 'var(--accent)' : 'var(--subtle)',
+        fg: isDone ? 'var(--ok-t)' : '#fff',
+        tc: isDone || isRun ? 'var(--text)' : 'var(--muted)',
+        rowBg: isRun ? 'var(--accent-s)' : 'transparent',
+        right: isDone ? size + ' Go' : isRun ? ip + ' %' : 'en attente' };
+    });
+    const lvlC = { INFO: '#7DD3FC', OK: '#4ADE80', WARN: '#FBBF24', ERR: '#F87171' };
+    const f = st.filter;
+    const logs = st.logs.filter(l => f === 'all' || (f === 'warn' && (l.lvl === 'WARN' || l.lvl === 'ERR')) || (f === 'err' && l.lvl === 'ERR')).slice(-16).map(l => ({ ...l, c: lvlC[l.lvl] }));
+    const filters = [['all','Tout'],['warn','Avertissements'],['err','Erreurs']].map(([k,label]) => ({ label,
+      pick: () => this.setState({ filter: k }),
+      bg: f === k ? 'rgba(124,108,255,.18)' : 'transparent', fg: f === k ? '#B0A7FF' : '#A1A1AA', bd: f === k ? 'rgba(124,108,255,.45)' : '#3A3A42' }));
+    const remain = Math.max(0, (this.TOTAL - moved) * 1000 / 182 / 60);
+    const hdr = phase === 'done' ? { title: 'Sauvegarde terminée · disque prêt à être débranché', bg: 'var(--ok-s)', fg: 'var(--ok-t)' }
+      : phase === 'cancelled' ? { title: 'Sauvegarde annulée · disque éjecté proprement', bg: 'var(--warn-s)', fg: 'var(--warn-t)' }
+      : { title: phase === 'sync' ? 'Sauvegarde externe en cours' : phase === 'verify' ? 'Vérification de la copie…' : 'Éjection sûre du disque…', bg: 'var(--accent)', fg: '#fff' };
+    return {
+      themeCls: theme === 'light' ? 'light' : 'dark',
+      running, finished: !running, isDone: phase === 'done', isCancelled: phase === 'cancelled',
+      hdr, steps, items, doneCount, logs, filters,
+      pctLabel: Math.floor(st.pct) + ' %',
+      pctW: st.pct.toFixed(1) + '%',
+      barColor: phase === 'done' ? 'var(--ok)' : phase === 'cancelled' ? 'var(--warn)' : 'var(--accent)',
+      liveDot: running ? 'var(--ok)' : 'var(--muted)',
+      stats: phase === 'sync' ? `${Math.round(moved)} / 305 Go · 182 Mo/s · ~${Math.ceil(remain)} min restantes` : phase === 'done' ? '305 Go · 33 snapshots · 34 min' : phase === 'cancelled' ? `${Math.round(moved)} / 305 Go copiés avant l’annulation` : '305 / 305 Go',
+      confirmCancel: st.confirmCancel,
+      askCancel: () => this.setState({ confirmCancel: true }),
+      keepGoing: () => this.setState({ confirmCancel: false }),
+      doCancel: () => { const logs = st.logs.concat([{ t: this.fmt(st.clock), lvl: 'WARN', msg: 'Annulation demandée par admin · arrêt après le chunk en cours' }, { t: this.fmt(st.clock + 4), lvl: 'OK', msg: 'Datastore démonté, disque éjecté proprement' }]); this.setState({ phase: 'cancelled', confirmCancel: false, logs }); },
+      replay: () => this.setState(this.initial())
+    };
+  }
+}
+</script>
+</body>
+</html>

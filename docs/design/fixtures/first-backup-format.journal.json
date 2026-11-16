@@ -1,0 +1,273 @@
+{
+  "entries": [
+    {
+      "at": "2026-11-15T19:02:11Z",
+      "step": "starting",
+      "source": "pbo",
+      "level": "info",
+      "code": "run_created",
+      "params": {},
+      "text": "External backup run created. Background execution will start shortly.",
+      "count": 1
+    },
+    {
+      "at": "2026-11-15T19:02:11Z",
+      "step": "starting",
+      "source": "pbo",
+      "level": "info",
+      "code": "run_starting",
+      "params": {},
+      "text": "Starting external backup execution.",
+      "count": 1
+    },
+    {
+      "at": "2026-11-15T19:02:11Z",
+      "step": "handoff_disk",
+      "source": "pbo",
+      "level": "info",
+      "code": "handoff_start",
+      "params": {},
+      "text": "Handing off USB disk to PBS VM.",
+      "count": 1
+    },
+    {
+      "at": "2026-11-15T19:02:14Z",
+      "step": "handoff_disk",
+      "source": "pbo",
+      "level": "info",
+      "code": "disk_visible",
+      "params": {
+        "device": "/dev/sdc"
+      },
+      "text": "Disk is now visible on PBS as /dev/sdc.",
+      "count": 1
+    },
+    {
+      "at": "2026-11-15T19:02:15Z",
+      "step": "prepare_dedicated_datastore",
+      "source": "pbo",
+      "level": "info",
+      "code": "prepare_datastore",
+      "params": {},
+      "text": "Preparing or reusing dedicated PBS datastore.",
+      "count": 1
+    },
+    {
+      "at": "2026-11-15T19:02:15Z",
+      "step": "destructive_format",
+      "source": "pbo",
+      "level": "info",
+      "code": "wiping",
+      "params": {
+        "device": "sdc"
+      },
+      "text": "Wiping `sdc` on PBS (PUT /nodes/localhost/disks/wipedisk).",
+      "count": 1
+    },
+    {
+      "at": "2026-11-15T20:02:15+01:00",
+      "step": "destructive_format",
+      "source": "pbs",
+      "level": "info",
+      "code": null,
+      "params": {},
+      "text": "wipe disk sdc",
+      "count": 1
+    },
+    {
+      "at": "2026-11-15T20:02:15+01:00",
+      "step": "destructive_format",
+      "source": "pbs",
+      "level": "info",
+      "code": null,
+      "params": {},
+      "text": "Wiping /dev/sdc",
+      "count": 1
+    },
+    {
+      "at": "2026-11-15T20:02:16+01:00",
+      "step": "destructive_format",
+      "source": "pbs",
+      "level": "ok",
+      "code": null,
+      "params": {},
+      "text": "TASK OK",
+      "count": 1
+    },
+    {
+      "at": "2026-11-15T19:02:17Z",
+      "step": "create_datastore",
+      "source": "pbo",
+      "level": "info",
+      "code": "creating_datastore",
+      "params": {
+        "store": "pbo-pbotesta",
+        "device": "sdc"
+      },
+      "text": "Creating removable datastore `pbo-pbotesta` (ext4) on `sdc`.",
+      "count": 1
+    },
+    {
+      "at": "2026-11-15T20:02:17+01:00",
+      "step": "create_datastore",
+      "source": "pbs",
+      "level": "info",
+      "code": null,
+      "params": {},
+      "text": "create datastore 'pbo-pbotesta' on disk sdc",
+      "count": 1
+    },
+    {
+      "at": "2026-11-15T20:02:30+01:00",
+      "step": "create_datastore",
+      "source": "pbs",
+      "level": "ok",
+      "code": null,
+      "params": {},
+      "text": "TASK OK",
+      "count": 1
+    },
+    {
+      "at": "2026-11-15T19:02:32Z",
+      "step": "run_export",
+      "source": "pbo",
+      "level": "info",
+      "code": "export_start",
+      "params": {},
+      "text": "Starting PBS datastore export to dedicated disk.",
+      "count": 1
+    },
+    {
+      "at": "2026-11-15T19:02:33Z",
+      "step": "sync_job",
+      "source": "pbo",
+      "level": "info",
+      "code": "sync_job_create",
+      "params": {
+        "job": "pbo-sync-1",
+        "source": "main",
+        "target": "pbo-pbotesta"
+      },
+      "text": "Creating local PBS sync job `pbo-sync-1`: `main` → `pbo-pbotesta` (no remote).",
+      "count": 1
+    },
+    {
+      "at": "2026-11-15T20:02:33+01:00",
+      "step": "sync_job",
+      "source": "pbs",
+      "level": "info",
+      "code": null,
+      "params": {},
+      "text": "Starting datastore sync job '-:main:pbo-pbotesta::pbo-sync-1'",
+      "count": 1
+    },
+    {
+      "at": "2026-11-15T20:02:33+01:00",
+      "step": "sync_job",
+      "source": "pbs",
+      "level": "info",
+      "code": null,
+      "params": {},
+      "text": "Found 2 groups to sync (out of 2 total)",
+      "count": 1
+    },
+    {
+      "at": "2026-11-15T20:02:33+01:00",
+      "step": "sync_job",
+      "source": "pbs",
+      "level": "info",
+      "code": null,
+      "params": {},
+      "text": "[ct/101]: sync snapshot 2026-11-15T18:47:31Z",
+      "count": 1
+    },
+    {
+      "at": "2026-11-15T20:02:35+01:00",
+      "step": "sync_job",
+      "source": "pbs",
+      "level": "info",
+      "code": null,
+      "params": {},
+      "text": "[ct/101]: sync archive root.pxar.didx",
+      "count": 1
+    },
+    {
+      "at": "2026-11-15T20:02:36+01:00",
+      "step": "sync_job",
+      "source": "pbs",
+      "level": "info",
+      "code": null,
+      "params": {},
+      "text": "[ct/101]: downloaded 180.250 MiB (60.104 MiB/s)",
+      "count": 1
+    },
+    {
+      "at": "2026-11-15T20:02:36+01:00",
+      "step": "sync_job",
+      "source": "pbs",
+      "level": "info",
+      "code": null,
+      "params": {},
+      "text": "[ct/102]: sync snapshot 2026-11-15T18:47:55Z",
+      "count": 1
+    },
+    {
+      "at": "2026-11-15T20:02:38+01:00",
+      "step": "sync_job",
+      "source": "pbs",
+      "level": "info",
+      "code": null,
+      "params": {},
+      "text": "[ct/102]: sync archive root.pxar.didx",
+      "count": 1
+    },
+    {
+      "at": "2026-11-15T20:02:39+01:00",
+      "step": "sync_job",
+      "source": "pbs",
+      "level": "info",
+      "code": null,
+      "params": {},
+      "text": "[ct/102]: downloaded 172.432 MiB (70.010 MiB/s)",
+      "count": 1
+    },
+    {
+      "at": "2026-11-15T20:02:39+01:00",
+      "step": "sync_job",
+      "source": "pbs",
+      "level": "info",
+      "code": null,
+      "params": {},
+      "text": "Summary: sync job pulled 352.682 MiB in 9 chunks (average rate: 64.208 MiB/s)",
+      "count": 1
+    },
+    {
+      "at": "2026-11-15T20:02:39+01:00",
+      "step": "sync_job",
+      "source": "pbs",
+      "level": "ok",
+      "code": null,
+      "params": {},
+      "text": "TASK OK",
+      "count": 1
+    },
+    {
+      "at": "2026-11-15T19:02:40Z",
+      "step": "success",
+      "source": "pbo",
+      "level": "ok",
+      "code": "success_summary",
+      "params": {
+        "device": "/dev/sdc"
+      },
+      "text": "Disk is now visible on PBS as /dev/sdc. PBS local sync job completed.",
+      "count": 1
+    }
+  ],
+  "summary": {
+    "text": "sync job pulled 352.682 MiB in 9 chunks (average rate: 64.208 MiB/s)",
+    "transferred_bytes": 369813880,
+    "rate_bytes_per_second": 67326967,
+    "no_new_data": false
+  }
+}

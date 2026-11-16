@@ -17,6 +17,12 @@ _DOWNLOADED_RE = re.compile(
     r"\bdownloaded\s+(?P<amount>\d+(?:\.\d+)?)\s+(?P<unit>[KMGT]?i?B)\s+\((?P<speed>[^)]+)\)",
     re.IGNORECASE,
 )
+# PBS 4 prefixes group lines: "[ct/101]: re-sync snapshot 2026-…".
+_GROUP_PREFIX_RE = re.compile(r"\[(?P<group>(?:vm|ct|host)/[^\]\s]+)\]:")
+_CHUNKSTORE_RE = re.compile(r"\bchunkstore\s+create:\s*(?P<percent>\d+(?:\.\d+)?)%", re.IGNORECASE)
+_SYNC_START_RE = re.compile(r"\bStarting datastore sync job\b", re.IGNORECASE)
+_SUMMARY_SIZE_RE = re.compile(r"(?P<amount>\d+(?:\.\d+)?)\s*(?P<unit>[KMGT]?i?B)\b(?!/s)")
+_SUMMARY_RATE_RE = re.compile(r"(?P<rate>\d+(?:\.\d+)?\s*[KMGT]?i?B/s)")
 _JOB_RE = re.compile(r"\b(?P<job>pbo-export-sync-[A-Za-z0-9_-]+)\b")
 _REMOTE_RE = re.compile(r"\b(?P<remote>pbo-export-remote-[A-Za-z0-9_-]+)\b")
 _UPID_RE = re.compile(r"\b(?P<upid>UPID:[^\s]+)")
@@ -37,6 +43,9 @@ class PbsProgressUpdate:
     pbs_task_upid: str | None = None
     warnings: list[str] = field(default_factory=list)
     failed_groups: list[dict[str, str]] = field(default_factory=list)
+    chunkstore_percent: float | None = None
+    sync_started: bool = False
+    summary: bool = False
     task_ok: bool = False
     task_error: bool = False
     partial_failure: bool = False
@@ -53,6 +62,7 @@ class PbsProgressUpdate:
                 self.current_snapshot,
                 self.current_archive,
                 self.downloaded_bytes,
+                self.chunkstore_percent,
             )
         )
 
@@ -79,6 +89,26 @@ def parse_pbs_progress_line(line: str | None) -> PbsProgressUpdate:
 
     if match := _GROUP_RE.search(text):
         update.current_group = match.group("group")
+    if match := _GROUP_PREFIX_RE.search(text):
+        update.current_group = match.group("group")
+
+    if match := _CHUNKSTORE_RE.search(text):
+        update.chunkstore_percent = float(match.group("percent"))
+    if _SYNC_START_RE.search(text):
+        update.sync_started = True
+    if "Summary:" in text:
+        # The only reliable totals of the sync (B23): not the last archive line.
+        summary = text.split("Summary:", 1)[1]
+        update.summary = True
+        if "no new data" in summary.casefold():
+            update.downloaded_bytes = 0
+        else:
+            rate = _SUMMARY_RATE_RE.search(summary)
+            size = _SUMMARY_SIZE_RE.search(_SUMMARY_RATE_RE.sub("", summary))
+            if size:
+                update.downloaded_bytes = _bytes_from_amount(float(size.group("amount")), size.group("unit"))
+            if rate:
+                update.current_speed = rate.group("rate").strip()
 
     if match := _SNAPSHOT_RE.search(text):
         update.current_snapshot = match.group("snapshot")
@@ -89,7 +119,7 @@ def parse_pbs_progress_line(line: str | None) -> PbsProgressUpdate:
     if match := _ARCHIVE_RE.search(text):
         update.current_archive = match.group("archive")
 
-    if match := _DOWNLOADED_RE.search(text):
+    if not update.summary and (match := _DOWNLOADED_RE.search(text)):
         update.downloaded_bytes = _bytes_from_amount(float(match.group("amount")), match.group("unit"))
         update.current_speed = match.group("speed").strip()
 
