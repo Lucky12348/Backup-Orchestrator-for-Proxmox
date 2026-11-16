@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -26,10 +27,21 @@ class AgentDiskReportItem(BaseModel):
     connected: bool
 
 
+class AgentHotplugEvent(BaseModel):
+    """A USB disk udev event seen by the agent since its previous report."""
+
+    action: Literal["added", "removed"]
+    serial: str = Field(max_length=255)
+    model: str | None = Field(default=None, max_length=255)
+
+
 class AgentDiskReportCreate(BaseModel):
     hostname: str = Field(max_length=255)
     observed_at: datetime
     disks: list[AgentDiskReportItem]
+    # What triggered the report: "timer" (periodic) or "udev" (hot-plug).
+    trigger: Literal["timer", "udev", "manual"] | None = None
+    hotplug: list[AgentHotplugEvent] = Field(default_factory=list, max_length=64)
 
 
 class AgentHeartbeatRead(UTCDateTimeModel):

@@ -40,6 +40,7 @@ Read deployment wiring before editing:
 
 - Read `scripts/install/pbo-install.sh` and `pbo-update.sh` for the documented LXC install (`pbo.service`, `/etc/pbo`, `update` with rollback).
 - Read `apps/api/app/agent_install/install.sh` and `apps/api/app/services/agent_registry.py` for the one-line host agent install (pairing code, per-agent tokens, pinned TLS both ways, `--uninstall [--purge-pve-access]`).
+- Read `apps/agent/src/agent/hotplug.py` and the udev rule written by `install.sh` (`/etc/udev/rules.d/90-pbo-agent.rules`) for instant USB disk detection, and `apps/api/app/services/events.py` for the SSE channel (AGENTS.md, "Real-time channel").
 - Read `apps/agent/src/agent/pve_access.py` (host-role `POST /pve/provision-access`: `pveum` creates pbo@pve, role PBO, token pbo@pve!pbo) and `docs/PERMISSIONS.md` before changing API privileges.
 - Read `infra/docker/docker-compose.yml` for the legacy app VM stack.
 - Read `apps/agent/deploy/systemd/` for host and PBS agent service/timer deployment.

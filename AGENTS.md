@@ -206,6 +206,36 @@ should reach them — and every call is additionally protected with an
   is set inside it.
 - Command blocks for hosts have **no copy button** (uBlock "ClickFix").
 
+## Real-time channel (read before touching disk reports, runs or polling)
+
+- Agent (host): `/etc/udev/rules.d/90-pbo-agent.rules` (written by
+  `install.sh`, removed by `--uninstall`) starts `pbo-agent-report.service`
+  on USB disk add/remove; `sync-state --settle 2` debounces (sleep +
+  `udevadm settle`, systemd merges starts while activating) and sends the
+  report with `hotplug` (added/removed + serial, diff against
+  `/var/lib/pbo-agent/usb-disks.json`, `apps/agent/src/agent/hotplug.py`).
+  Timer = 5-minute fallback.
+- API: `services/events.py` = in-memory bus (single process) behind
+  `publish()` / `EventBus`, ring buffer for `Last-Event-ID`, and the SSE
+  stream `GET /api/v1/events` (session cookie, `: ping` every 15 s, stream
+  closed after 1 h so the browser reconnects). Event types are a closed set
+  (`EVENT_TYPES`): `disk.added|removed|updated`, `agent.online|offline`,
+  `run.progress|log|finished`.
+- `disk.*` are published by `ingest_agent_disk_report` after the commit
+  (`services/disk_events.py`: payload, `reject_reason` = `zero_size` |
+  `too_small`, hot-plug history in `activity_events`, category `disk`).
+- `run.*` come from SQLAlchemy hooks (`services/run_events.py`): changes of
+  `ExternalBackupRun` / `DiskPreparationRun` are collected at flush and
+  published after commit (never on rollback), whatever code path wrote them —
+  do not publish run events by hand. `agent.online` on heartbeat,
+  `agent.offline` from a 30 s watcher started in the lifespan.
+- Web: one shared `EventSource` (`src/events.ts`), hook `useEvents()`
+  (`src/useEvents.ts`) returning whether the stream is connected. Polling
+  loops (`useAppData` run polling, the run log modal) only run while it is
+  NOT connected. Pure logic for disk cards / toasts in `src/liveDisks.ts`
+  (tested). Toasts: `components/GlobalToasts.tsx`; `/disks?disk=<id>`
+  focuses a disk.
+
 ## PBS mode: agent vs API (read before touching disk/export/eject code)
 
 - `PBS_MODE` (database setting): `agent` = legacy PBS root agent;
@@ -500,22 +530,27 @@ The image (`infra/docker/api.Dockerfile`) is built from the **repository root**
   run for real against a local TLS server) and `test_calendar_feed.py`;
   Phase-4 suite `test_setup_wizard.py` (progress/resume, PVE provisioning
   through a fake agent, PBS provisioning against a fake PBS, password absent
-  from logs/responses/DB/tracebacks, rate limit, PBS < 3.3).
-- `apps/agent/tests/` (8 files, incl. `test_agent_role.py`,
-  `test_registered_agent.py`, `test_pve_access.py` with simulated `pveum`),
+  from logs/responses/DB/tracebacks, rate limit, PBS < 3.3);
+  Phase-4.1 suite `test_events.py` (bus, SSE auth/heartbeat/Last-Event-ID,
+  disk events from reports, run.* hooks, agent presence).
+- `apps/agent/tests/` (9 files, incl. `test_agent_role.py`,
+  `test_registered_agent.py`, `test_pve_access.py` with simulated `pveum`,
+  `test_hotplug.py` for the hot-plug diff and debounce),
   `apps/app-maintenance-agent/tests/` (1 file).
 - Nothing has been run against a real PBS in API mode yet: the fake follows the
   documented schema; points the schema leaves open are marked [U] in
   `docs/PBS_API.md`. The install/update/agent shell scripts are only
   shellchecked: they have not been run on a real LXC / PVE host from CI.
-- `apps/web/tests/` (4 files, `node:test`, incl. `setupWizard.test.ts`:
-  `/setup` redirect, resume, error messages): `npm test` runs them (Node ≥ 22.18
+- `apps/web/tests/` (5 files, `node:test`, incl. `setupWizard.test.ts`:
+  `/setup` redirect, resume, error messages; `liveDisks.test.ts`: step-5 disk
+  cards and toasts): `npm test` runs them (Node ≥ 22.18
   executes the `.ts` files natively).
 
 CI: `.github/workflows/ci.yml` — ruff (blocking only on E9/F63/F7/F82; default
 rules reported), pytest for api/agent/app-maintenance-agent on Python 3.11 and
 3.13, web `npm ci` + build + tests, `shellcheck -x` on every tracked `*.sh`,
-`scripts/ci/test-agent-install.sh` (URL check, `--uninstall`), and a
+`scripts/ci/test-agent-install.sh` (URL check, `--uninstall`, generated udev
+rule), and a
 `docker build` of the API image. `.github/workflows/release.yml` builds
 the release archive on `v*` tags.
 No e2e framework (no Playwright/Cypress) exists for the web app. Several

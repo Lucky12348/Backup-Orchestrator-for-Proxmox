@@ -22,6 +22,8 @@ INSTALL_DIR="/opt/pbo-agent"
 CONF_DIR="/etc/pbo-agent"
 ENV_FILE="${CONF_DIR}/agent.env"
 TLS_DIR="${CONF_DIR}/tls"
+UDEV_RULE_FILE="/etc/udev/rules.d/90-pbo-agent.rules"
+STATE_DIR="/var/lib/pbo-agent"
 ROLE="host"
 PORT="8090"
 BRIDGE="vmbr0"
@@ -320,6 +322,21 @@ register_agent() {
   info "Registered as agent #${agent_id}"
 }
 
+# Instant USB disk detection: udev only asks systemd to start the (debounced)
+# report service, nothing slow runs inside udev. SYSTEMD_WANTS only acts when
+# a device appears; for "remove" a non-blocking `systemctl start` does the same.
+write_udev_rule() {
+  local target="$1"
+  mkdir -p "$(dirname "${target}")"
+  cat >"${target}" <<'RULE'
+# Proxmox Backup Orchestrator agent (installed by pbo-agent-install.sh).
+# Report USB disks as soon as they are plugged in or unplugged.
+ACTION=="add", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", ENV{ID_BUS}=="usb", TAG+="systemd", ENV{SYSTEMD_WANTS}+="pbo-agent-report.service"
+ACTION=="remove", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", ENV{ID_BUS}=="usb", RUN+="/usr/bin/systemctl --no-block start pbo-agent-report.service"
+RULE
+  chmod 0644 "${target}"
+}
+
 install_services() {
   info "Installing systemd services"
   cat >/etc/systemd/system/pbo-agent.service <<EOF
@@ -358,7 +375,12 @@ Type=oneshot
 User=root
 WorkingDirectory=${INSTALL_DIR}
 EnvironmentFile=${ENV_FILE}
-ExecStart=${INSTALL_DIR}/venv/bin/python -m agent.main sync-state
+# Started by the timer and by ${UDEV_RULE_FILE} (USB disk add/remove).
+# --settle 2: wait for the partitions, then udevadm settle. Start requests
+# arriving meanwhile are merged into this run by systemd (debounce).
+ExecStart=${INSTALL_DIR}/venv/bin/python -m agent.main sync-state --settle 2
+StateDirectory=pbo-agent
+TimeoutStartSec=120
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectHome=yes
@@ -366,11 +388,11 @@ EOF
 
   cat >/etc/systemd/system/pbo-agent-report.timer <<EOF
 [Unit]
-Description=Proxmox Backup Orchestrator agent report every 2 minutes
+Description=Proxmox Backup Orchestrator agent report (fallback, every 5 minutes)
 
 [Timer]
 OnBootSec=1min
-OnUnitActiveSec=2min
+OnUnitActiveSec=5min
 AccuracySec=15s
 Unit=pbo-agent-report.service
 Persistent=true
@@ -378,6 +400,11 @@ Persistent=true
 [Install]
 WantedBy=timers.target
 EOF
+
+  if [[ "${ROLE}" == "host" ]]; then
+    write_udev_rule "${UDEV_RULE_FILE}"
+    udevadm control --reload-rules 2>/dev/null || true
+  fi
 
   systemctl daemon-reload
   systemctl enable --quiet pbo-agent.service
@@ -433,6 +460,12 @@ uninstall() {
   done
   systemctl daemon-reload
   systemctl reset-failed pbo-agent.service pbo-agent-report.service 2>/dev/null || true
+  if [[ -f "${UDEV_RULE_FILE}" ]]; then
+    info "Removing the udev rule ${UDEV_RULE_FILE}"
+    rm -f "${UDEV_RULE_FILE}"
+    udevadm control --reload-rules 2>/dev/null || true
+  fi
+  rm -rf "${STATE_DIR}"
   info "Removing ${INSTALL_DIR} and ${CONF_DIR}"
   rm -rf "${INSTALL_DIR}" "${CONF_DIR}"
   if ((PURGE_PVE_ACCESS)); then

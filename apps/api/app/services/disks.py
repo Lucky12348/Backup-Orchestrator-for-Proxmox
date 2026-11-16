@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.models import AgentHeartbeat, ExternalDisk, ScheduledBackupEvent
 from app.schemas.agent import AgentDiskReportCreate, AgentHeartbeatCreate
+from app.services import disk_events
 from app.services.host_agent import HostAgentError, get_pbs_agent_client
 from app.services.disk_identity import canonical_serial_number, serial_aliases, serials_match
 from app.services.notifications import (
@@ -83,6 +84,11 @@ def ingest_agent_disk_report(db: Session, payload: AgentDiskReportCreate) -> lis
     reported_aliases = {alias for item in payload.disks for alias in serial_aliases(item.serial_number)}
     detection_notifications: list[tuple[str, ExternalDisk]] = []
     planning_detections: list[ExternalDisk] = []
+    # Live events (SSE), published after the commit.
+    added_disks: list[ExternalDisk] = []
+    removed_disks: list[ExternalDisk] = []
+    updated_disks: list[ExternalDisk] = []
+    before_snapshots: dict[int, tuple] = {}
 
     report_marker = db.scalar(
         select(ExternalDisk)
@@ -144,6 +150,8 @@ def ingest_agent_disk_report(db: Session, payload: AgentDiskReportCreate) -> lis
         else:
             previous_presence = disk.presence_state or ("present" if disk.connected else "absent")
             is_new_disk = False
+            if disk.id is not None:
+                before_snapshots[disk.id] = disk_events.snapshot(disk)
             logger.debug(
                 "disk classified as known because serial %s canonical %s matched disk id %s",
                 item.serial_number,
@@ -184,6 +192,10 @@ def ingest_agent_disk_report(db: Session, payload: AgentDiskReportCreate) -> lis
 
         db.add(disk)
         upserted.append(disk)
+        if disk.connected and previous_presence in {"never_seen", "absent"}:
+            added_disks.append(disk)  # rejected ones too: the UI explains why
+        elif disk.id is not None and before_snapshots.get(disk.id) != disk_events.snapshot(disk):
+            updated_disks.append(disk)
         if disk.connected and previous_presence in {"never_seen", "absent"} and not _is_unusable_disk(disk):
             planning_detections.append(disk)
             if _disk_detection_cooldown_elapsed(disk, observed_at):
@@ -204,16 +216,22 @@ def ingest_agent_disk_report(db: Session, payload: AgentDiskReportCreate) -> lis
             db.add(disk)
             continue
 
+        if disk.connected or disk.presence_state == "present":
+            removed_disks.append(disk)
         disk.connected = False
         disk.presence_state = "absent"
         disk.active = False
         disk.reported_by_hostname = payload.hostname
         db.add(disk)
 
+    disk_events.record_hotplug_history(db, payload.hostname, [item.model_dump() for item in payload.hotplug])
     db.commit()
 
     for disk in upserted:
         db.refresh(disk)
+    for disk in removed_disks:
+        db.refresh(disk)
+    disk_events.publish_report_events(added_disks, removed_disks, updated_disks)
 
     for detection_type, disk in detection_notifications:
         try:

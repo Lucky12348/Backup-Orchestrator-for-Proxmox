@@ -65,7 +65,7 @@ function useTheme() {
  * the non-secret results live server-side (`/api/v1/setup/progress`), so a
  * reload resumes where the operator left off.
  */
-export function SetupWizard({ onFinished }: { onFinished: () => void }) {
+export function SetupWizard({ onFinished }: { onFinished: (path?: string) => void }) {
   const { status: authStatus } = useAuth();
   const language = useMemo(() => detectLanguage(navigator.languages ?? [navigator.language]), []);
   const text = WIZARD_TEXT[language];
@@ -176,7 +176,7 @@ export function SetupWizard({ onFinished }: { onFinished: () => void }) {
                     onNext={() => void goTo("done")}
                   />
                 ) : null}
-                {step === "done" && progress ? <DoneStep progress={progress} onFinish={onFinished} /> : null}
+                {step === "done" && progress ? <DoneStep progress={progress} language={language} onFinish={onFinished} /> : null}
                 {error && progress ? (
                   <div className="px-6 pb-6">
                     <ErrorAlert error={error} />

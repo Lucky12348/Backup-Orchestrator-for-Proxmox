@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -12,6 +13,7 @@ from app.db.init import create_tables, seed_database
 from app.db.migrate import run_migrations
 from app.db.preflight import DatabaseEncodingError, check_database_encoding
 from app.db.session import SessionLocal, engine
+from app.services import run_events  # registers the run.* SQLAlchemy hooks
 from app.services.notifications import validate_notification_settings
 from app.services.planning_scheduler import start_planning_scheduler, stop_planning_scheduler
 from app.services.settings_service import activate_settings_store, ensure_pbs_mode, import_settings_from_env
@@ -57,7 +59,9 @@ async def lifespan(_: FastAPI):
         # Stored settings are fixable from the UI: report, don't refuse to start.
         logger.error("Notification settings are invalid: %s", exc)
     start_planning_scheduler(settings)
+    presence_watcher = asyncio.create_task(run_events.watch_agent_presence(SessionLocal))
     yield
+    presence_watcher.cancel()
     stop_planning_scheduler()
 
 

@@ -184,8 +184,30 @@ The script:
   `/etc/pbo-agent/agent.env` (0600):
   - `AGENT_SERVER_TOKEN`: app → agent (the app stores it encrypted);
   - `AGENT_CALLBACK_TOKEN`: agent → app (the app stores only its hash);
-- installs `pbo-agent.service` and `pbo-agent-report.timer` (heartbeat +
-  disk report every 2 minutes) and sends a first report.
+- installs `pbo-agent.service`, `pbo-agent-report.service` (heartbeat + disk
+  report) and the udev rule `/etc/udev/rules.d/90-pbo-agent.rules`, then sends
+  a first report.
+
+**Instant disk detection.** Plugging or unplugging a USB disk fires the udev
+rule, which only asks systemd to start `pbo-agent-report.service` (nothing slow
+runs in udev):
+
+```text
+ACTION=="add",    SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", ENV{ID_BUS}=="usb" → ENV{SYSTEMD_WANTS}+="pbo-agent-report.service"
+ACTION=="remove", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", ENV{ID_BUS}=="usb" → RUN+="systemctl --no-block start pbo-agent-report.service"
+```
+
+(`SYSTEMD_WANTS` only acts when a device appears, hence the non-blocking
+`systemctl start` for `remove`.) The service waits ~2 s and runs
+`udevadm settle` so the partitions are ready; start requests arriving
+meanwhile are merged by systemd, so a burst of events (disk + partitions,
+several disks) gives **one** report. The report also lists the USB disks added
+or removed since the previous one (serial, model) for the activity history.
+The app receives it within a few seconds and pushes it live to every open
+page (`GET /api/v1/events`, Server-Sent Events): toast "New disk detected",
+the Disks page updates without reload, step 5 of the setup wizard shows the
+disk card. `pbo-agent-report.timer` (every **5 minutes**) remains as a
+fallback for a missed event.
 
 From then on, every app → agent call pins the agent certificate fingerprint,
 and every agent → app call pins the app certificate.
@@ -197,7 +219,7 @@ agent; the app then falls back to the static `HOST_AGENT_*` settings if any.
 To remove the agent (e.g. to test again from scratch), on the PVE host:
 
 ```bash
-bash pbo-agent-install.sh --uninstall                      # services, /opt/pbo-agent, /etc/pbo-agent
+bash pbo-agent-install.sh --uninstall                      # services, udev rule, /opt/pbo-agent, /etc/pbo-agent, /var/lib/pbo-agent
 bash pbo-agent-install.sh --uninstall --purge-pve-access   # + token pbo@pve!pbo, user pbo@pve, role PBO
 ```
 
@@ -260,6 +282,18 @@ journalctl -u pbo-agent-report.service -n 50
   (e.g. `/etc/pbo/tls` regenerated). Re-run the install command.
 - **Agent shown offline**: `journalctl -u pbo-agent-report.service` on the host;
   the host must reach `https://<lxc-ip>:443`.
+- **A plugged disk does not show up at once**: on the PVE host,
+  `cat /etc/udev/rules.d/90-pbo-agent.rules`, `udevadm monitor --udev --subsystem-match=block`
+  while plugging (an `add` for the disk, with `ID_BUS=usb` in
+  `udevadm info /dev/sdX`), then `journalctl -u pbo-agent-report.service -n 30`
+  ("USB disk added: …"). An agent installed before this version has no rule:
+  re-run its install command. Without the rule the 5-minute timer still
+  reports the disk.
+- **Live updates do not arrive behind a reverse proxy**: `/api/v1/events` is a
+  Server-Sent Events stream; disable response buffering for it (nginx:
+  `proxy_buffering off;` — the app also sends `X-Accel-Buffering: no`) and
+  keep read timeouts above 15 s (heartbeat interval). Without the stream the UI
+  falls back to polling.
 - **Login loops back to the login page**: the session cookie is `Secure`; use
   `https://`.
 

@@ -1,4 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+
+import type { RunProgressData } from "../events";
+import { useEvents } from "../useEvents";
 
 import {
   getAgentStatus,
@@ -220,8 +223,70 @@ export function useAppData() {
   const hasActiveExternalBackup =
     data?.externalBackupRuns.some((run) => run.status === "pending" || run.status === "running") ?? false;
 
+  // Real-time updates (SSE). Disk / agent events re-fetch the small lists they
+  // affect (coalesced), run.progress patches the run in place.
+  const pendingRefresh = useRef<{ disks?: boolean; agent?: boolean; runs?: boolean; timer?: number }>({});
+  function scheduleRefresh(part: "disks" | "agent" | "runs") {
+    const pending = pendingRefresh.current;
+    pending[part] = true;
+    if (pending.timer !== undefined) return;
+    pending.timer = window.setTimeout(() => {
+      const { disks, agent, runs } = pendingRefresh.current;
+      pendingRefresh.current = {};
+      void Promise.all([
+        disks ? getPreferredDisks() : Promise.resolve(null),
+        agent || disks ? getAgentStatus() : Promise.resolve(null),
+        runs ? getExternalBackupRuns() : Promise.resolve(null),
+      ])
+        .then(([nextDisks, nextAgent, nextRuns]) => {
+          setData((current) =>
+            current
+              ? {
+                  ...current,
+                  disks: nextDisks ?? current.disks,
+                  agentStatus: nextAgent ?? current.agentStatus,
+                  externalBackupRuns: nextRuns ?? current.externalBackupRuns,
+                }
+              : current,
+          );
+        })
+        .catch((refreshError) => {
+          setBannerError(refreshError instanceof Error ? refreshError.message : "Unknown error");
+        });
+    }, 300);
+  }
+
+  const liveConnected = useEvents(
+    ["disk.added", "disk.removed", "disk.updated", "agent.online", "agent.offline", "run.progress", "run.finished"],
+    (event) => {
+      if (event.type.startsWith("disk.")) scheduleRefresh("disks");
+      else if (event.type.startsWith("agent.")) scheduleRefresh("agent");
+      else if (event.type === "run.finished") scheduleRefresh("runs");
+      else if (event.type === "run.progress") {
+        const progress = event.data as RunProgressData;
+        if (progress.kind !== "external_backup") return;
+        setData((current) => {
+          if (!current) return current;
+          const known = current.externalBackupRuns.some((run) => run.id === progress.run_id);
+          if (!known) {
+            scheduleRefresh("runs");
+            return current;
+          }
+          const { run_id: _runId, kind: _kind, disk_id: _diskId, ...fields } = progress;
+          return {
+            ...current,
+            externalBackupRuns: current.externalBackupRuns.map((run) =>
+              run.id === progress.run_id ? ({ ...run, ...fields } as typeof run) : run,
+            ),
+          };
+        });
+      }
+    },
+  );
+
   useEffect(() => {
-    if (!hasActiveExternalBackup) {
+    // Polling only as a fallback while the live stream is down.
+    if (!hasActiveExternalBackup || liveConnected) {
       return;
     }
 
@@ -236,7 +301,7 @@ export function useAppData() {
     }, 2000);
 
     return () => window.clearInterval(intervalId);
-  }, [hasActiveExternalBackup]);
+  }, [hasActiveExternalBackup, liveConnected]);
 
   async function mutateVmCritical(vmId: number, critical: boolean) {
     const key = `vm-${vmId}`;

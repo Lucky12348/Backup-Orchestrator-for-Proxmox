@@ -6,6 +6,7 @@ import { EmptyState } from "../components/EmptyState";
 import { PageHeader } from "../components/PageHeader";
 import { StatusBadge } from "../components/StatusBadge";
 import { EJECT_NOT_FINISHED_STEP, retryableEjectRunIds } from "../ejectRetry";
+import { useEvents } from "../useEvents";
 import { formatDateTime, getBackupStatusTone } from "../utils";
 import type { ActivityEvent, ExternalBackupRun } from "../types";
 import type { ActivityPageProps } from "./shared";
@@ -268,8 +269,21 @@ function ExternalBackupRunDetails({
     setLiveRun(run);
   }, [run]);
 
+  // Live: re-fetch the run when the server announces progress or log lines
+  // (throttled); the 2 s polling only runs while the live stream is down.
+  const refetchTimer = useRef<number | undefined>(undefined);
+  const liveConnected = useEvents(["run.progress", "run.log", "run.finished"], (event) => {
+    const runId = (event.data as { run_id?: number; kind?: string }).run_id;
+    if (!open || runId !== liveRun.id || refetchTimer.current !== undefined) return;
+    refetchTimer.current = window.setTimeout(() => {
+      refetchTimer.current = undefined;
+      void getExternalBackupRun(liveRun.id).then(setLiveRun).catch(() => undefined);
+    }, 500);
+  });
+  useEffect(() => () => window.clearTimeout(refetchTimer.current), []);
+
   useEffect(() => {
-    if (!open || !isActiveRun(liveRun)) {
+    if (!open || !isActiveRun(liveRun) || liveConnected) {
       return;
     }
 
@@ -278,7 +292,7 @@ function ExternalBackupRunDetails({
     }, 2000);
 
     return () => window.clearInterval(intervalId);
-  }, [liveRun.id, liveRun.status, open]);
+  }, [liveRun.id, liveRun.status, open, liveConnected]);
 
   useEffect(() => {
     scrollLogToBottom(stdoutRef.current, shouldStickStdout.current);

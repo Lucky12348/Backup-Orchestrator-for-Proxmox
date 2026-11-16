@@ -24,6 +24,8 @@ from urllib.parse import urlparse
 import httpx
 import uvicorn
 
+from agent import hotplug
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -69,6 +71,7 @@ AGENT_CAPABILITIES = {
     "ntfy-notifications",
     "pve-provision-access",
     "pve-guest-addresses",
+    "usb-hotplug-report",
 }
 
 
@@ -216,13 +219,17 @@ def post_heartbeat(settings: AgentSettings) -> None:
     logger.info("Heartbeat sent for host %s", settings.hostname)
 
 
-def post_real_disk_report(settings: AgentSettings) -> None:
+def post_real_disk_report(settings: AgentSettings, *, track_hotplug: bool = False) -> None:
     disks = discover_real_disks(settings)
-    payload = {
+    payload: dict[str, Any] = {
         "hostname": settings.hostname,
         "observed_at": current_timestamp(),
         "disks": disks,
     }
+    if track_hotplug:
+        events = hotplug.diff_and_store(disks)
+        payload["hotplug"] = events
+        payload["trigger"] = "udev" if events else "timer"
     post_json(settings, "/agent/disks/report", payload, token=settings.reporting_token)
     logger.info("Real disk report sent for host %s with %s disks", settings.hostname, len(disks))
 
@@ -254,9 +261,13 @@ def version_payload(settings: AgentSettings, routes: list[str] | None = None) ->
     }
 
 
-def sync_state(settings: AgentSettings) -> None:
+def sync_state(settings: AgentSettings, *, settle_seconds: float = 0.0) -> None:
+    # pbo-agent-report.service: started by the timer AND by the udev rule
+    # (see agent/hotplug.py): settle first so a burst of events = one report.
+    if settle_seconds > 0:
+        hotplug.settle(settle_seconds)
     post_heartbeat(settings)
-    post_real_disk_report(settings)
+    post_real_disk_report(settings, track_hotplug=True)
 
 
 def prepare_external_datastore_result(
@@ -3516,7 +3527,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("serve", help="Start the host agent HTTP API server")
     subparsers.add_parser("heartbeat", help="Send a heartbeat to the backend")
-    subparsers.add_parser("sync-state", help="Send heartbeat, then send a real disk report")
+    sync_parser = subparsers.add_parser("sync-state", help="Send heartbeat, then send a real disk report")
+    sync_parser.add_argument(
+        "--settle",
+        type=float,
+        default=0.0,
+        help="Wait this many seconds then `udevadm settle` before reporting (udev debounce)",
+    )
     subparsers.add_parser("report-disks", help="Discover backup candidate disks and send a disk report")
     subparsers.add_parser("report-mock-disks", help="Send a mock disk report for development")
     inspect_parser = subparsers.add_parser(
@@ -3621,7 +3638,7 @@ def main() -> None:
         return
 
     if args.command == "sync-state":
-        sync_state(settings)
+        sync_state(settings, settle_seconds=args.settle)
         return
 
     if args.command == "report-disks":

@@ -123,7 +123,9 @@ strict because false-positive internal disks are dangerous in a backup workflow.
 Real hotplug detection and orchestration are intentionally deferred.
 
 For operational persistence, the intended host-side deployment is a small systemd service
-and timer on the Proxmox host. The timer runs the agent every 2 minutes and the backend
+and timer on the Proxmox host. Since the one-line install, a udev rule triggers a report as
+soon as a USB disk is plugged or unplugged (see INSTALLATION.md, "Instant disk detection"),
+and the timer is a 5-minute fallback; the legacy units ran every 2 minutes. The backend
 interprets agent health using a configurable stale threshold rather than assuming continuous
 connectivity.
 

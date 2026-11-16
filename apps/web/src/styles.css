@@ -2162,3 +2162,15 @@ button .hn-dirty-dot { margin-left: 6px; vertical-align: middle; }
   .hn-event-row { gap: 8px; padding: 0 8px 0 10px; }
   .hn-event-summary { gap: 8px; }
 }
+
+/* ── Live events: toasts and focused disk row (Phase 4.1) ─────────────── */
+.pbo-toasts { position: fixed; right: 20px; bottom: 20px; z-index: 1000; display: flex; flex-direction: column; gap: 8px; max-width: min(440px, calc(100vw - 40px)); }
+.pbo-toast { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--bd2); border-left: 3px solid var(--ac); border-radius: var(--r8); background: var(--bg2); color: var(--t1); font-size: 13px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35); animation: pbo-toast-in 180ms ease-out; }
+.pbo-toast-warning { border-left-color: var(--ye); }
+.pbo-toast-neutral { border-left-color: var(--t3); }
+.pbo-toast-message { flex: 1; }
+.pbo-toast-action { border: 0; border-radius: var(--r6); padding: 5px 10px; background: var(--ac); color: #0d1117; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.pbo-toast-close { border: 0; background: transparent; color: var(--t2); font-size: 18px; line-height: 1; cursor: pointer; }
+.disk-row-focus td { background: var(--ac-d); }
+@keyframes pbo-toast-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .pbo-toast { animation: none; } }

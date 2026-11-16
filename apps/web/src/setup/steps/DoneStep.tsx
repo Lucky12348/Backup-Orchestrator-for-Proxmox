@@ -1,17 +1,28 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowRight, CheckCircle2, Circle, Loader2, PartyPopper, Usb, XCircle } from "lucide-react";
+import { ArrowRight, CheckCircle2, Circle, Loader2, PartyPopper, XCircle } from "lucide-react";
 
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../../components/ui/card";
 import { Progress } from "../../components/ui/progress";
 import { wizardApi, type SetupAgentStatus, type SetupProgress } from "../api";
+import { diskPageUrl } from "../../liveDisks";
+import type { WizardLanguage } from "../logic";
 import { SummaryList, useText } from "../shared";
+import { LiveDisks } from "./LiveDisks";
 
 type TaskState = "pending" | "running" | "ok" | "failed";
 
 /** Step 5 — summary, first inventory sync with progress, then the dashboard. */
-export function DoneStep({ progress, onFinish }: { progress: SetupProgress; onFinish: () => void }) {
+export function DoneStep({
+  progress,
+  language,
+  onFinish,
+}: {
+  progress: SetupProgress;
+  language: WizardLanguage;
+  onFinish: (path?: string) => void;
+}) {
   const text = useText();
   const [agent, setAgent] = useState<SetupAgentStatus | null>(null);
   const [tasks, setTasks] = useState<{ pve: TaskState; pbs: TaskState }>({ pve: "pending", pbs: "pending" });
@@ -77,18 +88,14 @@ export function DoneStep({ progress, onFinish }: { progress: SetupProgress; onFi
           {counts && !failed ? <p className="text-[13px] text-muted">{text.done.syncDone(counts.guests, counts.snapshots)}</p> : null}
           {failed ? <Alert variant="warning" title={text.done.syncFailed} /> : null}
         </div>
-        {counts ? (
-          <div className="flex items-start gap-3 rounded-lg border border-accent/30 bg-accent/10 px-4 py-3 animate-fade-in">
-            <Usb className="mt-0.5 h-5 w-5 text-accent" />
-            <div className="flex flex-col gap-0.5">
-              <p className="text-sm font-medium">{text.done.plugDisk}</p>
-              <p className="text-[13px] text-muted">{text.done.plugDiskHint}</p>
-            </div>
-          </div>
-        ) : null}
+        <div className="flex flex-col gap-3">
+          <p className="text-sm font-medium">{text.done.plugDisk}</p>
+          <LiveDisks language={language} onExamine={(diskId) => onFinish(diskPageUrl(diskId))} />
+        </div>
       </CardContent>
       <CardFooter className="justify-end">
-        <Button onClick={onFinish} disabled={!counts}>
+        {/* Always available: a disk can be plugged in later. */}
+        <Button variant={counts ? "default" : "secondary"} onClick={() => onFinish("/")}>
           {text.done.dashboard}
           <ArrowRight />
         </Button>

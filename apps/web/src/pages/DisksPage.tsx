@@ -1,8 +1,12 @@
+import { useEffect, useRef } from "react";
+import { useLocation } from "react-router-dom";
+
 import { DataTable } from "../components/DataTable";
 import { EmptyState } from "../components/EmptyState";
 import { PageHeader } from "../components/PageHeader";
 import { StatusBadge } from "../components/StatusBadge";
 import { getDiskFilesystemUsage } from "../diskPlanning";
+import { focusedDiskId } from "../liveDisks";
 import { formatDateTime } from "../utils";
 import type { DisksPageProps } from "./shared";
 
@@ -59,6 +63,12 @@ export function DisksPage({
 }: DisksPageProps) {
   const activeExternalBackup = data.externalBackupRuns.find((run) => run.status === "pending" || run.status === "running");
   const agentsCompatible = agentsReadyForExternalBackup(data.systemVersion);
+  // /disks?disk=<id> ("Review this disk" from a toast or the setup wizard).
+  const focusId = focusedDiskId(useLocation().search);
+  const focusRow = useRef<HTMLTableRowElement | null>(null);
+  useEffect(() => {
+    focusRow.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [focusId, data.disks.length]);
   return (
     <div className="page-stack">
       <PageHeader title={t.nav.disks} description={t.disksIntro} />
@@ -84,7 +94,11 @@ export function DisksPage({
                 const unusable = isUnusableDisk(disk);
                 const usage = getDiskFilesystemUsage(disk);
                 return (
-                <tr key={disk.id}>
+                <tr
+                  key={disk.id}
+                  ref={disk.id === focusId ? focusRow : undefined}
+                  className={disk.id === focusId ? "disk-row-focus" : undefined}
+                >
                   <td>
                     <div style={{ fontWeight: 500, color: "var(--t1)", fontSize: 13 }}>
                       {disk.display_name}

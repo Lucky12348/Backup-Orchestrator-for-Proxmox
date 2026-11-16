@@ -9,6 +9,7 @@ import { SETUP_PATH, setupRedirect } from "./setup/logic";
 import { AppShell } from "./components/AppShell";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { ErrorBanner } from "./components/ErrorBanner";
+import { GlobalToasts } from "./components/GlobalToasts";
 import { LoadingBlock } from "./components/LoadingBlock";
 import { useAppData } from "./hooks/useAppData";
 import { translations, type Language } from "./i18n";
@@ -257,6 +258,7 @@ function AuthenticatedApp() {
   return (
     <>
       <AppShell language={language} onLanguageChange={handleLanguageChange} t={t}>
+        <GlobalToasts language={language} />
         {bannerError ? (
           <ErrorBanner dismissLabel={t.dismiss} message={bannerError} onDismiss={clearBannerError} />
         ) : null}
@@ -366,9 +368,9 @@ function AppInner() {
   const wizard = (
     <Suspense fallback={loading}>
       <SetupWizard
-        onFinished={() => {
+        onFinished={(path) => {
           markSetupCompleted();
-          navigate("/", { replace: true });
+          navigate(path ?? "/", { replace: true });
         }}
       />
     </Suspense>

@@ -1,0 +1,124 @@
+// Pure helpers for live disk events (wizard step 5 cards, global toasts).
+// No runtime import: run by node:test.
+import type { AppEvent, DiskEventData } from "./events";
+
+export type Lang = "fr" | "en";
+
+export interface DiskCard {
+  id: number;
+  serial: string;
+  title: string;
+  model: string | null;
+  capacityGb: number;
+  status: "new" | "known" | "rejected";
+  rejectReason: DiskEventData["reject_reason"];
+  minSizeGb: number;
+  unplugged: boolean;
+  /** Bumped on every change: lets the UI replay the "appear" animation. */
+  revision: number;
+}
+
+export function formatCapacity(gb: number, lang: Lang): string {
+  if (!gb || gb <= 0) return lang === "fr" ? "0 o" : "0 B";
+  if (gb >= 1000) {
+    const tb = gb / 1000;
+    const value = tb >= 10 ? Math.round(tb).toString() : tb.toFixed(1).replace(/\.0$/, "");
+    return `${lang === "fr" ? value.replace(".", ",") : value} ${lang === "fr" ? "To" : "TB"}`;
+  }
+  return `${gb} ${lang === "fr" ? "Go" : "GB"}`;
+}
+
+export function rejectReasonText(reason: DiskEventData["reject_reason"], minSizeGb: number, lang: Lang): string {
+  if (reason === "zero_size") {
+    return lang === "fr"
+      ? "Taille 0 : le disque ne répond pas (câble, port USB ou boîtier défaillant, ou lecteur de carte vide)."
+      : "Size 0: the disk does not answer (faulty cable, USB port or enclosure, or an empty card reader).";
+  }
+  if (reason === "too_small") {
+    return lang === "fr"
+      ? `Trop petit : il faut au moins ${minSizeGb} Go pour un datastore PBS.`
+      : `Too small: a PBS datastore needs at least ${minSizeGb} GB.`;
+  }
+  return "";
+}
+
+function cardTitle(data: DiskEventData): string {
+  return data.model_name || data.display_name || data.serial_number;
+}
+
+/** step 5 / any live list: one card per disk, unplugged ones stay visible. */
+export function applyDiskEvent(cards: DiskCard[], event: AppEvent): DiskCard[] {
+  if (!event.type.startsWith("disk.")) return cards;
+  const data = event.data as DiskEventData;
+  if (!data || typeof data.id !== "number") return cards;
+  const existing = cards.find((card) => card.id === data.id);
+  const status: DiskCard["status"] = data.reject_reason ? "rejected" : data.trusted ? "known" : "new";
+
+  if (event.type === "disk.removed") {
+    if (!existing) return cards;
+    return cards.map((card) => (card.id === data.id ? { ...card, unplugged: true, revision: card.revision + 1 } : card));
+  }
+  if (event.type === "disk.updated" && !existing) return cards; // only cards already shown
+  const next: DiskCard = {
+    id: data.id,
+    serial: data.serial_number,
+    title: cardTitle(data),
+    model: data.model_name,
+    capacityGb: data.capacity_gb,
+    status,
+    rejectReason: data.reject_reason,
+    minSizeGb: data.min_size_gb,
+    unplugged: event.type === "disk.added" ? false : existing?.unplugged ?? false,
+    revision: (existing?.revision ?? 0) + 1,
+  };
+  if (existing) return cards.map((card) => (card.id === data.id ? next : card));
+  return [next, ...cards];
+}
+
+export interface DiskToast {
+  key: string;
+  tone: "info" | "warning" | "neutral";
+  message: string;
+  action?: { label: string; diskId: number };
+}
+
+export function toastForDiskEvent(event: AppEvent, lang: Lang): DiskToast | null {
+  const data = event.data as DiskEventData;
+  if (!data || typeof data.id !== "number") return null;
+  const name = cardTitle(data);
+  const size = formatCapacity(data.capacity_gb, lang);
+  const sep = lang === "fr" ? " : " : ": ";
+  if (event.type === "disk.added") {
+    if (data.reject_reason) {
+      return {
+        key: `${event.id}`,
+        tone: "warning",
+        message: `${lang === "fr" ? "Disque rejeté" : "Disk rejected"}${sep}${name} — ${rejectReasonText(data.reject_reason, data.min_size_gb, lang)}`,
+      };
+    }
+    return {
+      key: `${event.id}`,
+      tone: "info",
+      message: `${lang === "fr" ? "Nouveau disque détecté" : "New disk detected"}${sep}${name} ${size}`,
+      action: { label: lang === "fr" ? "Examiner" : "Review", diskId: data.id },
+    };
+  }
+  if (event.type === "disk.removed") {
+    return {
+      key: `${event.id}`,
+      tone: "neutral",
+      message: `${lang === "fr" ? "Disque débranché" : "Disk unplugged"}${sep}${name}`,
+    };
+  }
+  return null;
+}
+
+/** /disks?disk=<id> — "Examine this disk". */
+export function diskPageUrl(diskId: number): string {
+  return `/disks?disk=${diskId}`;
+}
+
+export function focusedDiskId(search: string): number | null {
+  const value = Number(new URLSearchParams(search).get("disk"));
+  return Number.isInteger(value) && value > 0 ? value : null;
+}

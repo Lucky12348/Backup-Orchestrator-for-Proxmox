@@ -6,6 +6,7 @@ from app.api.routes import (
     assets,
     calendar,
     backup_runs,
+    events,
     disks,
     external_backups,
     host_notifications,
@@ -37,6 +38,7 @@ protected_router = APIRouter(
 )
 
 protected_router.include_router(overview.router)
+protected_router.include_router(events.router)
 protected_router.include_router(setup.router)
 protected_router.include_router(settings.router)
 protected_router.include_router(agent.status_router)
