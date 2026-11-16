@@ -1,5 +1,6 @@
 import logging
-from datetime import date, datetime, time, timedelta
+import re
+from datetime import date, datetime, time, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import select
@@ -37,6 +38,7 @@ from app.services.planning_scheduler import (
     confirm_planning_run,
     expand_occurrences,
     next_occurrence,
+    run_disk_serial,
     run_event_now,
 )
 
@@ -159,11 +161,57 @@ def _event_timezone(db: DbSession, value: str | None) -> str:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
 
+VM_GROUP_RE = re.compile(r"^(vm|ct)/\d{1,9}$")
+
+
+def _coded(status_code: int, code: str, message: str) -> HTTPException:
+    return HTTPException(status_code=status_code, detail={"code": code, "message": message})
+
+
+def _normalize_planning(values: dict, current: ScheduledBackupEvent | None = None) -> dict:
+    """Rotation (first disk = disk_serial), VM/CT groups and the interval."""
+    if "rotation_disk_serials" in values:
+        serials: list[str] = []
+        for item in values["rotation_disk_serials"] or []:
+            serial = str(item).strip()
+            if serial and serial not in serials:
+                serials.append(serial)
+        values["rotation_disk_serials"] = serials or None
+        if serials:
+            values["disk_serial"] = serials[0]
+    if "vm_groups" in values:
+        groups = sorted({str(item).strip().lower() for item in values["vm_groups"] or [] if str(item).strip()})
+        bad = [group for group in groups if not VM_GROUP_RE.match(group)]
+        if bad:
+            raise _coded(422, "planning_vm_group_invalid", f"Invalid VM/CT group: {', '.join(bad)} (expected vm/<id> or ct/<id>).")
+        values["vm_groups"] = groups or None
+    if "recurrence_config" in values and values["recurrence_config"] is not None:
+        config = dict(values["recurrence_config"])
+        try:
+            interval = int(config.get("interval") or 1)
+        except (TypeError, ValueError):
+            interval = 0
+        if not 1 <= interval <= 52:
+            raise _coded(422, "planning_interval_invalid", "The interval must be between 1 and 52.")
+        config["interval"] = interval
+        values["recurrence_config"] = config
+    if not (values.get("disk_serial") or (current.disk_serial if current else "")):
+        raise _coded(422, "planning_disk_required", "Choose at least one disk.")
+    return values
+
+
+def _all_serials(values: dict, current: ScheduledBackupEvent | None = None) -> list[str]:
+    rotation = values.get("rotation_disk_serials", current.rotation_disk_serials if current else None) or []
+    first = values.get("disk_serial", current.disk_serial if current else None)
+    return list(dict.fromkeys([*([first] if first else []), *rotation]))
+
+
 @router.post("/events", response_model=ScheduledBackupEventRead)
 def create_event(payload: ScheduledBackupEventCreate, db: DbSession) -> ScheduledBackupEventRead:
-    _validate_auto_eject_configuration(db, payload.disk_serial, payload.auto_eject_after_success)
+    data = _normalize_planning(payload.model_dump())
+    for serial in _all_serials(data):
+        _validate_auto_eject_configuration(db, serial, data["auto_eject_after_success"])
     now = datetime.utcnow()
-    data = payload.model_dump()
     data["timezone"] = _event_timezone(db, data.get("timezone"))
     event = ScheduledBackupEvent(
         **data,
@@ -189,14 +237,13 @@ def update_event(event_id: int, payload: ScheduledBackupEventUpdate, db: DbSessi
     event = db.get(ScheduledBackupEvent, event_id)
     if event is None or event.deleted_at is not None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scheduled event not found")
-    values = payload.model_dump(exclude_unset=True)
+    values = _normalize_planning(payload.model_dump(exclude_unset=True), event)
     if "timezone" in values:
         values["timezone"] = _event_timezone(db, values["timezone"])
-    _validate_auto_eject_configuration(
-        db,
-        values.get("disk_serial", event.disk_serial),
-        values.get("auto_eject_after_success", event.auto_eject_after_success),
-    )
+    for serial in _all_serials(values, event):
+        _validate_auto_eject_configuration(
+            db, serial, values.get("auto_eject_after_success", event.auto_eject_after_success)
+        )
     for field, value in values.items():
         setattr(event, field, value)
     event.updated_at = datetime.utcnow()
@@ -230,6 +277,26 @@ def delete_event(event_id: int, db: DbSession) -> None:
     db.add(event)
     db.commit()
     logger.info("planning event soft-deleted event_id=%s", event.id)
+
+
+@router.get("/agenda")
+def get_agenda(
+    db: DbSession,
+    start: datetime = Query(..., description="Visible range start (ISO, UTC)"),
+    end: datetime = Query(..., description="Visible range end (ISO, UTC)"),
+    proxmox: bool = Query(default=False, description="Include the Proxmox VE backup jobs (read only)"),
+) -> dict:
+    """Calendar items (planned occurrences, manual runs, Proxmox jobs) — Phase 6."""
+    from app.services.agenda import build_agenda
+    from app.services.settings_service import effective_settings
+
+    start_utc = start.astimezone(timezone.utc).replace(tzinfo=None) if start.tzinfo else start
+    end_utc = end.astimezone(timezone.utc).replace(tzinfo=None) if end.tzinfo else end
+    if end_utc < start_utc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="end must be on or after start")
+    if (end_utc - start_utc).days > 400:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="agenda range cannot exceed 400 days")
+    return build_agenda(db, start_utc, end_utc, include_proxmox=proxmox, zone_name=effective_settings(db).timezone)
 
 
 @router.get("/runs", response_model=list[ScheduledBackupRunRead])
@@ -295,7 +362,7 @@ def _run_read(db, run: ScheduledBackupRun) -> ScheduledBackupRunRead:
         **{
             **run.__dict__,
             "event_title": event.title if event else None,
-            "disk_serial": event.disk_serial if event else None,
+            "disk_serial": (run_disk_serial(event, run) if event else run.disk_serial),
         }
     )
 

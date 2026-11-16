@@ -32,5 +32,13 @@ export function useTheme() {
       /* private mode: this page only */
     }
   };
-  return { preference, theme: resolveTheme(preference, systemDark), cycle };
+  const set = (next: ThemePreference) => {
+    setPreference(next);
+    try {
+      window.localStorage.setItem(THEME_KEY, next);
+    } catch {
+      /* private mode: this page only */
+    }
+  };
+  return { preference, theme: resolveTheme(preference, systemDark), cycle, set };
 }

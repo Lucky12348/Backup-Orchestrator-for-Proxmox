@@ -55,6 +55,12 @@ class ScheduledBackupEvent(Base):
         nullable=False,
     )
     auto_eject_after_success: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Rotation (Phase 6): disks used in turn, occurrence k → serials[k % n].
+    # None/empty = only `disk_serial` (which stays the first disk).
+    rotation_disk_serials: Mapped[list | None] = mapped_column(JSON)
+    # VM/CT copied ("vm/100", "ct/101"): a PBS sync group filter (API mode).
+    # None/empty = the whole datastore.
+    vm_groups: Mapped[list | None] = mapped_column(JSON)
     last_status: Mapped[str | None] = mapped_column(String(32))
     last_triggered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False))
     last_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False))
@@ -78,6 +84,8 @@ class ScheduledBackupRun(Base):
     disk_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False))
     reminder_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False))
     backup_run_id: Mapped[int | None] = mapped_column(ForeignKey("external_backup_runs.id"))
+    # Disk expected by this occurrence (rotation); None on runs older than Phase 6.
+    disk_serial: Mapped[str | None] = mapped_column(String(255))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False))
     error: Mapped[str | None] = mapped_column(Text)

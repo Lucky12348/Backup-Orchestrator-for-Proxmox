@@ -1,3 +1,4 @@
+import { formatGib } from "../units";
 import { useMemo, useState } from "react";
 import { useConfirm } from "../ui/confirm";
 
@@ -507,7 +508,7 @@ export function AssetsPage({
                         <span className="toggle-slider" />
                       </label>
                     </td>
-                    <td>{vm.size_gb} GB</td>
+                    <td>{formatGib(vm.size_gb, language)}</td>
                     <td>{formatDateTime(lastBackup, language, t.notAvailable)}</td>
                     <td>
                       {targetJob && vmid !== null ? (

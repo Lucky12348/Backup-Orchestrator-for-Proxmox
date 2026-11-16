@@ -33,6 +33,9 @@ before(async () => {
         'export { ToastProvider } from "./src/ui/toast";',
         'export { ConfirmProvider } from "./src/ui/confirm";',
         'export { MemoryRouter } from "react-router-dom";',
+        'export { PlanningView, DetailCard, EventChip } from "./src/views/planning/PlanningView";',
+        'export { ActivityRow } from "./src/views/activity/ActivityView";',
+        'export { UserMenu } from "./src/shell/AppShellV2";',
       ].join("\n"),
       resolveDir: WEB,
       loader: "tsx",
@@ -141,7 +144,7 @@ test("DiskCard: name, status pill, capacity", () => {
   );
   assert.ok(markup.includes("WD 4 To"));
   assert.ok(markup.includes('data-status="approved"') && markup.includes("Approuvé"));
-  assert.ok(markup.includes("727 Go utilisés sur 3,66 To"));
+  assert.ok(markup.includes("727 Gio utilisés sur 3,57 Tio"));
   assert.ok(markup.includes('aria-pressed="true"'));
 });
 
@@ -255,4 +258,126 @@ test("DashboardView: at risk", () => {
   assert.ok(markup.includes("3 of your 10 VMs"));
   assert.ok(markup.includes('data-todo="agent_offline"'));
   assert.ok(markup.includes("No rotation planned") && markup.includes("Check the integrations"));
+});
+
+// --- Phase 6: planning calendar, activity list, user menu ------------------------------
+
+const agendaItem = {
+  id: "plan-1",
+  kind: "external",
+  title: "Rotation hebdo",
+  starts_at: "2026-11-15T08:00:00Z",
+  ends_at: "2026-11-15T09:00:00Z",
+  scheduled_for: "2026-11-15T08:00:00Z",
+  window_ends_at: null,
+  status: "running",
+  event_id: 1,
+  planning_run_id: 3,
+  backup_run_id: 7,
+  disk_serial: "WD-A",
+  disk_label: "WD 4 To",
+  progress_percent: 42,
+  message: null,
+  read_only: false,
+};
+
+test("PlanningView: toolbar, views, calendars and the export button (FR)", () => {
+  const markup = html(
+    inApp(
+      createElement(ui.PlanningView, {
+        events: [],
+        disks: [],
+        vms: [],
+        defaultDatastore: "main",
+        language: "fr",
+        t: translations.fr,
+        refreshKey: "",
+        onChanged: () => undefined,
+        fetchAgenda: () => new Promise(() => undefined),
+        now: new Date("2026-11-16T12:00:00Z"),
+      }),
+    ),
+  );
+  for (const label of ["Nouvelle planification", "Aujourd&#x27;hui", "Jour", "Semaine", "Mois", "Année", "Exporter"]) {
+    assert.ok(markup.includes(label), label);
+  }
+  for (const label of ["Backup externe", "Sync mensuelle", "Sauvegardes manuelles", "Jobs Proxmox (lecture seule)"]) {
+    assert.ok(markup.includes(label), label);
+  }
+  assert.ok(markup.includes('data-period="week"'));
+  assert.ok(markup.includes("Chargement du calendrier"));
+});
+
+test("DetailCard: state, schedule, disk and actions (running → follow live)", () => {
+  const markup = html(
+    createElement(ui.DetailCard, { item: agendaItem, tz: "Europe/Paris", lang: "fr", t: translations.fr, onAction: () => undefined }),
+  );
+  assert.ok(markup.includes("En cours · 42 %"));
+  assert.ok(markup.includes("dimanche 15 novembre · 09:00 – 10:00")); // planning zone, not UTC
+  assert.ok(markup.includes("WD 4 To"));
+  assert.ok(markup.includes("Suivre en direct") && markup.includes("Modifier"));
+});
+
+test("EventChip: colour by state, running is striped", () => {
+  const running = html(createElement(ui.EventChip, { item: agendaItem, tz: "Europe/Paris", t: translations.fr, selected: false, onSelect: () => undefined, compact: true }));
+  assert.ok(running.includes('data-tone="running"') && running.includes("pbo-stripes"));
+  const failed = html(
+    createElement(ui.EventChip, { item: { ...agendaItem, status: "failed" }, tz: "Europe/Paris", t: translations.fr, selected: false, onSelect: () => undefined, compact: true }),
+  );
+  assert.ok(failed.includes('data-tone="failed"') && failed.includes("✕"));
+  const confirm = html(
+    createElement(ui.EventChip, { item: { ...agendaItem, status: "to_confirm" }, tz: "Europe/Paris", t: translations.en, selected: false, onSelect: () => undefined, compact: true }),
+  );
+  assert.ok(confirm.includes('data-tone="confirm"'));
+});
+
+test("DetailCard: a run waiting for confirmation offers Confirm / Cancel", () => {
+  const markup = html(
+    createElement(ui.DetailCard, {
+      item: { ...agendaItem, status: "to_confirm", backup_run_id: null },
+      tz: "Europe/Paris",
+      lang: "en",
+      t: translations.en,
+      onAction: () => undefined,
+    }),
+  );
+  assert.ok(markup.includes("To confirm") && markup.includes(">Confirm<") && markup.includes(">Cancel<"));
+});
+
+test("ActivityRow: icon state, type, disk, summary, duration; a run opens the modal", () => {
+  const markup = html(
+    inApp(
+      createElement(ui.ActivityRow, {
+        item: {
+          id: "run-1", type: "backup", status: "failed", at: "2026-11-16T09:00:00Z", finished_at: null, duration_seconds: 125,
+          disk_id: 1, disk_label: "WD 4 To", run_id: 1, planned: true, auto_eject: false, step: "disk_not_plugged",
+          progress_percent: null, transferred_bytes: null, no_new_data: false, message: "x",
+        },
+        summary: "Échec de la sauvegarde : Disque débranché",
+        language: "fr",
+        t: translations.fr,
+        now: new Date("2026-11-16T12:00:00Z"),
+      }),
+    ),
+  );
+  assert.ok(markup.includes('data-state="failed"') && markup.includes("Sauvegarde") && markup.includes("WD 4 To"));
+  assert.ok(markup.includes("planifiée") && markup.includes("2 min"));
+  assert.ok(markup.includes("<button") && markup.includes("Ouvrir"));
+});
+
+test("UserMenu: avatar, name and role in one button (the menu opens on click)", () => {
+  const markup = html(
+    createElement(ui.UserMenu, {
+      t: translations.fr,
+      username: "admin",
+      language: "fr",
+      onLanguageChange: () => undefined,
+      themePreference: "system",
+      onThemeChange: () => undefined,
+      onLogout: () => undefined,
+    }),
+  );
+  assert.ok(markup.includes('aria-haspopup="menu"') && markup.includes('aria-expanded="false"'));
+  assert.ok(markup.includes("admin") && markup.includes("Administrateur"));
+  assert.ok(!markup.includes("<select")); // no more stacked selector on the same line
 });

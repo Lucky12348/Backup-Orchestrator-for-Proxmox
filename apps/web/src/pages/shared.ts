@@ -35,16 +35,6 @@ export interface IntegrationsPageProps extends PageCommonProps {
   onPBSSyncRequest: () => void;
 }
 
-export interface PlanningPageProps extends PageCommonProps {}
-
-export interface ActivityPageProps extends PageCommonProps {
-  externalBackupRuns: ExternalBackupRun[];
-  cleanupSaving: boolean;
-  onCleanupOldRunsRequest: () => void;
-  isEjecting: (diskId: number) => boolean;
-  onRetryEject: (diskId: number) => void;
-}
-
 export interface SettingsPageProps {
   t: TranslationDictionary;
 }

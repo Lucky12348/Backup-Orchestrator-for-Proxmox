@@ -49,6 +49,10 @@ class ScheduledBackupEventBase(BaseModel):
     notify_before_minutes: int = Field(default=60, ge=0)
     start_mode: ScheduledBackupStartMode = ScheduledBackupStartMode.MANUAL_CONFIRMATION
     auto_eject_after_success: bool = False
+    # Disks used in turn (first = disk_serial). Empty = only disk_serial.
+    rotation_disk_serials: list[str] | None = Field(default=None, max_length=16)
+    # VM/CT copied ("vm/100", "ct/101"). Empty = the whole datastore.
+    vm_groups: list[str] | None = Field(default=None, max_length=500)
 
 
 class ScheduledBackupEventCreate(ScheduledBackupEventBase):
@@ -69,6 +73,8 @@ class ScheduledBackupEventUpdate(BaseModel):
     notify_before_minutes: int | None = Field(default=None, ge=0)
     start_mode: ScheduledBackupStartMode | None = None
     auto_eject_after_success: bool | None = None
+    rotation_disk_serials: list[str] | None = Field(default=None, max_length=16)
+    vm_groups: list[str] | None = Field(default=None, max_length=500)
 
 
 class ScheduledBackupEventRead(UTCDateTimeModel, ScheduledBackupEventBase):

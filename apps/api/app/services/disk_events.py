@@ -18,8 +18,9 @@ from app.services import events
 from app.services.pbs_guards import MIN_DISK_SIZE_GIB
 
 ACTIVITY_CATEGORY = "disk"
-# The agent reports decimal GB; MIN_DISK_SIZE_GIB GiB is about 34 GB.
-MIN_DISK_SIZE_GB = int(MIN_DISK_SIZE_GIB * 1024**3 / 1000**3)
+# Sizes are binary everywhere (agent `bytes_to_gb` = GiB, shown as Gio/Tio):
+# `capacity_gb` is compared with the PBS guard minimum as is.
+MIN_DISK_SIZE_GB = MIN_DISK_SIZE_GIB
 
 
 def reject_reason(disk: ExternalDisk) -> str | None:

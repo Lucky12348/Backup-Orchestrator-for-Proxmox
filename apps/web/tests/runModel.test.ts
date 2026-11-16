@@ -83,10 +83,10 @@ test("first backup: per-VM sizes and statistics from Summary", () => {
   const { entries, summary } = journal("first-backup-format");
   const rows = resourceRows(run({ status: "success" }), entries).rows;
   assert.equal(rows[0].bytes, Math.round(180.25 * 1024 ** 2));
-  assert.equal(formatBytes(summary?.transferred_bytes ?? null, "fr"), "353 Mo"); // ≥ 100: no decimal, as in the mockups
-  assert.equal(formatBytes(Math.round(1.5 * 1024 ** 3), "en"), "1.5 GB");
-  assert.equal(formatRate("64.208 MiB/s", "fr"), "64,2 Mo/s");
-  assert.equal(formatRate("64.208 MiB/s", "en"), "64.2 MB/s");
+  assert.equal(formatBytes(summary?.transferred_bytes ?? null, "fr"), "353 Mio"); // ≥ 100: no decimal; binary units (B27)
+  assert.equal(formatBytes(Math.round(1.5 * 1024 ** 3), "en"), "1.5 GiB");
+  assert.equal(formatRate("64.208 MiB/s", "fr"), "64,2 Mio/s");
+  assert.equal(formatRate("64.208 MiB/s", "en"), "64.2 MiB/s");
 });
 
 test("log filter, translation and download", () => {

@@ -39,6 +39,7 @@ class ExternalBackupExecutionService:
         mode: ExternalBackupMode,
         run_id: int | None = None,
         progress: Callable[[str, str, str | None], None] | None = None,
+        group_filter: list[str] | None = None,
     ) -> ExternalBackupExecutionResult:
         if mode == ExternalBackupMode.DEDICATED:
             return self._execute_dedicated(
@@ -46,6 +47,7 @@ class ExternalBackupExecutionService:
                 datastore_name=datastore_name,
                 run_id=run_id,
                 progress=progress,
+                group_filter=group_filter,
             )
 
         disk_prepare_mode = (
@@ -124,6 +126,7 @@ class ExternalBackupExecutionService:
         datastore_name: str,
         run_id: int | None,
         progress: Callable[[str, str, str | None], None] | None,
+        group_filter: list[str] | None = None,
     ) -> ExternalBackupExecutionResult:
         target_datastore_name = getattr(disk, "pbs_datastore_name", None) or build_dedicated_datastore_name(disk.serial_number)
         _report(progress, "inspect_disk", "Inspecting disk on PBS agent.")
@@ -160,6 +163,7 @@ class ExternalBackupExecutionService:
             run_id=run_id,
             target_datastore_name=target_datastore_name,
             persist_target_datastore=True,
+            **({"group_filter": group_filter} if group_filter else {}),
         )
         if not export.ok:
             raise AgentCommandError(

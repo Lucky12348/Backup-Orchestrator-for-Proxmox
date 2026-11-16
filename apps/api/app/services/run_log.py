@@ -63,6 +63,8 @@ PBO_MESSAGES: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
         ("export_start", r"^Starting PBS datastore export to dedicated disk\.$"),
         ("sync_job_create", r"^Creating local PBS sync job `(?P<job>[^`]+)`: `(?P<source>[^`]+)` → `(?P<target>[^`]+)` \(no remote\)\.$"),
         ("sync_task_started", r"^PBS sync task started: (?P<upid>\S+)$"),
+        ("vm_selection", r"^Copying only: (?P<groups>.+)\.$"),
+        ("vm_selection_agent_mode", r"^VM selection needs PBS_MODE=api: the whole datastore is copied\.$"),
         ("auto_ejected", r"^Disk ejected automatically after a successful backup\.$"),
         ("auto_eject_failed", r"^Automatic eject failed: (?P<reason>.+)$"),
         ("auto_eject_unsupported", r"^Automatic eject was requested, but this disk mode does not support it yet"),
@@ -224,6 +226,14 @@ def datastore_pair(run: Any, disk: Any | None) -> dict[str, str | None]:
     if source == target:  # eject runs only know the target
         source = None
     return {"source_datastore": source, "target_datastore": target}
+
+
+def run_kind(run: Any, disk: Any | None) -> str:
+    """"eject" for a manual eject run (it only knows the target datastore),
+    "backup" otherwise (a backup with auto-eject included, B24)."""
+    if getattr(run, "auto_eject_after_success", False):
+        return "backup"
+    return "eject" if datastore_pair(run, disk)["source_datastore"] is None else "backup"
 
 
 def run_journal(run: Any, disk: Any | None) -> dict[str, Any]:

@@ -19,6 +19,7 @@ from app.models import (
     ScheduledBackupRunStatus,
     ScheduledBackupStartMode,
 )
+from app.services import recurrence
 from app.services.disk_identity import (
     disk_matches_serial,
     serial_aliases,
@@ -122,7 +123,7 @@ def handle_disk_detected(db: Session, disk: ExternalDisk, now: datetime | None =
             )
         )
     )
-    events = [event for event in events if _disk_matches_event_serial(disk, event.disk_serial)]
+    events = [event for event in events if _event_uses_disk(event, disk)]
     for event in events:
         for occurrence in expand_occurrences(event, current_time - timedelta(hours=24), current_time + timedelta(hours=1)):
             _ensure_run(db, event, occurrence)
@@ -139,13 +140,13 @@ def handle_disk_detected(db: Session, disk: ExternalDisk, now: datetime | None =
     )
     for run in runs:
         event = db.get(ScheduledBackupEvent, run.event_id)
-        if event is None or event.deleted_at is not None or not _disk_matches_event_serial(disk, event.disk_serial):
+        if event is None or event.deleted_at is not None or not _disk_matches_event_serial(disk, run_disk_serial(event, run)):
             continue
         if not (run.window_starts_at <= current_time <= run.window_ends_at):
             continue
         if run.disk_seen_at is None:
             run.disk_seen_at = current_time
-            notify_expected_disk_detected(event.disk_serial, event.title)
+            notify_expected_disk_detected(run_disk_serial(event, run), event.title)
         _advance_detected_run(db, event, run, current_time)
     db.commit()
 
@@ -197,6 +198,7 @@ def run_event_now(db: Session, event_id: int) -> ScheduledBackupRun:
         window_starts_at=now,
         window_ends_at=now + timedelta(minutes=event.window_duration_minutes),
         status=ScheduledBackupRunStatus.PENDING,
+        disk_serial=_run_now_serial(db, event, now),
         created_at=now,
         updated_at=now,
     )
@@ -209,55 +211,48 @@ def run_event_now(db: Session, event_id: int) -> ScheduledBackupRun:
     return run
 
 
+def _run_now_serial(db: Session, event: ScheduledBackupEvent, now: datetime) -> str:
+    for serial in recurrence.rotation_serials(event):
+        if _get_present_disk(db, serial) is not None:
+            return serial
+    upcoming = next_occurrence(event, now)
+    return recurrence.disk_serial_for(event, upcoming) if upcoming else event.disk_serial
+
+
+def group_filter_for(vm_groups: list[str] | None) -> list[str] | None:
+    """["vm/100", "ct/101"] → PBS sync `group-filter` values; None = everything."""
+    groups = [str(item).strip() for item in (vm_groups or []) if str(item).strip()]
+    return [f"group:{group}" for group in groups] or None
+
+
 def next_occurrence(event: ScheduledBackupEvent, after: datetime) -> datetime | None:
     return next(iter(expand_occurrences(event, after, after + timedelta(days=370))), None)
 
 
 def expand_occurrences(event: ScheduledBackupEvent, range_start: datetime, range_end: datetime) -> list[datetime]:
+    """Occurrences in naive UTC, repeating the local time of `event.timezone`
+    (services/recurrence.py: DST-safe, every N days/weeks/months)."""
     if event.deleted_at is not None:
         return []
-    start = event.window_starts_at
-    occurrences: list[datetime] = []
-    if event.recurrence_type == ScheduledBackupRecurrenceType.ONCE:
-        occurrences = [start] if range_start <= start <= range_end else []
-    elif event.recurrence_type == ScheduledBackupRecurrenceType.DAILY:
-        days = max(0, (range_start.date() - start.date()).days)
-        candidate = start + timedelta(days=days)
-        if candidate < range_start:
-            candidate += timedelta(days=1)
-        while candidate <= range_end:
-            occurrences.append(candidate)
-            candidate += timedelta(days=1)
-    elif event.recurrence_type == ScheduledBackupRecurrenceType.WEEKLY:
-        weeks = max(0, (range_start.date() - start.date()).days // 7)
-        candidate = start + timedelta(weeks=weeks)
-        while candidate < range_start:
-            candidate += timedelta(weeks=1)
-        while candidate <= range_end:
-            occurrences.append(candidate)
-            candidate += timedelta(weeks=1)
-    elif event.recurrence_type == ScheduledBackupRecurrenceType.MONTHLY:
-        candidate = start
-        while candidate < range_start:
-            year = candidate.year + (1 if candidate.month == 12 else 0)
-            month = 1 if candidate.month == 12 else candidate.month + 1
-            day = min(start.day, _days_in_month(year, month))
-            candidate = candidate.replace(year=year, month=month, day=day)
-        while candidate <= range_end:
-            occurrences.append(candidate)
-            year = candidate.year + (1 if candidate.month == 12 else 0)
-            month = 1 if candidate.month == 12 else candidate.month + 1
-            day = min(start.day, _days_in_month(year, month))
-            candidate = candidate.replace(year=year, month=month, day=day)
-    logger.info(
+    occurrences = recurrence.expand(event, range_start, range_end)
+    logger.debug(
         "planning occurrence expansion event_id=%s recurrence=%s count=%s range_start=%s range_end=%s",
         event.id,
-        event.recurrence_type.value,
+        getattr(event.recurrence_type, "value", event.recurrence_type),
         len(occurrences),
         range_start.isoformat(timespec="seconds"),
         range_end.isoformat(timespec="seconds"),
     )
     return occurrences
+
+
+def run_disk_serial(event: ScheduledBackupEvent, run: ScheduledBackupRun) -> str:
+    """The disk this planned run expects (rotation); older runs: the event's."""
+    return run.disk_serial or recurrence.disk_serial_for(event, run.scheduled_for)
+
+
+def _event_uses_disk(event: ScheduledBackupEvent, disk: ExternalDisk) -> bool:
+    return any(_disk_matches_event_serial(disk, serial) for serial in recurrence.rotation_serials(event))
 
 
 def _process_run(db: Session, event: ScheduledBackupEvent, run: ScheduledBackupRun, now: datetime) -> None:
@@ -267,7 +262,7 @@ def _process_run(db: Session, event: ScheduledBackupEvent, run: ScheduledBackupR
 
     if run.reminder_sent_at is None and now >= run.window_starts_at - timedelta(minutes=event.notify_before_minutes):
         notify_planned_backup_reminder(
-            event.disk_serial,
+            run_disk_serial(event, run),
             event.title,
             run.window_starts_at.isoformat(timespec="minutes"),
             run.window_ends_at.isoformat(timespec="minutes"),
@@ -292,7 +287,7 @@ def _process_run(db: Session, event: ScheduledBackupEvent, run: ScheduledBackupR
         db.add(run)
         return
 
-    disk = _get_present_disk(db, event.disk_serial)
+    disk = _get_present_disk(db, run_disk_serial(event, run))
     if disk is None:
         if run.status == ScheduledBackupRunStatus.PENDING:
             run.status = ScheduledBackupRunStatus.WAITING_FOR_DISK
@@ -301,7 +296,7 @@ def _process_run(db: Session, event: ScheduledBackupEvent, run: ScheduledBackupR
 
     if run.disk_seen_at is None:
         run.disk_seen_at = now
-        notify_expected_disk_detected(event.disk_serial, event.title)
+        notify_expected_disk_detected(run_disk_serial(event, run), event.title)
     _advance_detected_run(db, event, run, now)
 
 
@@ -332,7 +327,8 @@ def _start_run(
         run.updated_at = now
         db.add(run)
         return
-    disk = _get_present_disk(db, event.disk_serial) or _get_disk_by_serial_identity(db, event.disk_serial)
+    serial = run_disk_serial(event, run)
+    disk = _get_present_disk(db, serial) or _get_disk_by_serial_identity(db, serial)
     if disk is None:
         run.status = ScheduledBackupRunStatus.WAITING_FOR_DISK
         run.updated_at = now
@@ -346,6 +342,7 @@ def _start_run(
             datastore_name=event.datastore,
             # B24: the eject is the last step of the same run (one run, one modal).
             auto_eject_after_success=bool(event.auto_eject_after_success),
+            group_filter=group_filter_for(event.vm_groups),
         )
     except Exception as exc:
         detail = getattr(exc, "detail", None)
@@ -367,7 +364,7 @@ def _start_run(
         run.error = str(exc)
         event.last_status = run.status.value
         event.last_completed_at = now
-        notify_backup_failure(f"{event.disk_label_or_model or event.disk_serial} ({event.title})", "planning_start", str(exc))
+        notify_backup_failure(f"{event.disk_label_or_model or serial} ({event.title})", "planning_start", str(exc))
         db.add_all([event, run])
         return
 
@@ -422,6 +419,7 @@ def _ensure_run(db: Session, event: ScheduledBackupEvent, occurrence: datetime) 
         window_starts_at=occurrence,
         window_ends_at=occurrence + timedelta(minutes=event.window_duration_minutes),
         status=ScheduledBackupRunStatus.PENDING,
+        disk_serial=recurrence.disk_serial_for(event, occurrence),
         created_at=now,
         updated_at=now,
     )

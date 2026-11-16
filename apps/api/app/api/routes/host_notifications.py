@@ -67,3 +67,11 @@ def list_activity_events(db: DbSession, limit: int = Query(default=100, ge=1, le
 
 def _pick(payload: dict, *keys: str) -> dict:
     return {key: payload[key] for key in keys if key in payload}
+
+
+@activity_router.get("/feed")
+def activity_feed(db: DbSession, days: int = Query(default=90, ge=1, le=366)) -> list[dict]:
+    """Activity page: backups, ejects, detections, planning — newest first (Phase 6)."""
+    from app.services.activity_feed import build_activity
+
+    return build_activity(db, days=days)

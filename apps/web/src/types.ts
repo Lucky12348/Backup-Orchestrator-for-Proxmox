@@ -296,6 +296,8 @@ export interface ExternalBackupRun {
   pbs_task_upid: string | null;
   elapsed_seconds: number | null;
   auto_eject_after_success: boolean;
+  /** "backup" | "eject" (API run_log.run_kind). */
+  kind?: "backup" | "eject";
   /** "main → pbo-pbotesta" (eject runs only know the target). */
   source_datastore?: string | null;
   target_datastore?: string | null;
@@ -431,6 +433,10 @@ export interface ScheduledBackupEvent {
   notify_before_minutes: number;
   start_mode: ScheduledBackupStartMode;
   auto_eject_after_success: boolean;
+  /** Rotation (Phase 6): disks used in turn, first = disk_serial. */
+  rotation_disk_serials?: string[] | null;
+  /** VM/CT copied ("vm/100"); empty = the whole datastore. */
+  vm_groups?: string[] | null;
   last_status: string | null;
   last_triggered_at: string | null;
   last_completed_at: string | null;

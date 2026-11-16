@@ -174,6 +174,7 @@ def run_external_backup(
     confirmation: bool,
     datastore_name: str | None = None,
     auto_eject_after_success: bool = False,
+    group_filter: list[str] | None = None,
 ) -> ExternalBackupRun:
     if not confirmation:
         raise HTTPException(
@@ -218,6 +219,7 @@ def run_external_backup(
             warning_messages=[],
             failed_groups=[],
             auto_eject_after_success=auto_eject_after_success,
+            group_filter=group_filter or None,
             mode=plan.mode,
             created_at=now,
         )
@@ -293,7 +295,13 @@ def execute_external_backup_run(run_id: int) -> None:
                 step="handoff_disk",
                 message=handoff_status.message,
             )
+            if run.group_filter and get_settings().pbs_mode != "api":
+                append_external_backup_run_log(
+                    db, run.id, step="run_export",
+                    message="VM selection needs PBS_MODE=api: the whole datastore is copied.",
+                )
             execution_result = execution_service.execute(
+                **({"group_filter": run.group_filter} if run.group_filter else {}),
                 disk=disk,
                 datastore_name=run.datastore_name,
                 mode=run.mode,

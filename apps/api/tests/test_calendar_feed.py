@@ -104,7 +104,9 @@ def test_recurring_events_are_rrules(client, db, secret_key):
     assert text.endswith("END:VCALENDAR\r\n")
     assert text.count("BEGIN:VEVENT") == 3
     assert "SUMMARY:Hebdo\\, disque A" in text
-    assert "DTSTART:20261120T183000Z" in text and "DTEND:20261120T203000Z" in text
+    # Recurring: the local time of the planning's zone (18:30 UTC = 19:30 Paris).
+    assert "DTSTART;TZID=Europe/Paris:20261120T193000" in text and "DTEND;TZID=Europe/Paris:20261120T213000" in text
+    assert "DTSTART:20261201T090000Z" in text  # one-off: UTC
     assert "RRULE:FREQ=WEEKLY" in text and "RRULE:FREQ=DAILY" in text
     assert text.count("RRULE:") == 2  # the one-off event has none
     assert "Désactivé" not in text and "Supprimé" not in text

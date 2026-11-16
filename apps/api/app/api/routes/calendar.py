@@ -51,13 +51,24 @@ def get_ics(
     token: str | None = Query(default=None, max_length=128),
     history: bool = Query(default=False),
     history_days: int = Query(default=90, ge=1, le=366),
+    proxmox: bool = Query(default=False),
+    download: bool = Query(default=False),
 ) -> Response:
     if not check_calendar_token(db, token):
         # Same answer for "no feed" and "wrong token".
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
-    body = build_calendar(db, include_history=history, history_days=history_days)
+    from app.services.settings_service import effective_settings
+
+    body = build_calendar(
+        db,
+        include_history=history,
+        history_days=history_days,
+        include_proxmox=proxmox,
+        zone_name=effective_settings(db).timezone,
+    )
+    disposition = "attachment" if download else "inline"
     return Response(
         content=body,
         media_type="text/calendar; charset=utf-8",
-        headers={"Cache-Control": "no-store", "Content-Disposition": 'inline; filename="pbo.ics"'},
+        headers={"Cache-Control": "no-store", "Content-Disposition": f'{disposition}; filename="pbo.ics"'},
     )

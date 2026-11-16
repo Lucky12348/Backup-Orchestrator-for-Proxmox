@@ -131,7 +131,7 @@ export function DisksView({ disks, runs, language, t, onBackup, onEject, isStart
       </div>
 
       <div className="flex flex-wrap items-center gap-3 border-b border-solid border-border">
-        <div role="tablist" aria-label={text.tabsLabel} className="flex flex-1 flex-wrap gap-[22px]">
+        <div role="tablist" aria-label={text.tabsLabel} className="-mb-px flex min-w-0 flex-1 gap-[22px] overflow-x-auto">
           {DISK_TABS.map((key) => {
             const active = tab === key;
             return (
@@ -142,7 +142,7 @@ export function DisksView({ disks, runs, language, t, onBackup, onEject, isStart
                 aria-selected={active}
                 onClick={() => setTab(key)}
                 className={cn(
-                  "-mb-px flex items-center gap-2 border-0 bg-transparent px-0 pb-3 pt-2.5 text-sm font-medium",
+                  "flex shrink-0 items-center gap-2 whitespace-nowrap border-0 bg-transparent px-0 pb-3 pt-2.5 text-sm font-medium",
                   active ? "text-fg shadow-[inset_0_-2px_0_rgb(var(--pbo-accent))]" : "text-faint hover:text-fg",
                 )}
               >
@@ -159,7 +159,7 @@ export function DisksView({ disks, runs, language, t, onBackup, onEject, isStart
             );
           })}
         </div>
-        <label className="mb-2 flex h-8 w-[220px] items-center gap-2 rounded-lg border border-solid border-border bg-subtle px-2.5 text-faint">
+        <label className="mb-2 flex h-8 w-full items-center gap-2 rounded-lg border border-solid border-border bg-subtle px-2.5 text-faint sm:w-[220px]">
           <Search className="h-3.5 w-3.5" />
           <input
             aria-label={text.search}
@@ -171,8 +171,9 @@ export function DisksView({ disks, runs, language, t, onBackup, onEject, isStart
         </label>
       </div>
 
-      <div className="flex flex-wrap items-start gap-[18px]">
-        <div className="grid min-w-0 flex-[999_1_460px] grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3.5">
+      {/* B27: cards fill the width (auto-fill), the detail panel sits right next to them. */}
+      <div className="grid items-start gap-[18px] lg:grid-cols-[minmax(0,1fr)_minmax(340px,400px)]">
+        <div className="grid min-w-0 grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3.5">
           {shown.length === 0 ? (
             <div className="col-span-full rounded-[14px] border border-dashed border-border-strong px-6 py-10 text-center">
               <p className="m-0 text-[15px] font-medium">{query ? text.noMatch : text.empty}</p>
@@ -207,7 +208,7 @@ export function DisksView({ disks, runs, language, t, onBackup, onEject, isStart
             onChanged={onChanged}
           />
         ) : (
-          <aside className="flex-[1_1_340px] rounded-[14px] border border-solid border-border bg-surface p-[18px] text-[13px] text-muted">
+          <aside className="rounded-[14px] border border-solid border-border bg-surface p-[18px] text-[13px] text-muted lg:sticky lg:top-4">
             {text.selectHint}
           </aside>
         )}
@@ -230,7 +231,7 @@ function capacityLine(row: DiskRow<ExternalDisk>, language: Language, t: Transla
 
 function noteText(row: DiskRow<ExternalDisk>, t: TranslationDictionary): string {
   const reason = rejectReason(row.disk);
-  if (row.status === "rejected" && reason) return fill(t.disksV2.rejectReason[reason as keyof typeof t.disksV2.rejectReason] ?? "", { min: 34 });
+  if (row.status === "rejected" && reason) return fill(t.disksV2.rejectReason[reason as keyof typeof t.disksV2.rejectReason] ?? "", { min: 32 });
   if (row.status === "running" && row.run?.progress_percent != null) return `${t.disksV2.status.running} · ${Math.round(row.run.progress_percent)} %`;
   return t.disksV2.summary[row.status];
 }
@@ -278,9 +279,9 @@ export function DiskCard({
         <StatusPill status={status} label={t.disksV2.status[status]} />
       </div>
       <div className="flex w-full flex-col gap-1.5">
-        <div className="flex text-xs text-muted">
-          <span className="flex-1">{capacityLine(row, language, t)}</span>
-          <span className="font-mono">{formatSize(disk.capacity_gb, language)}</span>
+        <div className="flex gap-2 text-xs text-muted">
+          <span className="min-w-0 flex-1 truncate">{capacityLine(row, language, t)}</span>
+          <span className="flex-none font-mono">{formatSize(disk.capacity_gb, language)}</span>
         </div>
         <div className="h-1.5 overflow-hidden rounded-full bg-subtle">
           <div className={cn("h-full rounded-full", tone.bar)} style={{ width: `${usage ?? 0}%` }} />
@@ -370,7 +371,7 @@ export function DiskDetail({
   ];
 
   return (
-    <aside aria-label={text.selected} className="flex max-w-full flex-[1_1_340px] flex-col rounded-[14px] border border-solid border-border bg-surface">
+    <aside aria-label={text.selected} className="flex min-w-0 flex-col rounded-[14px] border border-solid border-border bg-surface lg:sticky lg:top-4">
       <div className="flex flex-col gap-1 border-b border-solid border-border p-[18px]">
         <span className="text-xs text-faint">{text.selected}</span>
         <span className="text-[17px] font-semibold">{disk.display_name}</span>
@@ -382,7 +383,7 @@ export function DiskDetail({
       {status === "rejected" && reason ? (
         <div className="border-b border-solid border-border p-[18px]">
           <div className="rounded-[10px] bg-danger/15 p-3 text-[13px] leading-[1.45] text-danger-text">
-            {fill(text.rejectReason[reason as keyof typeof text.rejectReason] ?? "", { min: 34 })}
+            {fill(text.rejectReason[reason as keyof typeof text.rejectReason] ?? "", { min: 32 })}
           </div>
         </div>
       ) : null}

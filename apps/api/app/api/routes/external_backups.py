@@ -232,10 +232,11 @@ def _build_summary(run, disk_name: str, disk=None) -> ExternalBackupRunSummaryRe
 
 
 def _run_extras(run, disk) -> dict[str, object]:  # noqa: ANN001
-    from app.services.run_log import datastore_pair
+    from app.services.run_log import datastore_pair, run_kind
 
     running = run.status in (BackupRunStatus.PENDING, BackupRunStatus.RUNNING)
     return {
         **datastore_pair(run, disk),
+        "kind": run_kind(run, disk),
         "cancellable": bool(running and run.pbs_task_upid and get_settings().pbs_mode == "api"),
     }

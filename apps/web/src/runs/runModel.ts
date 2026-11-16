@@ -218,21 +218,11 @@ export function journalText(entries: JournalEntry[], templates: Record<string, s
     .join("\n");
 }
 
-export function formatBytes(bytes: number | null | undefined, lang: "fr" | "en"): string {
-  if (bytes === null || bytes === undefined) return "—";
-  const units = lang === "fr" ? ["o", "Ko", "Mo", "Go", "To"] : ["B", "KB", "MB", "GB", "TB"];
-  let value = bytes;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  const digits = value >= 100 || unit === 0 ? 0 : 1;
-  const text = value.toFixed(digits);
-  return `${lang === "fr" ? text.replace(".", ",") : text} ${units[unit]}`;
-}
+import { formatBytes } from "../units.ts";
 
-/** "64.208 MiB/s" (PBS) → "64,2 Mo/s" / "64.2 MB/s". */
+export { formatBytes };
+
+/** "64.208 MiB/s" (PBS) → "64,2 Mio/s" / "64.2 MiB/s". */
 export function formatRate(rate: string | null | undefined, lang: "fr" | "en"): string | null {
   const match = rate ? /(\d+(?:\.\d+)?)\s*(B|KiB|MiB|GiB|TiB)\/s/i.exec(rate) : null;
   if (!match) return rate ?? null;

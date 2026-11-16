@@ -10,17 +10,17 @@ import { AppShellV2, LegacyPage } from "./shell/AppShellV2";
 import { NoticeToasts } from "./shell/NoticeToasts";
 import { DashboardView } from "./views/dashboard/DashboardView";
 import { DisksView } from "./views/disks/DisksView";
+import { ActivityView } from "./views/activity/ActivityView";
+import { PlanningView } from "./views/planning/PlanningView";
 import { expectRunModal, openRunModal } from "./runs/openRun";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { ErrorBanner } from "./components/ErrorBanner";
 import { LoadingBlock } from "./components/LoadingBlock";
 import { useAppData } from "./hooks/useAppData";
 import { translations, type Language } from "./i18n";
-import { ActivityPage } from "./pages/ActivityPage";
 import { AssetsPage } from "./pages/AssetsPage";
 import { IntegrationsPage } from "./pages/IntegrationsPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
-import { PlanningPage } from "./pages/PlanningPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import type { ExternalDisk } from "./types";
 
@@ -72,6 +72,13 @@ function AuthenticatedApp() {
   } = useAppData();
 
   const t = translations[language];
+  const runsKey = data
+    ? [
+        ...data.externalBackupRuns.map((run) => `${run.id}:${run.status}`),
+        ...data.scheduledBackupRuns.map((run) => `p${run.id}:${run.status}`),
+        `e${data.scheduledBackupEvents.length}`,
+      ].join(",")
+    : "";
 
   function handleLanguageChange(nextLanguage: Language) {
     setLanguage(nextLanguage);
@@ -100,17 +107,6 @@ function AuthenticatedApp() {
       cancelLabel: t.cancel,
       tone: "info",
       onConfirm: () => { void runPBSSync(t.pbsSyncSummary); closeConfirm(); },
-    });
-  }
-
-  function handleActivityCleanupRequest() {
-    openConfirm({
-      title: t.activityCleanupTitle,
-      description: t.activityCleanupDescription,
-      confirmLabel: t.activityCleanupConfirm,
-      cancelLabel: t.cancel,
-      tone: "danger",
-      onConfirm: () => { void cleanupActivityRuns(10, t.activityCleanupSummary); closeConfirm(); },
     });
   }
 
@@ -242,6 +238,7 @@ function AuthenticatedApp() {
                 pbsConnected={data.pbsStatus.connected}
                 language={language}
                 t={t}
+                onChanged={refresh}
               />
             }
             path="/"
@@ -275,7 +272,21 @@ function AuthenticatedApp() {
             }
             path="/disks"
           />
-          <Route element={<LegacyPage><PlanningPage data={data} language={language} t={t} /></LegacyPage>} path="/planning" />
+          <Route
+            element={
+              <PlanningView
+                events={data.scheduledBackupEvents}
+                disks={data.disks}
+                vms={data.vms}
+                defaultDatastore={data.pbsStatus.datastore ?? ""}
+                language={language}
+                t={t}
+                refreshKey={runsKey}
+                onChanged={refresh}
+              />
+            }
+            path="/planning"
+          />
           <Route
             element={
               <LegacyPage><IntegrationsPage
@@ -289,19 +300,13 @@ function AuthenticatedApp() {
           />
           <Route
             element={
-              <LegacyPage><ActivityPage
-                data={data}
-                cleanupSaving={isSaving("activity-cleanup")}
-                externalBackupRuns={data.externalBackupRuns}
+              <ActivityView
                 language={language}
-                onCleanupOldRunsRequest={handleActivityCleanupRequest}
-                isEjecting={(diskId) => isSaving(`disk-eject-${diskId}`)}
-                onRetryEject={(diskId) => {
-                  expectRunModal();
-                  void ejectDisk(diskId, t.ejectDiskSuccess);
-                }}
                 t={t}
-              /></LegacyPage>
+                refreshKey={runsKey}
+                cleaning={isSaving("activity-cleanup")}
+                onCleanup={() => cleanupActivityRuns(10, t.activityCleanupSummary)}
+              />
             }
             path="/activity"
           />

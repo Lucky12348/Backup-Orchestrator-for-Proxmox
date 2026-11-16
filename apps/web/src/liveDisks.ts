@@ -1,6 +1,7 @@
 // Pure helpers for live disk events (wizard step 5 cards, global toasts).
 // No runtime import: run by node:test.
 import type { AppEvent, DiskEventData } from "./events";
+import { formatGib } from "./units.ts";
 
 export type Lang = "fr" | "en";
 
@@ -18,14 +19,9 @@ export interface DiskCard {
   revision: number;
 }
 
+/** capacity_gb is GiB (agent `bytes_to_gb`): "931 Gio" / "3,57 Tio". */
 export function formatCapacity(gb: number, lang: Lang): string {
-  if (!gb || gb <= 0) return lang === "fr" ? "0 o" : "0 B";
-  if (gb >= 1000) {
-    const tb = gb / 1000;
-    const value = tb >= 10 ? Math.round(tb).toString() : tb.toFixed(1).replace(/\.0$/, "");
-    return `${lang === "fr" ? value.replace(".", ",") : value} ${lang === "fr" ? "To" : "TB"}`;
-  }
-  return `${gb} ${lang === "fr" ? "Go" : "GB"}`;
+  return formatGib(gb, lang);
 }
 
 export function rejectReasonText(reason: DiskEventData["reject_reason"], minSizeGb: number, lang: Lang): string {
@@ -36,8 +32,8 @@ export function rejectReasonText(reason: DiskEventData["reject_reason"], minSize
   }
   if (reason === "too_small") {
     return lang === "fr"
-      ? `Trop petit : il faut au moins ${minSizeGb} Go pour un datastore PBS.`
-      : `Too small: a PBS datastore needs at least ${minSizeGb} GB.`;
+      ? `Trop petit : il faut au moins ${minSizeGb} Gio pour un datastore PBS.`
+      : `Too small: a PBS datastore needs at least ${minSizeGb} GiB.`;
   }
   return "";
 }

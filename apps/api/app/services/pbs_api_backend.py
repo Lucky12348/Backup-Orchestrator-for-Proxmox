@@ -314,6 +314,9 @@ class PBSApiBackend:
         job_id = f"{SYNC_JOB_PREFIX}{run_id}" if run_id is not None else f"{SYNC_JOB_PREFIX}{int(self._wall_clock())}"
         owner = self.settings.pbs_token_id.split("!", 1)[0] if "!" in self.settings.pbs_token_id else None
         progress("sync_job", f"Creating local PBS sync job `{job_id}`: `{source}` → `{target}` (no remote).")
+        group_filter = [str(item) for item in payload.get("group_filter") or [] if str(item).startswith("group:")]
+        if group_filter:
+            progress("sync_job", f"Copying only: {', '.join(item.removeprefix('group:') for item in group_filter)}.")
         self.client.create_local_sync_job(
             job_id=job_id,
             store=target,
@@ -321,6 +324,7 @@ class PBSApiBackend:
             owner=owner,
             remove_vanished=False,
             comment=f"PBO export run {run_id}" if run_id is not None else "PBO export",
+            group_filter=group_filter or None,
         )
         upid: str | None = None
         try:

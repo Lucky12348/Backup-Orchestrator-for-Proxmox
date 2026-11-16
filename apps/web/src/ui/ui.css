@@ -143,3 +143,20 @@
     transition: none !important;
   }
 }
+
+/* Planning: a running event is striped and the stripes move (planning.html). */
+.pbo-ui .pbo-stripes {
+  background-image: repeating-linear-gradient(135deg, rgb(var(--pbo-accent)) 0 8px, #6a5af0 8px 16px);
+  background-size: 22.63px 22.63px;
+  animation: pbo-stripes 1s linear infinite;
+}
+@keyframes pbo-stripes {
+  to {
+    background-position: 22.63px 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pbo-ui .pbo-stripes {
+    animation: none;
+  }
+}

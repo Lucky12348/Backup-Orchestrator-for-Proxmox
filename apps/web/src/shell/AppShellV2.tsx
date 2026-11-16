@@ -4,6 +4,7 @@ import {
   Activity,
   Bell,
   CalendarDays,
+  ChevronsUpDown,
   HardDrive,
   LayoutDashboard,
   LogOut,
@@ -28,6 +29,7 @@ import { RunMonitorProvider } from "../runs/RunMonitor";
 import { RunPill } from "../runs/RunPill";
 import type { ExternalDisk, VirtualMachine } from "../types";
 import { ConfirmProvider } from "../ui/confirm";
+import { Popover } from "../ui/Popover";
 import { PortalContainerContext } from "../ui/portal";
 import { useTheme } from "../ui/theme";
 import { ToastProvider, useToast } from "../ui/toast";
@@ -43,6 +45,8 @@ const OVERVIEW: { key: NavKey | "resources"; to: string; icon: typeof LayoutDash
   { key: "planning", to: "/planning", icon: CalendarDays },
   { key: "activity", to: "/activity", icon: Activity },
 ];
+// Pages that use the whole width (the calendar); the others are capped at 1760 px.
+const FULL_WIDTH = ["/planning"];
 const CONFIGURATION: { key: NavKey; to: string; icon: typeof LayoutDashboard }[] = [
   { key: "integrations", to: "/integrations", icon: Plug },
   { key: "notifications", to: "/notifications", icon: Bell },
@@ -70,7 +74,7 @@ export function LegacyPage({ children }: { children: ReactNode }) {
  * (`.pbo-legacy`) until their own redesign; redesigned ones (src/views) do not.
  */
 export function AppShellV2({ children, language, onLanguageChange, t, disks, vms }: AppShellV2Props) {
-  const { theme, preference, cycle } = useTheme();
+  const { theme, preference, cycle, set: setPreference } = useTheme();
   const [portal, setPortal] = useState<HTMLElement | null>(null);
   const diskNames = Object.fromEntries(disks.map((disk) => [disk.id, disk.display_name]));
   const groupNames = Object.fromEntries(
@@ -89,6 +93,7 @@ export function AppShellV2({ children, language, onLanguageChange, t, disks, vms
                 onLanguageChange={onLanguageChange}
                 themePreference={preference}
                 onThemeCycle={cycle}
+                onThemeChange={setPreference}
                 newDisks={newDiskCount(disks)}
               >
                 {children}
@@ -112,6 +117,7 @@ function ShellLayout({
   onLanguageChange,
   themePreference,
   onThemeCycle,
+  onThemeChange,
   newDisks,
 }: {
   children: ReactNode;
@@ -120,6 +126,7 @@ function ShellLayout({
   onLanguageChange: (language: Language) => void;
   themePreference: "system" | "light" | "dark";
   onThemeCycle: () => void;
+  onThemeChange: (preference: "system" | "light" | "dark") => void;
   newDisks: number;
 }) {
   const location = useLocation();
@@ -169,27 +176,15 @@ function ShellLayout({
         <NavItem key={item.to} to={item.to} icon={item.icon} label={label(item.key)} />
       ))}
       <div className="min-h-6 flex-1" />
-      <div className="flex items-center gap-2.5 px-1.5 pt-3">
-        <div className="flex h-[30px] w-[30px] items-center justify-center rounded-full bg-hover text-[13px] font-semibold">
-          {(username ?? "?").slice(0, 1).toUpperCase()}
-        </div>
-        <div className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-[13px] font-medium">{username}</span>
-          <span className="text-xs text-faint">{t.shell.administrator}</span>
-        </div>
-        <select
-          aria-label={t.shell.language}
-          value={language}
-          onChange={(event) => onLanguageChange(event.target.value as Language)}
-          className="h-7 rounded-md border border-border bg-subtle px-1.5 text-xs font-medium uppercase text-muted"
-        >
-          <option value="en">EN</option>
-          <option value="fr">FR</option>
-        </select>
-        <button type="button" aria-label={t.shell.logout} title={t.shell.logout} onClick={() => void logout()} className="p-1.5 text-faint hover:text-fg">
-          <LogOut className="h-4 w-4" />
-        </button>
-      </div>
+      <UserMenu
+        t={t}
+        username={username ?? "?"}
+        language={language}
+        onLanguageChange={onLanguageChange}
+        themePreference={themePreference}
+        onThemeChange={onThemeChange}
+        onLogout={() => void logout()}
+      />
     </aside>
   );
 
@@ -244,9 +239,123 @@ function ShellLayout({
             <Bell className="h-4 w-4" />
           </NavLink>
         </header>
-        <div className="w-full max-w-[1280px] p-4 sm:p-7">{children}</div>
+        {/* B27: fluid content, side padding, a wide cap centred only beyond it. */}
+        <div
+          className={cn(
+            "mx-auto w-full px-4 py-5 sm:px-7 sm:py-7 2xl:px-10",
+            !FULL_WIDTH.some((path) => location.pathname.startsWith(path)) && "max-w-[1760px]",
+          )}
+        >
+          {children}
+        </div>
       </main>
     </div>
+  );
+}
+
+const THEMES = ["system", "light", "dark"] as const;
+const THEME_ICON = { system: Monitor, light: Sun, dark: Moon };
+
+/** B27: avatar + name + role; opens Language / Theme / Log out. */
+export function UserMenu({
+  t,
+  username,
+  language,
+  onLanguageChange,
+  themePreference,
+  onThemeChange,
+  onLogout,
+}: {
+  t: TranslationDictionary;
+  username: string;
+  language: Language;
+  onLanguageChange: (language: Language) => void;
+  themePreference: "system" | "light" | "dark";
+  onThemeChange: (preference: "system" | "light" | "dark") => void;
+  onLogout: () => void;
+}) {
+  const option = (active: boolean) =>
+    cn(
+      "flex flex-1 items-center justify-center gap-1.5 rounded-md border-0 px-2 py-1.5 text-xs font-medium",
+      active ? "bg-surface text-fg shadow-sm" : "bg-transparent text-muted hover:text-fg",
+    );
+  return (
+    <Popover
+      label={t.shell.userMenu}
+      role="menu"
+      placement="top-start"
+      className="w-[232px] p-2"
+      triggerClassName="flex w-full min-w-0 items-center gap-2.5 rounded-lg border-0 bg-transparent px-1.5 py-2 text-left text-fg hover:bg-hover"
+      trigger={
+        <>
+          <span className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-full bg-hover text-[13px] font-semibold">
+            {username.slice(0, 1).toUpperCase()}
+          </span>
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="truncate text-[13px] font-medium">{username}</span>
+            <span className="truncate text-xs text-faint">{t.shell.administrator}</span>
+          </span>
+          <ChevronsUpDown className="h-4 w-4 flex-none text-faint" />
+        </>
+      }
+    >
+      {(close) => (
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-1 px-1 pt-1">
+            <span className="text-[11px] font-medium uppercase tracking-[0.04em] text-faint">{t.shell.language}</span>
+            <div role="group" aria-label={t.shell.language} className="flex gap-1 rounded-lg bg-subtle p-[3px]">
+              {(["fr", "en"] as const).map((code) => (
+                <button
+                  key={code}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={language === code}
+                  className={option(language === code)}
+                  onClick={() => onLanguageChange(code)}
+                >
+                  {t.shell.languageName[code]}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex flex-col gap-1 px-1">
+            <span className="text-[11px] font-medium uppercase tracking-[0.04em] text-faint">{t.shell.themeLabel}</span>
+            <div role="group" aria-label={t.shell.themeLabel} className="flex gap-1 rounded-lg bg-subtle p-[3px]">
+              {THEMES.map((value) => {
+                const Icon = THEME_ICON[value];
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={themePreference === value}
+                    aria-label={t.shell.theme[value]}
+                    title={t.shell.theme[value]}
+                    className={option(themePreference === value)}
+                    onClick={() => onThemeChange(value)}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className="my-0.5 h-px bg-border" />
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              close();
+              onLogout();
+            }}
+            className="flex items-center gap-2 rounded-md border-0 bg-transparent px-2 py-2 text-left text-[13px] font-medium text-fg hover:bg-hover"
+          >
+            <LogOut className="h-4 w-4 text-muted" />
+            {t.shell.logout}
+          </button>
+        </div>
+      )}
+    </Popover>
   );
 }
 

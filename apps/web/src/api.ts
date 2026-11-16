@@ -557,3 +557,55 @@ export function decideDisk(diskId: number, decision: DiskDecision, confirmName?:
 export function rescanDisks() {
   return request<{ status: string }>("/disks/rescan", { method: "POST" });
 }
+
+// --- Planning calendar, iCal export, activity (Phase 6) ------------------------------
+
+export interface AgendaResponse {
+  items: import("./views/planning/calendarModel").AgendaItem[];
+  timezone: string | null;
+  proxmox_unsupported: string[];
+  proxmox_error: string | null;
+}
+
+export function getAgenda(start: Date, end: Date, proxmox: boolean) {
+  const params = new URLSearchParams({ start: start.toISOString(), end: end.toISOString(), proxmox: String(proxmox) });
+  return request<AgendaResponse>(`/planning/agenda?${params.toString()}`);
+}
+
+export interface CalendarFeed {
+  enabled: boolean;
+  url: string | null;
+}
+
+export function getCalendarFeed() {
+  return request<CalendarFeed>("/calendar");
+}
+
+export function regenerateCalendarFeed() {
+  return request<CalendarFeed>("/calendar/token", { method: "POST" });
+}
+
+export interface ActivityItem {
+  id: string;
+  type: "backup" | "eject" | "detection" | "planning";
+  status: string;
+  at: string;
+  finished_at: string | null;
+  duration_seconds: number | null;
+  disk_id: number | null;
+  disk_label: string;
+  run_id: number | null;
+  planning_run_id?: number | null;
+  event_title?: string | null;
+  planned: boolean;
+  auto_eject: boolean;
+  step: string | null;
+  progress_percent: number | null;
+  transferred_bytes: number | null;
+  no_new_data: boolean;
+  message: string | null;
+}
+
+export function getActivityFeed(days = 90) {
+  return request<ActivityItem[]>(`/activity-events/feed?days=${days}`);
+}

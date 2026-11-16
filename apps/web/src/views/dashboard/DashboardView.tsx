@@ -1,5 +1,9 @@
+import { useState } from "react";
 import { CalendarDays, HardDrive, Loader2, Play } from "lucide-react";
 import { Link } from "react-router-dom";
+
+import { cancelScheduledBackupRun, confirmScheduledBackupRun } from "../../api";
+import { useToast } from "../../ui/toast";
 
 import { cn } from "../../components/ui/utils";
 import type { Language, TranslationDictionary } from "../../i18n";
@@ -32,6 +36,8 @@ export interface DashboardViewProps {
   language: Language;
   t: TranslationDictionary;
   now?: Date;
+  /** Reload the app data after confirming / cancelling a planned run. */
+  onChanged?: () => Promise<void> | void;
 }
 
 const RING = 2 * Math.PI * 56;
@@ -67,6 +73,37 @@ function Ring({ percent, tone, label }: { percent: number; tone: "ok" | "warn" |
 
 const card = "rounded-2xl border border-solid border-border bg-surface";
 const rowLink = "flex items-center text-fg no-underline hover:bg-subtle";
+
+/** "To confirm: Weekly rotation" with Confirm / Cancel (planned run, manual confirmation). */
+function ConfirmRow({ label, runId, t, onChanged }: { label: string; runId: number; t: TranslationDictionary; onChanged?: () => Promise<void> | void }) {
+  const { toast } = useToast();
+  const [busy, setBusy] = useState(false);
+  async function act(confirmIt: boolean) {
+    setBusy(true);
+    try {
+      if (confirmIt) await confirmScheduledBackupRun(runId);
+      else await cancelScheduledBackupRun(runId);
+      toast({ tone: confirmIt ? "success" : "info", title: confirmIt ? t.planningV2.confirmDone : t.planningV2.cancelDone });
+      await onChanged?.();
+    } catch (error) {
+      toast({ tone: "danger", title: error instanceof Error ? error.message : t.error });
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-3 px-[22px] py-3" data-todo="to_confirm">
+      <span className="h-2 w-2 flex-none rounded-full bg-warning" />
+      <span className="min-w-0 flex-1 text-sm">{label}</span>
+      <button type="button" disabled={busy} onClick={() => void act(true)} className="rounded-[7px] border-0 bg-accent px-2.5 py-1 text-xs font-medium text-white hover:brightness-110 disabled:opacity-60">
+        {t.dashboardV2.todoConfirm}
+      </button>
+      <button type="button" disabled={busy} onClick={() => void act(false)} className="rounded-[7px] border border-solid border-border bg-subtle px-2.5 py-1 text-xs font-medium text-fg hover:brightness-110 disabled:opacity-60">
+        {t.dashboardV2.todoCancel}
+      </button>
+    </div>
+  );
+}
 
 export function DashboardView(props: DashboardViewProps) {
   const { overview, disks, runs, language, t } = props;
@@ -234,13 +271,17 @@ export function DashboardView(props: DashboardViewProps) {
             {todo.length === 0 ? (
               <span className="px-[22px] pb-4 pt-1 text-[13px] text-faint">{text.todoEmpty}</span>
             ) : (
-              todo.map((item, index) => (
-                <Link key={`${item.kind}-${index}`} to={item.href} className={cn(rowLink, "gap-3 px-[22px] py-3")} data-todo={item.kind}>
-                  <span className={cn("h-2 w-2 flex-none rounded-full", item.tone === "err" ? "bg-danger" : "bg-warning")} />
-                  <span className="flex-1 text-sm">{fill(text.todoItem[item.kind], { name: item.label })}</span>
-                  <span className="text-[13px] text-accent-text">{text.todoAction[item.kind]}</span>
-                </Link>
-              ))
+              todo.map((item, index) =>
+                item.kind === "to_confirm" && item.runId ? (
+                  <ConfirmRow key={`${item.kind}-${item.runId}`} label={fill(text.todoItem.to_confirm, { name: item.label })} runId={item.runId} t={t} onChanged={props.onChanged} />
+                ) : (
+                  <Link key={`${item.kind}-${index}`} to={item.href} className={cn(rowLink, "gap-3 px-[22px] py-3")} data-todo={item.kind}>
+                    <span className={cn("h-2 w-2 flex-none rounded-full", item.tone === "err" ? "bg-danger" : "bg-warning")} />
+                    <span className="flex-1 text-sm">{fill(text.todoItem[item.kind], { name: item.label })}</span>
+                    <span className="text-[13px] text-accent-text">{text.todoAction[item.kind]}</span>
+                  </Link>
+                ),
+              )
             )}
           </section>
         </div>

@@ -137,7 +137,7 @@ test("formats of the mockups", () => {
   assert.equal(formatWhen(local, "fr", new Date(2026, 10, 16, 18, 0), texts), "auj. 14:02");
   assert.equal(formatWhen(null, "fr", NOW, texts), "jamais");
   assert.match(formatWhen(new Date(2026, 10, 8, 9, 0).toISOString(), "fr", new Date(2026, 10, 16), texts), /^8 nov/);
-  assert.equal(formatSize(3660, "fr"), "3,66 To");
-  assert.equal(formatSize(931, "en"), "931 GB");
+  assert.equal(formatSize(3660, "fr"), "3,57 Tio");
+  assert.equal(formatSize(931, "en"), "931 GiB");
   assert.equal(fill("{n} ressources ignorées", { n: 2 }), "2 ressources ignorées");
 });

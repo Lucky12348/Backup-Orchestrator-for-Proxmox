@@ -52,6 +52,8 @@ class ExternalBackupRunRead(UTCDateTimeModel):
     source_datastore: str | None = None
     target_datastore: str | None = None
     # The running PBS task can be stopped (API mode, task known).
+    # "backup" | "eject" (services/run_log.run_kind).
+    kind: str | None = None
     cancellable: bool = False
     created_at: datetime
 
@@ -95,6 +97,8 @@ class ExternalBackupRunSummaryRead(UTCDateTimeModel):
     source_datastore: str | None = None
     target_datastore: str | None = None
     # The running PBS task can be stopped (API mode, task known).
+    # "backup" | "eject" (services/run_log.run_kind).
+    kind: str | None = None
     cancellable: bool = False
     created_at: datetime
 

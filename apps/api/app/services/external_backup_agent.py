@@ -122,6 +122,7 @@ class ExternalBackupAgentBridge:
         run_id: int | None = None,
         target_datastore_name: str | None = None,
         persist_target_datastore: bool = False,
+        group_filter: list[str] | None = None,
     ) -> AgentCommandResult:
         payload: dict[str, object] = {
             "target_path": target_path,
@@ -133,6 +134,9 @@ class ExternalBackupAgentBridge:
         if target_datastore_name:
             payload["target_datastore_name"] = target_datastore_name
         payload["persist_target_datastore"] = persist_target_datastore
+        if group_filter:
+            # PBS sync `group-filter` (API mode); the legacy PBS agent ignores it.
+            payload["group_filter"] = list(group_filter)
         return self._run_command(self.pbs_client, "/run-external-export", payload)
 
     def inspect_disk_on_pbs(self, disk: ExternalDisk) -> AgentCommandResult:

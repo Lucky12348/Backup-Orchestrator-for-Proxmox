@@ -331,6 +331,41 @@ should reach them — and every call is additionally protected with an
   `views/dashboard/dashboardModel.ts`, `views/format.ts` (`.ts` imports are
   allowed: `allowImportingTsExtensions`).
 
+## Planning calendar, activity list, layout (Phase 6, read before touching planning)
+
+- **Recurrences** (`services/recurrence.py`): occurrences repeat the LOCAL
+  time of `event.timezone` (DST-safe; `window_starts_at` stays naive UTC),
+  `recurrence_config.interval` = every N days/weeks/months (1–52).
+  `planning_scheduler.expand_occurrences` delegates to it; the iCal feed uses
+  `DTSTART;TZID=…` + `INTERVAL`. Never step occurrences in UTC again.
+- **Rotation**: `rotation_disk_serials` (first = `disk_serial`), occurrence
+  k → `serials[k % n]` (`recurrence.disk_serial_for`); each planned run stores
+  its `disk_serial`, and the scheduler only uses `run_disk_serial(event, run)`.
+  **VM/CT**: `vm_groups` (`vm/100`, `ct/101`) → `ExternalBackupRun.group_filter`
+  → PBS sync `group-filter` (API mode only; agent mode logs
+  `vm_selection_agent_mode` and copies everything). Alembic `0007`
+  (idempotent, legacy tables).
+- `GET /planning/agenda?start&end&proxmox` (`services/agenda.py`): planned
+  occurrences + manual runs (ejects excluded) + Proxmox jobs (read only,
+  `services/pve_schedule.py`; unsupported schedules are listed, never
+  guessed), with one status set (planned, waiting_disk, to_confirm, running,
+  success, failed, missed…). `calendar.ics` gains `proxmox=true` and
+  `download=true`. The UI never writes the clipboard (manual copy).
+- `GET /activity-events/feed?days=` (`services/activity_feed.py`): backups,
+  ejects (`run_log.run_kind`, also `kind` on run summaries), detections,
+  planned runs that ended without a backup.
+- Web: `src/views/planning/` (pure `calendarModel.ts`: views, zone maths,
+  placement, recurrence sentence, payload), `src/views/activity/`;
+  `src/ui/Popover.tsx` (no Radix popover dependency). Planned runs waiting for
+  confirmation appear in the dashboard "To do" and the calendar
+  (Confirm / Cancel).
+- **B27 layout**: fluid content capped at 1760 px (`/planning` is full
+  width), Disks = auto-fill cards + adjacent sticky panel; the sidebar user
+  block is ONE button opening Language / Theme / Log out (`UserMenu`).
+- **Units**: one convention, BINARY (Gio/Tio, GiB/TiB) — the agent, PBS and
+  Proxmox report GiB. Format sizes only with `src/units.ts`
+  (`formatGib`, `formatBytes`); `MIN_DISK_SIZE_GB` = the PBS guard minimum in GiB.
+
 ## Disk ↔ USB port (Phase 4.4, read before touching the USB passthrough)
 
 - The host agent reports, for each USB disk, its physical USB location read

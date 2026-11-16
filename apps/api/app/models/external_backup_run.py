@@ -51,6 +51,8 @@ class ExternalBackupRun(Base):
     pbs_task_upid: Mapped[str | None] = mapped_column(Text)
     elapsed_seconds: Mapped[int | None] = mapped_column(Integer)
     auto_eject_after_success: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # PBS sync group filter (["group:vm/100", …]); None = the whole datastore.
+    group_filter: Mapped[list | None] = mapped_column(JSON, nullable=True)
     mode: Mapped[ExternalBackupMode] = mapped_column(
         SqlEnum(ExternalBackupMode, name="external_backup_mode", native_enum=False),
         nullable=False,

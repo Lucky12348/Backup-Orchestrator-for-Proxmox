@@ -108,7 +108,7 @@ export function nextRotation(events: readonly EventLike[], disks: readonly DiskL
   };
 }
 
-export type TodoKind = "new_disk" | "missed_rotation" | "agent_offline" | "recent_failure";
+export type TodoKind = "to_confirm" | "new_disk" | "missed_rotation" | "agent_offline" | "recent_failure";
 
 export interface TodoItem {
   kind: TodoKind;
@@ -116,6 +116,8 @@ export interface TodoItem {
   /** Disk name, rotation title… */
   label: string;
   href: string;
+  /** to_confirm: the planned run to confirm or cancel. */
+  runId?: number;
 }
 
 const DAY_MS = 24 * 3600 * 1000;
@@ -130,6 +132,12 @@ export function todoItems(input: {
   now: Date;
 }): TodoItem[] {
   const items: TodoItem[] = [];
+  // Planned runs waiting for a confirmation (start_mode = manual confirmation).
+  for (const run of input.scheduledRuns) {
+    if (run.status === "waiting_for_confirmation") {
+      items.push({ kind: "to_confirm", tone: "warn", label: run.event_title ?? "", href: "/planning", runId: run.id });
+    }
+  }
   for (const disk of input.disks) {
     if (diskUiStatus(disk, input.runs) === "new") {
       items.push({ kind: "new_disk", tone: "warn", label: disk.display_name, href: `/disks?disk=${disk.id}` });

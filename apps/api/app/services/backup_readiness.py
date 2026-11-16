@@ -69,7 +69,7 @@ def _reason(code: str, message: str, **params: Any) -> dict[str, Any]:
 
 _REJECT_MESSAGES = {
     "zero_size": "The disk reports a size of 0 (cable, port or enclosure problem).",
-    "too_small": f"The disk is too small for a PBS datastore (minimum {MIN_DISK_SIZE_GB} GB).",
+    "too_small": f"The disk is too small for a PBS datastore (minimum {MIN_DISK_SIZE_GB} GiB).",
     "operator": "The disk was rejected by the operator.",
 }
 

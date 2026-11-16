@@ -1,5 +1,7 @@
 // Dates and sizes of the redesigned pages, as in the mockups ("auj. 14:02",
-// "8 nov.", "Dimanche 22 nov.", "2,9 To"). Pure (node:test).
+// "8 nov.", "Dimanche 22 nov.", "3,57 Tio"). Pure (node:test).
+
+import { formatGib } from "../units.ts";
 
 export type Lang = "fr" | "en";
 
@@ -41,16 +43,9 @@ export function formatDay(iso: string, lang: Lang, timeZone?: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-/** Decimal GB (what the agent reports) → "931 Go" / "3,66 To". */
+/** Sizes stored in GiB → "931 Gio" / "3,57 Tio" (src/units.ts, one convention). */
 export function formatSize(gb: number | null | undefined, lang: Lang): string {
-  const value = gb ?? 0;
-  if (value >= 1000) {
-    const tb = value / 1000;
-    const digits = tb >= 10 ? 1 : 2;
-    const text = tb.toFixed(digits).replace(/\.?0+$/, "");
-    return `${lang === "fr" ? text.replace(".", ",") : text} ${lang === "fr" ? "To" : "TB"}`;
-  }
-  return `${Math.round(value)} ${lang === "fr" ? "Go" : "GB"}`;
+  return formatGib(gb, lang);
 }
 
 export function fill(template: string, values: Record<string, string | number>): string {

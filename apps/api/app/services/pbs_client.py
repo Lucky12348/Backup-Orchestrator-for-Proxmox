@@ -245,8 +245,10 @@ class PBSClient:
         owner: str | None = None,
         remove_vanished: bool = False,
         comment: str | None = None,
+        group_filter: list[str] | None = None,
     ) -> None:
-        """POST /config/sync WITHOUT `remote`: local pull from `remote-store` into `store`."""
+        """POST /config/sync WITHOUT `remote`: local pull from `remote-store` into `store`.
+        `group_filter` = ["group:vm/100", …] (only those VM/CT groups)."""
         body: dict[str, Any] = {
             "id": job_id,
             "store": store,
@@ -257,6 +259,8 @@ class PBSClient:
             body["owner"] = owner
         if comment:
             body["comment"] = comment
+        if group_filter:
+            body["group-filter"] = list(group_filter)
         self._request("POST", "config/sync", body=body)
 
     def delete_sync_job(self, job_id: str) -> None:
