@@ -178,6 +178,8 @@ def plan_dedicated_preparation(
 
 def match_pbs_disk(pbs_disks: list[dict[str, Any]], identifiers: list[str]) -> dict[str, Any] | None:
     """Find exactly one PBS disk for any identifier (serial, wwn, name, devpath)."""
+    from app.services.disk_identity import serials_match
+
     wanted = [value.strip() for value in identifiers if value and value.strip()]
     for identifier in wanted:
         lowered = identifier.lower()
@@ -187,9 +189,11 @@ def match_pbs_disk(pbs_disks: list[dict[str, Any]], identifiers: list[str]) -> d
             if lowered
             in {
                 str(disk.get(key) or "").strip().lower()
-                for key in ("serial", "wwn", "name", "devpath")
+                for key in ("wwn", "name", "devpath")
                 if disk.get(key)
             }
+            # Serials: same rules as everywhere else (case, dashes, "WD-"…).
+            or serials_match(str(disk.get("serial") or ""), identifier)
         ]
         if len(matches) == 1:
             return matches[0]

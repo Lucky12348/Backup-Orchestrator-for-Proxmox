@@ -129,9 +129,10 @@ should reach them — and every call is additionally protected with an
   import → activate settings store → `DEV_SEED` demo data → scheduler.
   New tables should be Alembic migrations in `apps/api/app/db/migrations/versions`.
 - Sessions: login (`POST /api/v1/auth/token`) and first-admin creation set an
-  `HttpOnly; SameSite=Strict` JWT cookie (`pbo_session`), `Secure` unless
-  `AUTH_COOKIE_SECURE=false`. No Bearer header, no token in JS storage.
-  `get_current_user` also checks the account still exists.
+  `HttpOnly; SameSite=Lax; Path=/` JWT cookie (`pbo_session`), `Secure`
+  unless `AUTH_COOKIE_SECURE=false`. No Bearer header, no token in JS storage.
+  `get_current_user` also checks the account still exists and refuses
+  cross-site writes (`require_same_origin`). Never add a state-changing GET.
 - Public (no session) API surface: `/health`, `/api/v1/auth/{token,logout}`,
   `/api/v1/setup/{status,admin}`, `/api/v1/agents/register` (pairing code),
   agent callbacks guarded by `X-Agent-Token`, and two root routes:
@@ -230,6 +231,23 @@ should reach them — and every call is additionally protected with an
 - Wizard: optional "notifications" step prepared between PBS and Done, hidden
   by `NOTIFICATIONS_STEP_ENABLED = false` (`setup/logic.ts`); the API already
   accepts the step.
+
+## Serials, handoff errors, backup readiness (Phase 4.3)
+
+- Compare a serial seen elsewhere (Proxmox USB list, PBS disk list, planning
+  event…) with a disk ONLY through `disk_identity.disk_matches_serial(disk,
+  serial)` (stored/canonical/reported serial + aliases; case, spaces, `-`,
+  `_`, hex-encoded serials and `WD-` ignored). Proxmox reports `PBOTEST-a`
+  for a disk stored as `PBOTESTA`: a verbatim `==` breaks the handoff.
+- Handoff failures are `DiskHandoffError` (`code`, clear `detail`,
+  `technical`): the run keeps the code as `current_step` (translated by the
+  UI) and the technical detail (USB devices seen, with serials) in its log.
+- Whether a backup can start is decided server-side:
+  `GET /api/v1/external-backups/readiness/{disk_id}` → `ready` + coded
+  `reasons` (disk, run active, PVE, host agent, PBS API or PBS agent by
+  `PBS_MODE`). The Disks page only displays it; no capability guessing in
+  the front. `/system/version` returns `pbs_mode` (Settings shows
+  "PBS (API)" in API mode).
 
 ## Real-time channel (read before touching disk reports, runs or polling)
 

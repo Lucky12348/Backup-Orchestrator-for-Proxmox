@@ -40,7 +40,7 @@ def test_first_admin_opens_a_hardened_cookie_session(client):
 
     cookie = _set_cookie_header(response).lower()
     assert cookie.startswith(f"{SESSION_COOKIE_NAME}=")
-    for attribute in ("httponly", "secure", "samesite=strict", "path=/", "max-age=10800"):
+    for attribute in ("httponly", "secure", "samesite=lax", "path=/", "max-age=10800"):
         assert attribute in cookie
 
     assert client.get("/api/v1/auth/me").json()["username"] == "admin"

@@ -1,9 +1,10 @@
 """Session authentication for the operator UI.
 
 * Accounts live in the `users` table (see app/services/users.py).
-* Login sets a signed JWT in an HttpOnly, SameSite=Strict cookie (Secure unless
+* Login sets a signed JWT in an HttpOnly, SameSite=Lax cookie (Secure unless
   AUTH_COOKIE_SECURE=false). The browser never sees the token, so it cannot be
-  read by injected scripts; SameSite=Strict keeps it off cross-site requests.
+  read by injected scripts; SameSite=Lax keeps it off cross-site writes, and
+  unsafe methods must come from this origin (`require_same_origin`).
 * There is no switch to disable authentication.
 """
 
@@ -98,6 +99,26 @@ def _create_access_token(username: str, lifetime: timedelta) -> tuple[str, datet
     return token, expires_at
 
 
+# Lax, not Strict: browsers withhold Strict cookies on navigations they deem
+# cross-site (a link from the Proxmox UI, a chat, a bookmark manager, opening an
+# API URL from another app…), so `/api/v1/...` opened in a tab answered
+# "Not authenticated" while the page's own fetch() calls worked. Lax still
+# keeps the cookie off cross-site POST/PUT/PATCH/DELETE (CSRF), and
+# `require_same_origin` rejects unsafe cookie requests from another origin.
+SESSION_COOKIE_SAMESITE = "lax"
+UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+def require_same_origin(request: Request) -> None:
+    """Defense in depth for cookie-authenticated writes: refuse what the browser
+    itself labels cross-site (Sec-Fetch-Site). Origin is not compared with
+    Host on purpose: a reverse proxy may rewrite Host."""
+    if request.method not in UNSAFE_METHODS or SESSION_COOKIE_NAME not in request.cookies:
+        return
+    if request.headers.get("sec-fetch-site", "").lower() == "cross-site":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-site request refused.")
+
+
 def start_session(response: Response, username: str, *, language: str | None = None) -> SessionInfo:
     lifetime = _token_lifetime()
     token, expires_at = _create_access_token(username, lifetime)
@@ -107,7 +128,7 @@ def start_session(response: Response, username: str, *, language: str | None = N
         max_age=int(lifetime.total_seconds()),
         httponly=True,
         secure=get_settings().auth_cookie_secure,
-        samesite="strict",
+        samesite=SESSION_COOKIE_SAMESITE,
         path="/",
     )
     return SessionInfo(username=username, expires_at=expires_at, language=language)
@@ -119,7 +140,7 @@ def end_session(response: Response) -> None:
         path="/",
         httponly=True,
         secure=get_settings().auth_cookie_secure,
-        samesite="strict",
+        samesite=SESSION_COOKIE_SAMESITE,
     )
 
 
@@ -131,6 +152,7 @@ credentials_exception = HTTPException(
 
 def get_current_user(request: Request, db: Annotated[Session, Depends(get_db)]) -> str:
     """Validate the session cookie and return the username of an existing account."""
+    require_same_origin(request)
     token = request.cookies.get(SESSION_COOKIE_NAME)
     if not token:
         raise credentials_exception

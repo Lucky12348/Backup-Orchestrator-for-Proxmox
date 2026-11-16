@@ -409,15 +409,21 @@ def execute_external_backup_run(run_id: int) -> None:
             run.last_log_at = datetime.utcnow()
             append_external_backup_run_log(db, run.id, step="failure", message=str(exc), stream="stderr", line=str(exc))
         except HTTPException as exc:
+            # A coded failure (e.g. usb_device_not_found) keeps its code as the
+            # step, translated by the UI; the technical detail goes to the log.
+            code = getattr(exc, "code", None)
+            technical = getattr(exc, "technical", None)
             run.status = BackupRunStatus.FAILED
             run.finished_at = datetime.utcnow()
             run.message = str(exc.detail)
-            run.stderr_log = _merge_logs(run.stderr_log, str(exc.detail))
+            run.stderr_log = _merge_logs(run.stderr_log, str(exc.detail), technical)
             run.return_code = None
-            run.current_step = "failure"
+            run.current_step = code or "failure"
             run.progress_message = str(exc.detail)
             run.last_log_at = datetime.utcnow()
-            append_external_backup_run_log(db, run.id, step="failure", message=str(exc.detail), stream="stderr", line=str(exc.detail))
+            append_external_backup_run_log(
+                db, run.id, step=code or "failure", message=str(exc.detail), stream="stderr", line=technical or str(exc.detail)
+            )
         except RuntimeError as exc:
             run.status = BackupRunStatus.FAILED
             run.finished_at = datetime.utcnow()

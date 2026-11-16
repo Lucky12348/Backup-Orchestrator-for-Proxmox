@@ -316,6 +316,8 @@ export interface ComponentVersion {
 }
 
 export interface SystemVersion {
+  /** "api": PBS through its REST API (no PBS agent), "agent": legacy PBS agent. */
+  pbs_mode?: "api" | "agent";
   api: ComponentVersion;
   web: ComponentVersion;
   proxmox_agent: ComponentVersion;

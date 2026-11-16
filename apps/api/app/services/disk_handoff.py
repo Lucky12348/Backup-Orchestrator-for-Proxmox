@@ -7,8 +7,17 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models import ExternalDisk
-from app.services.disk_identity import canonical_serial_number, serial_aliases
-from app.services.host_agent import HostAgentError, HostAgentResult, get_host_agent_client, get_pbs_agent_client
+from app.services.disk_identity import (
+    canonical_serial_number,
+    disk_matches_serial,
+    serial_aliases,
+)
+from app.services.host_agent import (
+    HostAgentError,
+    HostAgentResult,
+    get_host_agent_client,
+    get_pbs_agent_client,
+)
 from app.services.proxmox_client import ProxmoxClient
 
 
@@ -25,6 +34,23 @@ class DiskHandoffStatus:
 
 
 ProgressCallback = Callable[[str, str, str | None], None]
+
+
+USB_DEVICE_NOT_FOUND = "usb_device_not_found"
+USB_DEVICE_NOT_FOUND_MESSAGE = "Disk not found in the Proxmox USB device list."
+
+
+class DiskHandoffError(HTTPException):
+    """Handoff failure with a stable `code` (translated by the UI), a clear
+    message (`detail`) and the technical detail for the run log."""
+
+    def __init__(self, code: str, message: str, *, technical: str, status_code: int = status.HTTP_404_NOT_FOUND) -> None:
+        super().__init__(status_code=status_code, detail=message)
+        self.code = code
+        self.technical = technical
+
+    def __str__(self) -> str:
+        return f"{self.detail} {self.technical}"
 
 
 def handoff_disk_to_pbs(
@@ -49,8 +75,10 @@ def handoff_disk_to_pbs(
     client = ProxmoxClient(settings)
     try:
         device = _find_matching_usb_device(client.list_usb_devices(settings.pve_node_name), disk)
-    except HTTPException as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="disk not connected") from exc
+    except DiskHandoffError as exc:
+        # Clear message for the operator, technical detail (USB devices seen) in the run log.
+        _report(progress, "handoff_disk", exc.technical)
+        raise
     vm_config = _get_qemu_config_usb_map(settings)
     slot = disk.pbs_handoff_slot if disk.pbs_handoff_slot and vm_config.get(disk.pbs_handoff_slot) else _find_free_usb_slot(vm_config)
 
@@ -408,21 +436,22 @@ def _find_matching_usb_device(devices: list[dict[str, Any]], disk: ExternalDisk)
     if fallback_match:
         return fallback_match
 
-    detail = (
+    technical = (
         "No Proxmox USB passthrough candidate matched "
         f"disk serial `{disk.serial_number}`"
         f"{_disk_identity_suffix(disk)}. "
         f"Available USB devices: {_summarize_usb_devices(devices)}"
     )
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
+    raise DiskHandoffError(USB_DEVICE_NOT_FOUND, USB_DEVICE_NOT_FOUND_MESSAGE, technical=technical)
 
 
 def _find_strict_serial_match(devices: list[dict[str, Any]], disk: ExternalDisk) -> dict[str, str] | None:
-    serial = (disk.serial_number or "").strip()
+    # Proxmox reports the raw USB serial ("PBOTEST-a") while the disk record
+    # holds the canonical one ("PBOTESTA"): never compare them verbatim.
     model = (disk.model_name or "").strip().casefold()
     for raw_device in devices:
         device_serial = _candidate_value(raw_device, "serial", "serial-number", "serialnumber")
-        if device_serial != serial:
+        if not disk_matches_serial(disk, device_serial):
             continue
         device_model = (_candidate_value(raw_device, "product", "name", "model") or "").casefold()
         if model and device_model and model not in device_model:
@@ -474,6 +503,7 @@ def _summarize_usb_devices(devices: list[dict[str, Any]]) -> str:
     for device in devices:
         manufacturer = _candidate_value(device, "manufacturer") or "unknown manufacturer"
         product = _candidate_value(device, "product", "name", "model") or "unknown product"
+        serial = _candidate_value(device, "serial", "serial-number", "serialnumber") or "no serial"
         busnum = _candidate_value(device, "busnum", "bus") or "unknown busnum"
         devnum = _candidate_value(device, "devnum", "device") or "unknown devnum"
         vendid = _candidate_value(device, "vendid", "vendorid", "vendor_id") or "unknown vendid"
@@ -484,7 +514,7 @@ def _summarize_usb_devices(devices: list[dict[str, Any]]) -> str:
         usb_class = _candidate_value(device, "class", "classid", "usbclass", "usb_class") or "unknown class"
         summaries.append(
             f"{manufacturer} / {product} "
-            f"(busnum={busnum}, devnum={devnum}, usbpath={usbpath}, port={port}, "
+            f"(serial={serial}, busnum={busnum}, devnum={devnum}, usbpath={usbpath}, port={port}, "
             f"vendid={vendid}, prodid={prodid}, class={usb_class}, qemu_mapping={qemu_mapping})"
         )
     return "; ".join(summaries)

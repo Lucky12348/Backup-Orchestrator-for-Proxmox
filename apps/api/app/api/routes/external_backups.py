@@ -54,6 +54,18 @@ def start_run(
     return _build_summary(run, disk.display_name if disk is not None else f"Disk {run.disk_id}")
 
 
+@router.get("/readiness/{disk_id}")
+def get_readiness(disk_id: int, db: DbSession) -> dict[str, object]:
+    """Ready to start an external backup on this disk? Reasons are stable codes
+    (translated by the UI) with an English message."""
+    from app.services.backup_readiness import external_backup_readiness
+
+    disk = db.get(ExternalDisk, disk_id)
+    if disk is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Disk not found")
+    return external_backup_readiness(db, disk)
+
+
 @router.get("/runs", response_model=list[ExternalBackupRunSummaryRead])
 def get_runs(db: DbSession) -> list[ExternalBackupRunSummaryRead]:
     runs = list_external_backup_runs(db)

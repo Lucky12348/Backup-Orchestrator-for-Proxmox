@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 
 import { DataTable } from "../components/DataTable";
@@ -6,18 +6,12 @@ import { EmptyState } from "../components/EmptyState";
 import { PageHeader } from "../components/PageHeader";
 import { StatusBadge } from "../components/StatusBadge";
 import { getDiskFilesystemUsage } from "../diskPlanning";
+import { getExternalBackupReadiness, type ExternalBackupReadiness } from "../api";
 import { focusedDiskId } from "../liveDisks";
+import { readinessTitle } from "../readiness";
 import { formatDateTime } from "../utils";
 import type { DisksPageProps } from "./shared";
 
-const REQUIRED_PBS_CAPABILITIES = [
-  "version-endpoint",
-  "inspect-disk-alias-resolution",
-  "external-export-objects-status",
-  "external-export-objects-cleanup",
-  "dedicated-pbs-eject",
-];
-const REQUIRED_HOST_CAPABILITIES = ["version-endpoint", "qemu-usb-attach", "qemu-usb-detach"];
 
 function CapacityBar({
   used,
@@ -62,7 +56,9 @@ export function DisksPage({
   onDiskEjectRequest,
 }: DisksPageProps) {
   const activeExternalBackup = data.externalBackupRuns.find((run) => run.status === "pending" || run.status === "running");
-  const agentsCompatible = agentsReadyForExternalBackup(data.systemVersion);
+  // The server decides (PBS mode, host agent, disk approved and plugged, run
+  // already active…); the button title gives the actual reason.
+  const readiness = useBackupReadiness(data);
   // /disks?disk=<id> ("Review this disk" from a toast or the setup wizard).
   const focusId = focusedDiskId(useLocation().search);
   const focusRow = useRef<HTMLTableRowElement | null>(null);
@@ -161,7 +157,7 @@ export function DisksPage({
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                       <button
                         className="action-button"
-                        disabled={isSaving(`external-backup-${disk.id}`) || !disk.connected || unusable || Boolean(activeExternalBackup) || !agentsCompatible}
+                        disabled={isSaving(`external-backup-${disk.id}`) || !readiness[disk.id]?.ready}
                         onClick={() => {
                           if (activeExternalBackup) {
                             window.location.hash = "#activity";
@@ -170,15 +166,7 @@ export function DisksPage({
                           onExternalBackupRequest(disk);
                         }}
                         type="button"
-                        title={
-                          unusable
-                            ? disk.detection_reason ?? undefined
-                            : !agentsCompatible
-                              ? "Mettre a jour l'agent PBS"
-                              : activeExternalBackup
-                                ? "Un backup externe est deja en cours"
-                                : undefined
-                        }
+                        title={readinessTitle(readiness[disk.id], t.readiness)}
                       >
                         {t.externalBackupAction}
                       </button>
@@ -207,10 +195,32 @@ function isUnusableDisk(disk: DisksPageProps["data"]["disks"][number]) {
   return disk.capacity_gb <= 0 || disk.candidate_type === "unusable";
 }
 
-function agentsReadyForExternalBackup(systemVersion: DisksPageProps["data"]["systemVersion"]) {
-  if (!systemVersion?.pbs_agent?.ok || !systemVersion.proxmox_agent?.ok) return false;
-  const pbs = new Set(systemVersion.pbs_agent.capabilities ?? []);
-  const host = new Set(systemVersion.proxmox_agent.capabilities ?? []);
-  return REQUIRED_PBS_CAPABILITIES.every((capability) => pbs.has(capability))
-    && REQUIRED_HOST_CAPABILITIES.every((capability) => host.has(capability));
+/** Readiness per disk, re-asked whenever the disk list or the runs change. */
+function useBackupReadiness(data: DisksPageProps["data"]) {
+  const [byDisk, setByDisk] = useState<Record<number, ExternalBackupReadiness>>({});
+  const key = data.disks
+    .map((disk) => `${disk.id}:${disk.connected ? 1 : 0}:${disk.trusted ? 1 : 0}`)
+    .concat(data.externalBackupRuns.map((run) => `r${run.id}:${run.status}`))
+    .join(",");
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all(
+      data.disks.map((disk) =>
+        getExternalBackupReadiness(disk.id).then(
+          (result) => [disk.id, result] as const,
+          () => [disk.id, null] as const,
+        ),
+      ),
+    ).then((entries) => {
+      if (cancelled) return;
+      const next: Record<number, ExternalBackupReadiness> = {};
+      for (const [id, result] of entries) if (result) next[id] = result;
+      setByDisk(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  return byDisk;
 }

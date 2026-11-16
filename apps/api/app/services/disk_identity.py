@@ -57,6 +57,30 @@ def serials_match(left: str | None, right: str | None) -> bool:
     return bool(left_aliases & right_aliases)
 
 
+def disk_serial_candidates(disk: object) -> list[str]:
+    """Every serial known for a disk record: stored (canonical) serial, the one
+    the agent reported, the canonical form and the recorded aliases."""
+    values: list[str] = []
+    for value in (
+        getattr(disk, "serial_number", None),
+        getattr(disk, "reported_serial_number", None),
+        getattr(disk, "canonical_serial_number", None),
+        *(getattr(disk, "serial_aliases", None) or []),
+    ):
+        if isinstance(value, str) and value.strip():
+            _append_unique(values, value.strip())
+    return values
+
+
+def disk_matches_serial(disk: object, serial: str | None) -> bool:
+    """THE way to compare a serial seen elsewhere (Proxmox USB list, PBS disk
+    list, planning event…) with a disk record: case, spaces, dashes,
+    underscores, hex-encoded serials and vendor prefixes ("WD-") ignored."""
+    if not serial or not str(serial).strip():
+        return False
+    return any(serials_match(candidate, serial) for candidate in disk_serial_candidates(disk))
+
+
 def _strip_vendor_prefix(value: str) -> str:
     for prefix in VENDOR_PREFIXES:
         if value.startswith(prefix):

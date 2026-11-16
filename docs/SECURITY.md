@@ -12,9 +12,13 @@ Authentication cannot be disabled. The administrator account lives in the
 `AUTH_USERNAME` / `AUTH_PASSWORD_HASH` pair in `.env` is imported once on the
 first start of an upgraded install.
 
-Sessions are a signed JWT in an `HttpOnly; Secure; SameSite=Strict` cookie
-(`pbo_session`): page scripts cannot read it and cross-site requests do not
-carry it. Lifetime: `AUTH_TOKEN_EXPIRE_MINUTES` setting (max 180).
+Sessions are a signed JWT in an `HttpOnly; Secure; SameSite=Lax; Path=/`
+cookie (`pbo_session`): page scripts cannot read it, and cross-site writes do
+not carry it. Lax (not Strict) so that an API URL opened in a tab — typed, or
+followed from another app such as the Proxmox UI — is authenticated; Strict
+cookies are withheld on such navigations. The API has no state-changing GET,
+and cookie-authenticated POST/PUT/PATCH/DELETE that the browser labels
+`Sec-Fetch-Site: cross-site` are refused (403). Lifetime: `AUTH_TOKEN_EXPIRE_MINUTES` setting (max 180).
 
 ```env
 AUTH_SECRET_KEY=<random>     # signs sessions + derives the settings encryption key

@@ -482,6 +482,23 @@ export interface RegisteredAgent {
   active: boolean;
 }
 
+export interface ReadinessReason {
+  code: string;
+  message: string;
+  [key: string]: unknown;
+}
+
+export interface ExternalBackupReadiness {
+  disk_id: number;
+  ready: boolean;
+  pbs_mode: string;
+  reasons: ReadinessReason[];
+}
+
+export function getExternalBackupReadiness(diskId: number) {
+  return request<ExternalBackupReadiness>(`/external-backups/readiness/${diskId}`);
+}
+
 export function createAgentPairing() {
   return request<AgentPairing>("/agents/pairing", { method: "POST" });
 }

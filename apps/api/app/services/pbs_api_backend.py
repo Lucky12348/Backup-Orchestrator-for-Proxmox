@@ -34,9 +34,19 @@ from typing import Any
 from sqlalchemy import or_, select
 
 from app.core.config import Settings, get_settings
-from app.services.disk_identity import canonical_serial_number, serial_aliases, serials_match
+from app.services.disk_identity import (
+    canonical_serial_number,
+    disk_matches_serial,
+    serial_aliases,
+)
 from app.services.host_agent import HostAgentError, HostAgentResult
-from app.services.pbs_client import PBSApiError, PBSClient, PBSTaskError, PBSTaskTimeout, task_worker_tokens
+from app.services.pbs_client import (
+    PBSApiError,
+    PBSClient,
+    PBSTaskError,
+    PBSTaskTimeout,
+    task_worker_tokens,
+)
 from app.services.pbs_guards import (
     GuardViolation,
     assert_store_idle,
@@ -491,7 +501,7 @@ class PBSApiBackend:
                 select(ExternalDisk).where(
                     or_(ExternalDisk.serial_number == serial, ExternalDisk.canonical_serial_number == serial)
                 )
-            ).all() or [disk for disk in db.scalars(select(ExternalDisk)).all() if serials_match(disk.serial_number, serial)]
+            ).all() or [disk for disk in db.scalars(select(ExternalDisk)).all() if disk_matches_serial(disk, serial)]
             if not candidates:
                 return None
             disk = candidates[0]

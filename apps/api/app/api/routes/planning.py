@@ -5,20 +5,33 @@ from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import select
 
 from app.api.dependencies import DbSession
-from app.models import ExternalDisk, ScheduledBackupEvent, ScheduledBackupRun, ScheduledBackupRunStatus
+from app.models import (
+    ExternalDisk,
+    ScheduledBackupEvent,
+    ScheduledBackupRun,
+    ScheduledBackupRunStatus,
+)
 from app.schemas import (
     DiskPlanningRead,
     PlanningOverviewRead,
+    ScheduledBackupCalendarOccurrenceRead,
     ScheduledBackupEventCreate,
     ScheduledBackupEventRead,
     ScheduledBackupEventUpdate,
-    ScheduledBackupCalendarOccurrenceRead,
     ScheduledBackupRunRead,
     UnplannedAssetRead,
 )
 from app.services.disk_eject import is_disk_auto_eject_eligible
-from app.services.disk_identity import serial_aliases, serials_match
-from app.services.planning import get_disk_planning, get_planning_overview, get_unplanned_assets
+from app.services.disk_identity import (
+    disk_matches_serial,
+    serial_aliases,
+    serials_match,
+)
+from app.services.planning import (
+    get_disk_planning,
+    get_planning_overview,
+    get_unplanned_assets,
+)
 from app.services.planning_scheduler import (
     cancel_planning_run,
     confirm_planning_run,
@@ -26,7 +39,6 @@ from app.services.planning_scheduler import (
     next_occurrence,
     run_event_now,
 )
-
 
 router = APIRouter(prefix="/planning", tags=["planning"])
 logger = logging.getLogger(__name__)
@@ -303,6 +315,8 @@ def _find_disk_by_event_serial(db, event_serial: str) -> ExternalDisk | None:
 
     event_aliases = set(serial_aliases(event_serial))
     for disk in db.scalars(select(ExternalDisk)):
+        if disk_matches_serial(disk, event_serial):
+            return disk
         if serials_match(disk.serial_number, event_serial):
             return disk
         if disk.reported_serial_number and serials_match(disk.reported_serial_number, event_serial):

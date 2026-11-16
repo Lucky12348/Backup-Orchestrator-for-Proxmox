@@ -679,7 +679,9 @@ export function SettingsPage({ t }: SettingsPageProps) {
           {renderVersionRow("App API", systemVersion?.api)}
           {renderVersionRow("Web", systemVersion?.web)}
           {renderVersionRow("Proxmox agent", systemVersion?.proxmox_agent, REQUIRED_HOST_CAPABILITIES)}
-          {renderVersionRow("PBS agent", systemVersion?.pbs_agent, REQUIRED_PBS_CAPABILITIES)}
+          {systemVersion?.pbs_mode === "api"
+            ? renderVersionRow(t.pbsApiComponent, { ...systemVersion.pbs_agent, message: systemVersion.pbs_agent?.message ?? t.pbsApiNoAgent })
+            : renderVersionRow("PBS agent", systemVersion?.pbs_agent, REQUIRED_PBS_CAPABILITIES)}
         </div>
       </section>
 

@@ -7,6 +7,10 @@ import { PageHeader } from "../components/PageHeader";
 import { StatusBadge } from "../components/StatusBadge";
 import { EJECT_NOT_FINISHED_STEP, retryableEjectRunIds } from "../ejectRetry";
 import { useEvents } from "../useEvents";
+
+// Handoff failure code from the API (disk_handoff.USB_DEVICE_NOT_FOUND*).
+const USB_DEVICE_NOT_FOUND_STEP = "usb_device_not_found";
+const USB_DEVICE_NOT_FOUND_MESSAGE = "Disk not found in the Proxmox USB device list.";
 import { formatDateTime, getBackupStatusTone } from "../utils";
 import type { ActivityEvent, ExternalBackupRun } from "../types";
 import type { ActivityPageProps } from "./shared";
@@ -239,12 +243,18 @@ function formatExternalBackupStep(step: string | null, t: ActivityPageProps["t"]
   if (step === EJECT_NOT_FINISHED_STEP) {
     return t.ejectNotFinishedStep;
   }
+  if (step === USB_DEVICE_NOT_FOUND_STEP) {
+    return t.usbDeviceNotFoundStep;
+  }
   return step ?? t.notAvailable;
 }
 
 function formatExternalBackupMessage(message: string | null, t: ActivityPageProps["t"]) {
   if (message === "Existing dedicated PBS datastore reused. No formatting performed.") {
     return t.externalBackupDedicatedReuseMessage;
+  }
+  if (message === USB_DEVICE_NOT_FOUND_MESSAGE) {
+    return t.usbDeviceNotFound;
   }
   return message;
 }

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
 from datetime import datetime, timedelta
 
 from sqlalchemy import select
@@ -21,8 +20,15 @@ from app.models import (
     ScheduledBackupStartMode,
 )
 from app.services.disk_eject import eject_dedicated_external_disk
-from app.services.disk_identity import serial_aliases, serials_match
-from app.services.external_backups import execute_external_backup_run, run_external_backup
+from app.services.disk_identity import (
+    disk_matches_serial,
+    serial_aliases,
+    serials_match,
+)
+from app.services.external_backups import (
+    execute_external_backup_run,
+    run_external_backup,
+)
 from app.services.notifications import (
     notify_backup_failure,
     notify_expected_disk_detected,
@@ -31,7 +37,6 @@ from app.services.notifications import (
     notify_planned_backup_started,
     notify_planned_confirmation_required,
 )
-
 
 logger = logging.getLogger(__name__)
 _scheduler_stop = threading.Event()
@@ -435,6 +440,8 @@ def _get_disk_by_serial_identity(db: Session, serial: str) -> ExternalDisk | Non
 
 
 def _disk_matches_event_serial(disk: ExternalDisk, event_serial: str) -> bool:
+    if disk_matches_serial(disk, event_serial):
+        return True
     if serials_match(disk.serial_number, event_serial):
         return True
     if disk.reported_serial_number and serials_match(disk.reported_serial_number, event_serial):

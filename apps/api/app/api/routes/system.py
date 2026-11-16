@@ -43,6 +43,9 @@ def trigger_auto_sync() -> AutoSyncRead:
 def get_system_version() -> dict[str, object]:
     settings = get_settings()
     return {
+        # "api": PBS driven through its REST API, there is no PBS agent;
+        # "pbs_agent" then describes the API backend (UI label "PBS (API)").
+        "pbs_mode": settings.pbs_mode,
         "api": {
             "component": "api",
             "package_version": "0.1.0",
@@ -58,7 +61,9 @@ def get_system_version() -> dict[str, object]:
             "component": "web",
             "git_sha": _git_sha(),
             "package_version": "0.1.0",
-            "installed_path": settings.frontend_origin,
+            # Served by the API itself (same origin); the old FRONTEND_ORIGIN
+            # setting no longer exists and made this endpoint fail.
+            "installed_path": None,
             "capabilities": [],
         },
     }
@@ -69,6 +74,8 @@ def _agent_version_payload(client) -> dict[str, object]:
         return client.get_version()
     except HostAgentError as exc:
         return {"ok": False, "message": str(exc), "capabilities": []}
+    except Exception as exc:  # noqa: BLE001 — one component down must not break the whole page
+        return {"ok": False, "message": f"{exc.__class__.__name__}: {exc}", "capabilities": []}
 
 
 def _git_sha() -> str | None:

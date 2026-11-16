@@ -158,7 +158,10 @@ class DiskHandoffUsbMatchTests(TestCase):
             )
 
         self.assertEqual(raised.exception.status_code, 404)
-        self.assertIn("Available USB devices", raised.exception.detail)
+        # Clear message for the operator, the device list in the technical detail.
+        self.assertEqual(raised.exception.detail, "Disk not found in the Proxmox USB device list.")
+        self.assertEqual(raised.exception.code, "usb_device_not_found")
+        self.assertIn("Available USB devices", raised.exception.technical)
 
     def test_safe_fallback_reports_ambiguous_matches(self):
         with self.assertRaises(HTTPException) as raised:
