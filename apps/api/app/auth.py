@@ -54,17 +54,25 @@ def _prune_attempts(key: str, now: float) -> list[float]:
 def _assert_login_not_locked_out(key: str) -> None:
     now = time.monotonic()
     with _login_attempts_lock:
-        if len(_prune_attempts(key, now)) >= LOGIN_MAX_ATTEMPTS:
+        attempts = _prune_attempts(key, now)
+        if len(attempts) >= LOGIN_MAX_ATTEMPTS:
+            # The lock ends when the oldest counted failure leaves the window:
+            # the login screen tells how long to wait (Retry-After, seconds).
+            retry_after = max(1, int(LOGIN_WINDOW_SECONDS - (now - attempts[0])) + 1)
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Too many failed login attempts. Try again later.",
+                detail={"code": "login_locked", "message": "Too many failed login attempts. Try again later.", "retry_after": retry_after},
+                headers={"Retry-After": str(retry_after)},
             )
 
 
-def _register_failed_login(key: str) -> None:
+def _register_failed_login(key: str) -> int:
+    """Counts a failure; returns how many attempts are left before the lock."""
     now = time.monotonic()
     with _login_attempts_lock:
-        _prune_attempts(key, now).append(now)
+        attempts = _prune_attempts(key, now)
+        attempts.append(now)
+        return max(0, LOGIN_MAX_ATTEMPTS - len(attempts))
 
 
 def reset_login_attempts() -> None:
@@ -182,8 +190,11 @@ def login(
 
     user = authenticate(db, form_data.username, form_data.password)
     if user is None:
-        _register_failed_login(client_key)
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password")
+        remaining = _register_failed_login(client_key)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "login_invalid", "message": "Incorrect username or password", "attempts_left": remaining, "lock_minutes": LOGIN_WINDOW_SECONDS // 60},
+        )
 
     return start_session(response, user.username, language=user.language)
 

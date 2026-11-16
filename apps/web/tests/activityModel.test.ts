@@ -10,6 +10,7 @@ import {
   activitySummary,
   durationText,
   filterActivity,
+  groupActivity,
   type ActivityLike,
 } from "../src/views/activity/activityModel.ts";
 import { todoItems } from "../src/views/dashboard/dashboardModel.ts";
@@ -107,4 +108,34 @@ test("dashboard 'to do': planned runs waiting for a confirmation come first", ()
     now: NOW,
   });
   assert.deepEqual(items, [{ kind: "to_confirm", tone: "warn", label: "Rotation hebdo", href: "/planning", runId: 9 }]);
+});
+
+test("grouping: unplugged then plugged back = one 'replugged' line; identical failures = one line ×N", () => {
+  const items = [
+    entry({ id: "p", type: "detection", status: "plugged", at: "2026-11-16T10:10:00Z", run_id: null }),
+    entry({ id: "u", type: "detection", status: "unplugged", at: "2026-11-16T10:00:00Z", run_id: null }),
+    ...[1, 2, 3, 4].map((n) => entry({ id: `f${n}`, status: "failed", step: "disk_not_plugged", at: `2026-11-1${5 - n}T09:00:00Z` })),
+    entry({ id: "ok", at: "2026-11-01T09:00:00Z" }),
+  ];
+  const texts = { disk_not_plugged: "Disque débranché" };
+  const summary = (item: ActivityLike) => activitySummary(item, FR, "fr", texts);
+  const groups = groupActivity(items, summary);
+  assert.deepEqual(
+    groups.map((group) => [group.item.id, group.item.status, group.count, group.members.length]),
+    [
+      ["p", "replugged", 1, 2],
+      ["f1", "failed", 4, 4],
+      ["ok", "success", 1, 1],
+    ],
+  );
+  assert.equal(summary(groups[0].item), "Disque rebranché");
+  // Plugged back much later: two separate lines.
+  const late = groupActivity([items[0], { ...items[1], at: "2026-11-15T10:00:00Z" }], summary);
+  assert.equal(late.length, 2);
+});
+
+test("default filter: backups and ejects only", () => {
+  const items = [entry({ id: "b" }), entry({ id: "e", type: "eject" }), entry({ id: "d", type: "detection", status: "plugged" }), entry({ id: "pl", type: "planning", status: "missed" })];
+  const base = { type: "runs", state: "", diskId: null, days: 30, query: "" } as const;
+  assert.deepEqual(filterActivity(items, base, NOW).map((item) => item.id), ["b", "e"]);
 });

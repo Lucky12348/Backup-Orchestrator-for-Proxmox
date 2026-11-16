@@ -37,6 +37,7 @@ export default {
     "./src/runs/**/*.{ts,tsx}",
     // Redesigned pages (Phase 5b: dashboard, disks).
     "./src/views/**/*.{ts,tsx}",
+    "./src/pages/LoginPage.tsx",
     // Shared legacy components restyled with the new tokens (listed one by one:
     // the legacy pages' own class names must never generate utilities).
     "./src/components/PageHeader.tsx",

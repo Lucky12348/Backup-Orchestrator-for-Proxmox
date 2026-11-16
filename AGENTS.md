@@ -366,6 +366,34 @@ should reach them — and every call is additionally protected with an
   Proxmox report GiB. Format sizes only with `src/units.ts`
   (`formatGib`, `formatBytes`); `MIN_DISK_SIZE_GB` = the PBS guard minimum in GiB.
 
+## Remaining pages, cleanup, login (Phase 6b)
+
+- **B29**: `scheduled_backup_runs.backup_run_id` references
+  `external_backup_runs`; deleting a run (cleanup or single delete) first
+  detaches the planned runs (`external_backups._detach_planned_runs`) — the
+  planning history stays. PostgreSQL enforces the FK (SQLite tests do not by
+  default): `tests/test_cleanup.py` turns `PRAGMA foreign_keys=ON`.
+- Layout: content up to 2200 px, left-aligned (no centring); Disks = cards
+  `auto-fit` + fixed 380 px panel. Agenda: `calendarModel.layoutDay` = at most
+  3 side-by-side events, the rest in a "+N" chip; hovering an hour shows
+  "+ 14:00". Proxmox jobs are labelled "Proxmox backup → <storage>" (the job
+  id only in the details: `job_id` / `job_comment` on agenda items).
+- Activity: default filter "runs" (backups + ejects); `groupActivity` merges
+  unplugged→plugged (≤ 30 min) into "replugged" and identical consecutive
+  entries into one line ×N.
+- Resources (`src/views/resources/`): table + bulk job add/remove/ignore;
+  `last_external_copy_at` on `/vms` (`services/external_copies.py`). The
+  Proxmox job create/edit/delete section is the legacy `AssetsPage jobsOnly`.
+- Integrations (`src/views/integrations/`): `GET /integrations/health`,
+  `POST /integrations/{pve|pbs|agent}/test` (`services/integration_health.py`,
+  checks in parallel, no secret in the answer); `DELETE /agents/revoked`.
+  "Reconfigure" opens `/setup/reconfigure/<agent|pve|pbs>` (wizard
+  `reconfigure` prop: that step only, progress untouched). Agent install =
+  the wizard's `AgentStep`.
+- Login (`pages/LoginPage.tsx`, wizard style): 401 → `detail.attempts_left`,
+  429 → `detail.code = login_locked` + `Retry-After`; `src/loginModel.ts`
+  builds the messages.
+
 ## Disk ↔ USB port (Phase 4.4, read before touching the USB passthrough)
 
 - The host agent reports, for each USB disk, its physical USB location read

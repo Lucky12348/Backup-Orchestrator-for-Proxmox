@@ -5,13 +5,15 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-
 import { getExternalBackupPreview, AUTH_EXPIRED_EVENT } from "./api";
 import { AuthProvider, useAuth } from "./AuthContext";
 import { LoginPage } from "./pages/LoginPage";
-import { SETUP_PATH, setupRedirect } from "./setup/logic";
+import { SETUP_PATH, reconfigureStep, setupRedirect } from "./setup/logic";
 import { AppShellV2, LegacyPage } from "./shell/AppShellV2";
 import { NoticeToasts } from "./shell/NoticeToasts";
 import { DashboardView } from "./views/dashboard/DashboardView";
 import { DisksView } from "./views/disks/DisksView";
 import { ActivityView } from "./views/activity/ActivityView";
 import { PlanningView } from "./views/planning/PlanningView";
+import { IntegrationsView } from "./views/integrations/IntegrationsView";
+import { ResourcesView } from "./views/resources/ResourcesView";
 import { expectRunModal, openRunModal } from "./runs/openRun";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { ErrorBanner } from "./components/ErrorBanner";
@@ -19,7 +21,6 @@ import { LoadingBlock } from "./components/LoadingBlock";
 import { useAppData } from "./hooks/useAppData";
 import { translations, type Language } from "./i18n";
 import { AssetsPage } from "./pages/AssetsPage";
-import { IntegrationsPage } from "./pages/IntegrationsPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import type { ExternalDisk } from "./types";
@@ -87,28 +88,6 @@ function AuthenticatedApp() {
 
   function openConfirm(nextState: ConfirmState) { setConfirmState(nextState); }
   function closeConfirm() { setConfirmState(null); }
-
-  function handleProxmoxSyncRequest() {
-    openConfirm({
-      title: t.confirmSyncInventoryTitle,
-      description: t.confirmSyncInventoryDescription,
-      confirmLabel: t.proxmoxSync,
-      cancelLabel: t.cancel,
-      tone: "info",
-      onConfirm: () => { void runProxmoxSync(t.proxmoxSyncSummary); closeConfirm(); },
-    });
-  }
-
-  function handlePBSSyncRequest() {
-    openConfirm({
-      title: t.confirmSyncBackupsTitle,
-      description: t.confirmSyncBackupsDescription,
-      confirmLabel: t.pbsSync,
-      cancelLabel: t.cancel,
-      tone: "info",
-      onConfirm: () => { void runPBSSync(t.pbsSyncSummary); closeConfirm(); },
-    });
-  }
 
   async function handleExternalBackupRequest(disk: ExternalDisk) {
     if (!disk.trusted) {
@@ -245,14 +224,30 @@ function AuthenticatedApp() {
           />
           <Route
             element={
-              <LegacyPage><AssetsPage
-                data={data} language={language}
-                onAssetIgnoreChange={(vm, ignored) => void mutateAssetIgnore(vm, ignored)}
-                onBackupJobSelectionChange={(jobId, vmids) => void mutateBackupJobSelection(jobId, vmids)}
-                onRefresh={refresh}
-                pbsInventoryByVmId={pbsInventoryByVmId}
-                isSaving={isSaving} t={t}
-              /></LegacyPage>
+              <>
+                <ResourcesView
+                  vms={data.vms}
+                  jobs={data.proxmoxBackupJobs}
+                  language={language}
+                  t={t}
+                  onIgnore={(vm, ignored) => mutateAssetIgnore(vm, ignored)}
+                  onJobSelection={(jobId, vmids) => mutateBackupJobSelection(jobId, vmids)}
+                />
+                {/* Proxmox backup jobs (create / edit / delete): the existing section, below the table. */}
+                <div className="mt-8">
+                  <LegacyPage>
+                    <AssetsPage
+                      jobsOnly
+                      data={data} language={language}
+                      onAssetIgnoreChange={(vm, ignored) => void mutateAssetIgnore(vm, ignored)}
+                      onBackupJobSelectionChange={(jobId, vmids) => void mutateBackupJobSelection(jobId, vmids)}
+                      onRefresh={refresh}
+                      pbsInventoryByVmId={pbsInventoryByVmId}
+                      isSaving={isSaving} t={t}
+                    />
+                  </LegacyPage>
+                </div>
+              </>
             }
             path="/assets"
           />
@@ -289,12 +284,12 @@ function AuthenticatedApp() {
           />
           <Route
             element={
-              <LegacyPage><IntegrationsPage
-                data={data} language={language}
-                onPBSSyncRequest={handlePBSSyncRequest}
-                onProxmoxSyncRequest={handleProxmoxSyncRequest}
-                pbsSyncing={pbsSyncing} proxmoxSyncing={proxmoxSyncing} t={t}
-              /></LegacyPage>
+              <IntegrationsView
+                language={language}
+                t={t}
+                onSync={(key) => (key === "pve" ? runProxmoxSync(t.proxmoxSyncSummary) : runPBSSync(t.pbsSyncSummary))}
+                syncing={(key) => (key === "pve" ? proxmoxSyncing : pbsSyncing)}
+              />
             }
             path="/integrations"
           />
@@ -373,6 +368,14 @@ function AppInner() {
   }
   if (status !== "authenticated") {
     return <LoginPage t={t} />;
+  }
+  const reconfigure = setupCompleted ? reconfigureStep(location.pathname) : null;
+  if (reconfigure) {
+    return (
+      <Suspense fallback={loading}>
+        <SetupWizard reconfigure={reconfigure} onFinished={(path) => navigate(path ?? "/integrations", { replace: true })} />
+      </Suspense>
+    );
   }
   const redirect = setupRedirect(location.pathname, setupCompleted);
   if (redirect) {

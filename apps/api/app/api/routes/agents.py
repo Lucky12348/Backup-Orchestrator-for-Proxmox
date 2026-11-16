@@ -27,6 +27,7 @@ from app.services.agent_bootstrap import (
     render_install_script,
 )
 from app.services.agent_registry import (
+    purge_revoked_agents,
     PairingError,
     RegistrationValidationError,
     TooManyAttemptsError,
@@ -80,6 +81,12 @@ def create_pairing(request: Request, db: DbSession) -> PairingCodeRead:
 @router.get("", response_model=list[RegisteredAgentRead])
 def get_agents(db: DbSession) -> list[RegisteredAgentRead]:
     return [_agent_read(agent) for agent in list_agents(db)]
+
+
+@router.delete("/revoked")
+def delete_revoked_agents(db: DbSession) -> dict[str, int]:
+    """Removes the revoked agents from the history (Integrations page)."""
+    return {"deleted": purge_revoked_agents(db)}
 
 
 @router.delete("/{agent_id}", response_model=RegisteredAgentRead)

@@ -14,6 +14,8 @@ export interface AssetPageProps extends PageCommonProps {
   onAssetIgnoreChange: (vm: VirtualMachine, ignored: boolean) => void;
   onBackupJobSelectionChange: (jobId: string, selectedVmids: number[]) => void;
   onRefresh: () => Promise<void>;
+  /** Phase 6b: only the "Proxmox backup jobs" section (the table is ResourcesView). */
+  jobsOnly?: boolean;
 }
 
 export interface DiskActionRequest {
@@ -26,13 +28,6 @@ export interface DiskPreparationSubmitPayload {
   mode: DiskPreparationMode;
   mountBasePath?: string;
   confirmDestructive: boolean;
-}
-
-export interface IntegrationsPageProps extends PageCommonProps {
-  proxmoxSyncing: boolean;
-  pbsSyncing: boolean;
-  onProxmoxSyncRequest: () => void;
-  onPBSSyncRequest: () => void;
 }
 
 export interface SettingsPageProps {

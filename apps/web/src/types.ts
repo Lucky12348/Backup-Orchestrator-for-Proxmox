@@ -19,6 +19,8 @@ export interface VirtualMachine {
   last_backup_at: string | null;
   ignored: boolean;
   ignore_reason: string | null;
+  /** Last successful external copy (Phase 6b). */
+  last_external_copy_at?: string | null;
 }
 
 export interface AssetIgnore {

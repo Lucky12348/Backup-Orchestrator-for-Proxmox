@@ -45,7 +45,7 @@ const OVERVIEW: { key: NavKey | "resources"; to: string; icon: typeof LayoutDash
   { key: "planning", to: "/planning", icon: CalendarDays },
   { key: "activity", to: "/activity", icon: Activity },
 ];
-// Pages that use the whole width (the calendar); the others are capped at 1760 px.
+// Pages that use the whole width (the calendar); the others stop at 2200 px.
 const FULL_WIDTH = ["/planning"];
 const CONFIGURATION: { key: NavKey; to: string; icon: typeof LayoutDashboard }[] = [
   { key: "integrations", to: "/integrations", icon: Plug },
@@ -151,7 +151,8 @@ function ShellLayout({
   const label = (key: NavKey | "resources") => (key === "resources" ? t.shell.resources : t.nav[key]);
 
   const sidebar = (
-    <aside className="flex h-full w-[248px] flex-col gap-0.5 border-r border-border bg-surface px-4 pb-4 pt-5">
+    // No text caret / selection in the menu (a caret showed under "Settings").
+    <aside className="flex h-full w-[248px] select-none flex-col gap-0.5 border-r border-border bg-surface px-4 pb-4 pt-5 [caret-color:transparent]">
       <div className="flex items-center gap-2.5 px-1.5 pb-5">
         <div className="flex h-8 w-8 items-center justify-center rounded-[9px] bg-accent text-white">
           <ShieldCheck className="h-[18px] w-[18px]" />
@@ -242,8 +243,9 @@ function ShellLayout({
         {/* B27: fluid content, side padding, a wide cap centred only beyond it. */}
         <div
           className={cn(
-            "mx-auto w-full px-4 py-5 sm:px-7 sm:py-7 2xl:px-10",
-            !FULL_WIDTH.some((path) => location.pathname.startsWith(path)) && "max-w-[1760px]",
+            // B27: the whole useful width (side padding only), up to ~2200 px; no centring.
+            "w-full px-4 py-5 sm:px-7 sm:py-7 2xl:px-10",
+            !FULL_WIDTH.some((path) => location.pathname.startsWith(path)) && "max-w-[2200px]",
           )}
         >
           {children}

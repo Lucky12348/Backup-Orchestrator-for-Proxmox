@@ -16,6 +16,7 @@ import {
   resolveTheme,
   stepIndex,
   WIZARD_STEPS,
+  type ReconfigurableStep,
   type ThemePreference,
   type WizardStep,
 } from "./logic";
@@ -65,7 +66,14 @@ function useTheme() {
  * the non-secret results live server-side (`/api/v1/setup/progress`), so a
  * reload resumes where the operator left off.
  */
-export function SetupWizard({ onFinished }: { onFinished: (path?: string) => void }) {
+export function SetupWizard({
+  onFinished,
+  reconfigure,
+}: {
+  onFinished: (path?: string) => void;
+  /** Integrations "Reconfigure": only this step, then back to the Integrations page. */
+  reconfigure?: ReconfigurableStep | null;
+}) {
   // English by default; the selector below is on every screen, the first one included.
   const { status: authStatus, language, setLanguage } = useAuth();
   const text = WIZARD_TEXT[language];
@@ -87,9 +95,14 @@ export function SetupWizard({ onFinished }: { onFinished: (path?: string) => voi
     if (authStatus === "authenticated") void load();
   }, [authStatus, load]);
 
-  const step: WizardStep = authStatus === "needs-setup" ? "admin" : normalizeStep(progress?.current_step);
+  const step: WizardStep = reconfigure ?? (authStatus === "needs-setup" ? "admin" : normalizeStep(progress?.current_step));
 
   const goTo = useCallback(async (target: WizardStep) => {
+    if (reconfigure) {
+      // The stored progress of a finished setup is not touched.
+      onFinished("/integrations");
+      return;
+    }
     setMoving(true);
     setError(null);
     try {
@@ -101,12 +114,13 @@ export function SetupWizard({ onFinished }: { onFinished: (path?: string) => voi
     } finally {
       setMoving(false);
     }
-  }, []);
+  }, [reconfigure, onFinished]);
 
   const mergeData = (key: "pve" | "pbs", value: PveSummary | PbsSummary) =>
     setProgress((current) => (current ? { ...current, data: { ...current.data, [key]: value } } : current));
 
   const back = () => {
+    if (reconfigure) return onFinished("/integrations");
     const target = previousStep(step);
     if (target) void goTo(target);
   };

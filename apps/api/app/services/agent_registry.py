@@ -240,6 +240,16 @@ def revoke_agent(db: Session, agent_id: int, *, now: datetime | None = None) -> 
     return agent
 
 
+def purge_revoked_agents(db: Session) -> int:
+    """Integrations page "Delete the revoked agents": their rows go, the
+    active agent of each role stays."""
+    revoked = list(db.scalars(select(RegisteredAgent).where(RegisteredAgent.revoked_at.is_not(None))))
+    for agent in revoked:
+        db.delete(agent)
+    db.commit()
+    return len(revoked)
+
+
 def active_agent(db: Session, role: str) -> RegisteredAgent | None:
     return db.scalar(
         select(RegisteredAgent)

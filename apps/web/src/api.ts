@@ -609,3 +609,34 @@ export interface ActivityItem {
 export function getActivityFeed(days = 90) {
   return request<ActivityItem[]>(`/activity-events/feed?days=${days}`);
 }
+
+// --- Integrations page (Phase 6b) ----------------------------------------------------
+
+export type IntegrationKey = "pve" | "pbs" | "agent";
+
+export interface IntegrationHealth {
+  key: IntegrationKey;
+  configured: boolean;
+  ok: boolean;
+  code: "not_configured" | "unreachable" | null;
+  url: string | null;
+  fingerprint: string | null;
+  node: string | null;
+  version: string | null;
+  latency_ms: number | null;
+  last_sync_at: string | null;
+  last_sync_error: string | null;
+  message: string | null;
+}
+
+export function getIntegrationsHealth() {
+  return request<IntegrationHealth[]>("/integrations/health");
+}
+
+export function testIntegration(key: IntegrationKey) {
+  return request<IntegrationHealth>(`/integrations/${key}/test`, { method: "POST" });
+}
+
+export function deleteRevokedAgents() {
+  return request<{ deleted: number }>("/agents/revoked", { method: "DELETE" });
+}

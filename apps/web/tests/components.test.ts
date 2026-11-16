@@ -34,7 +34,9 @@ before(async () => {
         'export { ConfirmProvider } from "./src/ui/confirm";',
         'export { MemoryRouter } from "react-router-dom";',
         'export { PlanningView, DetailCard, EventChip } from "./src/views/planning/PlanningView";',
-        'export { ActivityRow } from "./src/views/activity/ActivityView";',
+        'export { ActivityRow, ActivityGroupRow } from "./src/views/activity/ActivityView";',
+        'export { ResourcesView } from "./src/views/resources/ResourcesView";',
+        'export { IntegrationCard } from "./src/views/integrations/IntegrationsView";',
         'export { UserMenu } from "./src/shell/AppShellV2";',
       ].join("\n"),
       resolveDir: WEB,
@@ -380,4 +382,75 @@ test("UserMenu: avatar, name and role in one button (the menu opens on click)", 
   assert.ok(markup.includes('aria-haspopup="menu"') && markup.includes('aria-expanded="false"'));
   assert.ok(markup.includes("admin") && markup.includes("Administrateur"));
   assert.ok(!markup.includes("<select")); // no more stacked selector on the same line
+});
+
+// --- Phase 6b: Resources, Integrations, grouped activity -------------------------------
+
+test("ResourcesView: table, protection badges (infrastructure), filters, last external copy", () => {
+  const markup = html(
+    inApp(
+      createElement(ui.ResourcesView, {
+        vms: [
+          { id: 1, name: "web", vm_type: "vm", external_id: "100", node_name: "pve", runtime_status: "running", size_gb: 32, last_backup_at: "2026-11-15T03:00:00Z", last_external_copy_at: "2026-11-15T10:00:00Z", ignored: false, ignore_reason: null },
+          { id: 2, name: "pbs", vm_type: "vm", external_id: "110", node_name: "pve", runtime_status: "running", size_gb: 64, last_backup_at: null, ignored: true, ignore_reason: "infrastructure" },
+        ],
+        jobs: [{ job_id: "backup-1", enabled: true, storage: "pbs", selection_mode: "include_selected_vms", selected_vmids: [100], supported: true }],
+        language: "fr",
+        t: translations.fr,
+        onIgnore: () => undefined,
+        onJobSelection: () => undefined,
+        now: new Date("2026-11-16T12:00:00Z"),
+      }),
+    ),
+  );
+  assert.ok(markup.includes("<h1") && markup.includes("Ressources"));
+  assert.ok(markup.includes('data-protection="protected"') && markup.includes('data-protection="infrastructure"'));
+  assert.ok(markup.includes("Infrastructure") && markup.includes("backup-1"));
+  assert.ok(markup.includes("Dernière copie externe") && markup.includes("32 Gio"));
+  assert.ok(markup.includes("Nom ou VMID"));
+});
+
+test("IntegrationCard: state, version, latency, fingerprint, Test / Sync / Reconfigure", () => {
+  const markup = html(
+    inApp(
+      createElement(ui.IntegrationCard, {
+        integration: "pve",
+        health: {
+          key: "pve", configured: true, ok: true, code: null, url: "https://pve:8006/api2/json", fingerprint: "AA:BB:CC", node: "pve",
+          version: "9.0.3", latency_ms: 42, last_sync_at: null, last_sync_error: null, message: null,
+        },
+        checking: false,
+        syncing: false,
+        language: "fr",
+        t: translations.fr,
+        now: new Date("2026-11-16T12:00:00Z"),
+        onTest: () => undefined,
+        onSync: () => undefined,
+      }),
+    ),
+  );
+  assert.ok(markup.includes('data-state="ok"') && markup.includes("Connecté"));
+  assert.ok(markup.includes("9.0.3") && markup.includes("42 ms") && markup.includes('value="AA:BB:CC"'));
+  assert.ok(markup.includes("Tester") && markup.includes("Synchroniser") && markup.includes("Reconfigurer"));
+});
+
+test("ActivityGroupRow: identical failures in one line ×N (folded)", () => {
+  const failure = (id: string) => ({
+    id, type: "backup", status: "failed", at: "2026-11-15T09:00:00Z", finished_at: null, duration_seconds: 30, disk_id: 1, disk_label: "WD",
+    run_id: 1, planned: false, auto_eject: false, step: "disk_not_plugged", progress_percent: null, transferred_bytes: null, no_new_data: false, message: null,
+  });
+  const members = ["a", "b", "c", "d"].map(failure);
+  const markup = html(
+    inApp(
+      createElement(ui.ActivityGroupRow, {
+        group: { item: members[0], count: 4, members },
+        summary: () => "Échec de la sauvegarde : Disque débranché",
+        language: "fr",
+        t: translations.fr,
+        now: new Date("2026-11-16T12:00:00Z"),
+      }),
+    ),
+  );
+  assert.ok(markup.includes('data-group="4"') && markup.includes("×4") && markup.includes('aria-expanded="false"'));
+  assert.equal((markup.match(/data-activity=/g) ?? []).length, 1); // folded: one visible line
 });

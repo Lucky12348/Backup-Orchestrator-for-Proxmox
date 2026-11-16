@@ -26,8 +26,18 @@ export function setupRedirect(pathname: string, setupCompleted: boolean | null):
   if (setupCompleted === null) return null; // status still loading
   const onSetup = pathname === SETUP_PATH || pathname.startsWith(`${SETUP_PATH}/`);
   if (!setupCompleted && !onSetup) return SETUP_PATH;
-  if (setupCompleted && onSetup) return "/";
+  if (setupCompleted && onSetup && !reconfigureStep(pathname)) return "/";
   return null;
+}
+
+/** Integrations "Reconfigure": /setup/reconfigure/<agent|pve|pbs> opens that step only. */
+export const RECONFIGURE_PATH = `${SETUP_PATH}/reconfigure`;
+export const RECONFIGURABLE_STEPS = ["agent", "pve", "pbs"] as const;
+export type ReconfigurableStep = (typeof RECONFIGURABLE_STEPS)[number];
+
+export function reconfigureStep(pathname: string): ReconfigurableStep | null {
+  const value = pathname.startsWith(`${RECONFIGURE_PATH}/`) ? pathname.slice(RECONFIGURE_PATH.length + 1).replace(/\/$/, "") : "";
+  return (RECONFIGURABLE_STEPS as readonly string[]).includes(value) ? (value as ReconfigurableStep) : null;
 }
 
 export function normalizeStep(

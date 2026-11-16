@@ -38,6 +38,9 @@ export interface AgendaItem {
   progress_percent: number | null;
   message: string | null;
   read_only: boolean;
+  /** Proxmox jobs: their id and comment (shown in the details only). */
+  job_id?: string | null;
+  job_comment?: string | null;
 }
 
 /** A calendar day, independent of any time zone. */
@@ -220,6 +223,56 @@ export interface Placed {
 
 // Minutes: two readable lines in the time grid (34 px per hour).
 const MIN_HEIGHT = 60;
+
+/** At most this many side-by-side columns; the rest goes into a "+N" chip. */
+export const MAX_LANES = 3;
+
+export interface Overflow {
+  top: number;
+  height: number;
+  lane: number;
+  lanes: number;
+  items: AgendaItem[];
+}
+
+/**
+ * Google-Calendar-like layout of one day: overlapping items side by side
+ * (readable minimum width), beyond MAX_LANES columns the extra items are
+ * grouped in a "+N" chip (last column) that opens their list.
+ */
+export function layoutDay(items: readonly AgendaItem[], day: Day, tz: string): { placed: Placed[]; overflow: Overflow[] } {
+  const all = placeDay(items, day, tz);
+  const placed: Placed[] = [];
+  const overflow: Overflow[] = [];
+  const byGroup = new Map<string, Placed[]>();
+  // placeDay gives every item of an overlapping group the same `lanes`; group by
+  // connected time ranges again to build the overflow chips.
+  let groupKey = 0;
+  let groupEnd = -1;
+  for (const entry of all) {
+    if (entry.top >= groupEnd) groupKey += 1;
+    groupEnd = Math.max(groupEnd, entry.top + entry.height);
+    const key = String(groupKey);
+    byGroup.set(key, [...(byGroup.get(key) ?? []), entry]);
+  }
+  for (const group of byGroup.values()) {
+    if (group[0].lanes <= MAX_LANES) {
+      placed.push(...group);
+      continue;
+    }
+    const hidden = group.filter((entry) => entry.lane >= MAX_LANES - 1);
+    for (const entry of group) if (entry.lane < MAX_LANES - 1) placed.push({ ...entry, lanes: MAX_LANES });
+    const top = Math.min(...hidden.map((entry) => entry.top));
+    const end = Math.max(...hidden.map((entry) => entry.top + entry.height));
+    overflow.push({ top, height: Math.max(MIN_HEIGHT, end - top), lane: MAX_LANES - 1, lanes: MAX_LANES, items: hidden.map((entry) => entry.item) });
+  }
+  return { placed, overflow };
+}
+
+/** Minutes since midnight → the hour slot under the pointer ("+ 14:00"). */
+export function hourLabel(hour: number): string {
+  return `${String(Math.max(0, Math.min(23, hour))).padStart(2, "0")}:00`;
+}
 
 /** Time-grid placement of one day's items; overlapping items share the width. */
 export function placeDay(items: readonly AgendaItem[], day: Day, tz: string): Placed[] {

@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarClock, CheckCircle2, HardDrive, Loader2, Search, Trash2, Unplug, XCircle } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { CalendarClock, ChevronDown, CheckCircle2, HardDrive, Loader2, Search, Trash2, Unplug, XCircle } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { getActivityFeed, type ActivityItem } from "../../api";
@@ -9,7 +9,7 @@ import type { Language, TranslationDictionary } from "../../i18n";
 import { openRunModal } from "../../runs/openRun";
 import { useConfirm } from "../../ui/confirm";
 import { InfoTip } from "../../ui/InfoTip";
-import { formatWhen } from "../format";
+import { fill, formatWhen } from "../format";
 import {
   ACTIVITY_STATES,
   ACTIVITY_TYPES,
@@ -19,7 +19,10 @@ import {
   activitySummary,
   durationText,
   filterActivity,
+  groupActivity,
   type ActivityFilters,
+  type ActivityGroup,
+  type ActivityTypeFilter,
   type ActivityState,
   type ActivityType,
 } from "./activityModel";
@@ -56,7 +59,7 @@ export function ActivityView({ language, t, refreshKey, onCleanup, cleaning, fet
   const confirm = useConfirm();
   const [items, setItems] = useState<ActivityItem[] | null>(null);
   const [failed, setFailed] = useState(false);
-  const [filters, setFilters] = useState<ActivityFilters>({ type: "", state: "", diskId: null, days: 30, query: "" });
+  const [filters, setFilters] = useState<ActivityFilters>({ type: "runs", state: "", diskId: null, days: 30, query: "" });
   const now = fixedNow ?? new Date();
   const fetchDays = Math.max(90, filters.days);
 
@@ -75,6 +78,7 @@ export function ActivityView({ language, t, refreshKey, onCleanup, cleaning, fet
   const stepTexts = useMemo(() => handoffStepTexts(t), [t]);
   const summary = (item: ActivityItem) => activitySummary(item, text.summary, language, stepTexts);
   const shown = filterActivity(items ?? [], filters, now, summary);
+  const groups = groupActivity(shown, summary);
   const disks = activityDisks(items ?? []);
   const set = (patch: Partial<ActivityFilters>) => setFilters((current) => ({ ...current, ...patch }));
 
@@ -112,7 +116,8 @@ export function ActivityView({ language, t, refreshKey, onCleanup, cleaning, fet
             className="min-w-0 flex-1 border-0 bg-transparent text-[13px] text-fg outline-none placeholder:text-faint"
           />
         </label>
-        <select aria-label={text.allTypes} className={select} value={filters.type} onChange={(event) => set({ type: event.target.value as ActivityType | "" })}>
+        <select aria-label={text.allTypes} className={select} value={filters.type} onChange={(event) => set({ type: event.target.value as ActivityTypeFilter })}>
+          <option value="runs">{text.runsOnly}</option>
           <option value="">{text.allTypes}</option>
           {ACTIVITY_TYPES.map((type) => (
             <option key={type} value={type}>
@@ -157,8 +162,8 @@ export function ActivityView({ language, t, refreshKey, onCleanup, cleaning, fet
           <p className="m-0 px-5 py-8 text-center text-[13px] text-faint">{items.length ? text.noMatch : text.empty}</p>
         ) : null}
         <ol className="m-0 list-none p-0">
-          {shown.map((item) => (
-            <ActivityRow key={item.id} item={item} summary={summary(item)} language={language} t={t} now={now} />
+          {groups.map((group) => (
+            <ActivityGroupRow key={group.item.id} group={group} summary={summary} language={language} t={t} now={now} />
           ))}
         </ol>
       </section>
@@ -166,7 +171,76 @@ export function ActivityView({ language, t, refreshKey, onCleanup, cleaning, fet
   );
 }
 
-export function ActivityRow({ item, summary, language, t, now }: { item: ActivityItem; summary: string; language: Language; t: TranslationDictionary; now: Date }) {
+/** One line; identical consecutive entries are one line "×N" that unfolds. */
+export function ActivityGroupRow({
+  group,
+  summary,
+  language,
+  t,
+  now,
+}: {
+  group: ActivityGroup<ActivityItem>;
+  summary: (item: ActivityItem) => string;
+  language: Language;
+  t: TranslationDictionary;
+  now: Date;
+}) {
+  const [open, setOpen] = useState(false);
+  if (group.count === 1) return <ActivityRow item={group.item} summary={summary(group.item)} language={language} t={t} now={now} />;
+  const text = t.activityV2;
+  return (
+    <li data-group={group.count} className="border-0 border-b border-solid border-border last:border-b-0">
+      <ol className="m-0 list-none p-0">
+        <ActivityRow
+          item={group.item}
+          summary={summary(group.item)}
+          language={language}
+          t={t}
+          now={now}
+          badge={
+            <button
+              type="button"
+              aria-expanded={open}
+              aria-label={open ? text.collapse : fill(text.expand, { n: group.count })}
+              title={open ? text.collapse : fill(text.expand, { n: group.count })}
+              onClick={(event) => {
+                event.stopPropagation();
+                setOpen(!open);
+              }}
+              className="inline-flex items-center gap-0.5 rounded-full border-0 bg-subtle px-2 py-px text-[11px] font-semibold text-muted hover:text-fg"
+            >
+              {fill(text.times, { n: group.count })}
+              <ChevronDown className={cn("h-3 w-3 transition-transform", open && "rotate-180")} />
+            </button>
+          }
+        />
+        {open
+          ? group.members.map((member) => (
+              <ActivityRow key={`member-${member.id}`} item={member} summary={summary(member)} language={language} t={t} now={now} nested />
+            ))
+          : null}
+      </ol>
+    </li>
+  );
+}
+
+export function ActivityRow({
+  item,
+  summary,
+  language,
+  t,
+  now,
+  badge,
+  nested,
+}: {
+  item: ActivityItem;
+  summary: string;
+  language: Language;
+  t: TranslationDictionary;
+  now: Date;
+  badge?: ReactNode;
+  nested?: boolean;
+}) {
   const text = t.activityV2;
   const state = activityState(item);
   const { icon: StateIcon, className } = STATE_ICON[state];
@@ -187,6 +261,7 @@ export function ActivityRow({ item, summary, language, t, now }: { item: Activit
           <span className="text-faint">·</span>
           <span className="truncate text-muted">{item.disk_label}</span>
           {item.planned && item.type !== "planning" ? <span className="rounded bg-subtle px-1.5 text-[11px] text-faint">{text.planned}</span> : null}
+          {badge}
         </span>
         <span className={cn("truncate text-sm", state === "failed" ? "text-danger-text" : "text-fg")}>{summary}</span>
       </span>
@@ -196,7 +271,10 @@ export function ActivityRow({ item, summary, language, t, now }: { item: Activit
       </span>
     </>
   );
-  const row = "flex w-full items-center gap-3 border-0 border-b border-solid border-border bg-transparent px-5 py-3 text-left text-fg last:border-b-0";
+  const row = cn(
+    "flex w-full items-center gap-3 border-0 border-b border-solid border-border bg-transparent px-5 py-3 text-left text-fg last:border-b-0",
+    nested && "bg-subtle/40 pl-12",
+  );
   return (
     <li data-activity={item.id} data-type={item.type} data-state={state}>
       {clickable ? (

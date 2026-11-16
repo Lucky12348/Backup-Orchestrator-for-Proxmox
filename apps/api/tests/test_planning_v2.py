@@ -197,6 +197,7 @@ def test_agenda_route_and_proxmox_jobs(client, db, monkeypatch):
     body = response.json()
     pve = [item for item in body["items"] if item["kind"] == "proxmox"]
     assert len(pve) == 1 and pve[0]["read_only"] is True and pve[0]["disk_label"] == "pbs8to"
+    assert pve[0]["title"] is None and pve[0]["job_id"] == "backup-1"  # readable name built by the UI
     assert body["proxmox_unsupported"] == ["odd"]
     bad = client.get("/api/v1/planning/agenda", params={"start": "2026-11-16T00:00:00Z", "end": "2026-11-01T00:00:00Z"})
     assert bad.status_code == 400
@@ -250,7 +251,7 @@ def test_ics_export_options(client, db, monkeypatch, secret_key):
     assert "pbo-pve-" not in text
     assert plain.headers["content-disposition"].startswith("inline")
     with_pve = client.get(f"/calendar.ics?token={token}&proxmox=true&download=true")
-    assert "UID:pbo-pve-backup-1" in with_pve.text and "RRULE:FREQ=WEEKLY;BYDAY=SU;BYHOUR=1;BYMINUTE=0" in with_pve.text
+    assert "UID:pbo-pve-backup-1" in with_pve.text and "Sauvegarde Proxmox → " in with_pve.text and "RRULE:FREQ=WEEKLY;BYDAY=SU;BYHOUR=1;BYMINUTE=0" in with_pve.text
     assert with_pve.headers["content-disposition"].startswith("attachment")
 
 

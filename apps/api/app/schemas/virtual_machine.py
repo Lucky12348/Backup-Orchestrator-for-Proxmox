@@ -23,6 +23,8 @@ class VirtualMachineRead(UTCDateTimeModel):
     last_backup_at: datetime | None
     ignored: bool = False
     ignore_reason: str | None = None
+    # Last successful external copy of this VM/CT (services/external_copies.py).
+    last_external_copy_at: datetime | None = None
 
 
 class VirtualMachineUpdate(BaseModel):

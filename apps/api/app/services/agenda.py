@@ -204,13 +204,17 @@ def proxmox_items(start: datetime, end: datetime, zone_name: str | None) -> tupl
         if schedule is None:
             unsupported.append(job_id)
             continue
-        title = str(job.get("comment") or job_id)
+        storage = str(job.get("storage") or "")
         for moment in pve_schedule.occurrences(schedule, start, end, zone_name):
             items.append(
                 {
                     "id": f"pve-{job_id}-{moment.isoformat()}",
                     "kind": "proxmox",
-                    "title": title,
+                    # Readable name built by the UI ("Proxmox backup → <storage>");
+                    # the job id only in the details.
+                    "title": None,
+                    "job_id": job_id,
+                    "job_comment": job.get("comment") or None,
                     "starts_at": _iso(moment),
                     "ends_at": _iso(moment + timedelta(minutes=PROXMOX_DISPLAY_MINUTES)),
                     "scheduled_for": _iso(moment),
@@ -220,7 +224,7 @@ def proxmox_items(start: datetime, end: datetime, zone_name: str | None) -> tupl
                     "planning_run_id": None,
                     "backup_run_id": None,
                     "disk_serial": None,
-                    "disk_label": str(job.get("storage") or ""),
+                    "disk_label": storage,
                     "progress_percent": None,
                     "message": str(job.get("schedule") or ""),
                     "read_only": True,

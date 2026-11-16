@@ -74,7 +74,11 @@ def upsert_asset_ignore(
     return item
 
 
-def vm_read_payload(vm: VirtualMachine, ignore_map: dict[AssetKey, AssetIgnore] | None = None) -> dict:
+def vm_read_payload(
+    vm: VirtualMachine,
+    ignore_map: dict[AssetKey, AssetIgnore] | None = None,
+    external_copies: dict[int, datetime] | None = None,
+) -> dict:
     item = (ignore_map or {}).get(asset_key_for_vm(vm))
     ignored = bool(item and item.ignored)
     return {
@@ -92,4 +96,5 @@ def vm_read_payload(vm: VirtualMachine, ignore_map: dict[AssetKey, AssetIgnore] 
         "last_backup_at": vm.last_backup_at,
         "ignored": ignored,
         "ignore_reason": item.reason if ignored and item else None,
+        "last_external_copy_at": (external_copies or {}).get(vm.id),
     }

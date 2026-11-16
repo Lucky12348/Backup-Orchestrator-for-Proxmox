@@ -36,8 +36,11 @@ export function activityState(item: ActivityLike): ActivityState {
   return "info";
 }
 
+/** "runs" = backups and ejects (the default filter). */
+export type ActivityTypeFilter = ActivityType | "runs" | "";
+
 export interface ActivityFilters {
-  type: ActivityType | "";
+  type: ActivityTypeFilter;
   state: ActivityState | "";
   diskId: number | null;
   days: number;
@@ -50,7 +53,8 @@ export function filterActivity<T extends ActivityLike>(items: readonly T[], filt
   const since = now.getTime() - filters.days * 24 * 3600 * 1000;
   const needle = compact(filters.query.trim());
   return items.filter((item) => {
-    if (filters.type && item.type !== filters.type) return false;
+    if (filters.type === "runs" && item.type !== "backup" && item.type !== "eject") return false;
+    if (filters.type && filters.type !== "runs" && item.type !== filters.type) return false;
     if (filters.state && activityState(item) !== filters.state) return false;
     if (filters.diskId !== null && item.disk_id !== filters.diskId) return false;
     if (new Date(item.at).getTime() < since) return false;
@@ -82,6 +86,7 @@ export interface SummaryTexts {
   ejectRunning: string;
   plugged: string;
   unplugged: string;
+  replugged: string;
   missed: string;
   cancelled: string;
   to_confirm: string;
@@ -91,7 +96,7 @@ export interface SummaryTexts {
 export function activitySummary(item: ActivityLike, texts: SummaryTexts, lang: Lang, stepTexts: Record<string, string> = {}): string {
   const reason = (item.step && stepTexts[item.step]) || item.message || "";
   const state = activityState(item);
-  if (item.type === "detection") return item.status === "plugged" ? texts.plugged : texts.unplugged;
+  if (item.type === "detection") return item.status === "replugged" ? texts.replugged : item.status === "plugged" ? texts.plugged : texts.unplugged;
   if (item.type === "planning") {
     const template = texts[item.status as "missed" | "cancelled" | "to_confirm"] ?? texts.missed;
     return template.replace("{title}", item.event_title ?? "");
@@ -115,4 +120,62 @@ export function activityDisks(items: readonly ActivityLike[]): { id: number; lab
   const seen = new Map<number, string>();
   for (const item of items) if (item.disk_id !== null && !seen.has(item.disk_id)) seen.set(item.disk_id, item.disk_label);
   return [...seen].map(([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label));
+}
+
+// --- Grouping (Phase 6b) -------------------------------------------------------------
+
+/** An entry of the list: one item, or several identical consecutive ones. */
+export interface ActivityGroup<T extends ActivityLike> {
+  item: T;
+  count: number;
+  members: T[];
+}
+
+const REPLUG_WINDOW_MS = 30 * 60 * 1000;
+
+const sameDisk = (a: ActivityLike, b: ActivityLike) =>
+  a.disk_id !== null && b.disk_id !== null ? a.disk_id === b.disk_id : a.disk_label === b.disk_label;
+
+/**
+ * Newest-first list → groups:
+ * - "unplugged" then "plugged" again (≤ 30 min, same disk) = one "replugged" line;
+ * - consecutive entries with the same type, disk, state and summary = one line ×N.
+ */
+export function groupActivity<T extends ActivityLike>(items: readonly T[], summary: (item: T) => string): ActivityGroup<T>[] {
+  const merged: ActivityGroup<T>[] = [];
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index];
+    const older = items[index + 1];
+    if (
+      item.type === "detection" &&
+      item.status === "plugged" &&
+      older?.type === "detection" &&
+      older.status === "unplugged" &&
+      sameDisk(item, older) &&
+      new Date(item.at).getTime() - new Date(older.at).getTime() <= REPLUG_WINDOW_MS
+    ) {
+      merged.push({ item: { ...item, status: "replugged" }, count: 1, members: [item, older] });
+      index += 1;
+      continue;
+    }
+    merged.push({ item, count: 1, members: [item] });
+  }
+  const groups: ActivityGroup<T>[] = [];
+  for (const group of merged) {
+    const last = groups[groups.length - 1];
+    if (
+      last &&
+      last.item.type === group.item.type &&
+      last.item.status === group.item.status &&
+      sameDisk(last.item, group.item) &&
+      activityState(last.item) !== "running" &&
+      summary(last.item) === summary(group.item)
+    ) {
+      last.count += group.count;
+      last.members.push(...group.members);
+      continue;
+    }
+    groups.push({ ...group, members: [...group.members] });
+  }
+  return groups;
 }

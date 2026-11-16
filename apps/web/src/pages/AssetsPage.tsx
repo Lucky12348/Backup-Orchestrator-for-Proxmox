@@ -146,6 +146,7 @@ export function AssetsPage({
   onAssetIgnoreChange,
   onBackupJobSelectionChange,
   onRefresh,
+  jobsOnly,
 }: AssetPageProps) {
   const confirm = useConfirm();
   const [query, setQuery] = useState("");
@@ -338,7 +339,7 @@ export function AssetsPage({
 
   return (
     <div className="page-stack">
-      <PageHeader title={t.nav.assets} description={t.assetsIntro} />
+      {jobsOnly ? null : <PageHeader title={t.nav.assets} description={t.assetsIntro} />}
 
       <section className="panel-card protection-jobs-card">
         <div className="panel-card-header">
@@ -408,6 +409,8 @@ export function AssetsPage({
         )}
       </section>
 
+      {jobsOnly ? null : (
+        <>
       <section className="filters-bar">
         <label className="field">
           <span>{t.search}</span>
@@ -533,6 +536,8 @@ export function AssetsPage({
             </tbody>
           </table>
         </DataTable>
+      )}
+        </>
       )}
 
       {managedJob ? (

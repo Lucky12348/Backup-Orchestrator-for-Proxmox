@@ -10,6 +10,8 @@ import {
   formToPayload,
   itemActions,
   itemTone,
+  layoutDay,
+  hourLabel,
   monthGrid,
   nowMinutes,
   periodTitle,
@@ -176,4 +178,20 @@ test("export URL keeps the token and adds the options", () => {
     feedUrl(base, { history: false, proxmox: true, download: true }),
     "https://pbo.lan/calendar.ics?token=abc&proxmox=true&download=true",
   );
+});
+
+test("B28: more than 3 simultaneous events → 2 columns + a '+N' chip; short runs stay readable", () => {
+  const crowd = ["a", "b", "c", "d", "e"].map((id, index) =>
+    item({ id, starts_at: `2026-11-15T13:0${index}:00Z`, ends_at: `2026-11-15T13:0${index + 1}:00Z`, kind: "manual" }),
+  );
+  const { placed, overflow } = layoutDay(crowd, SUNDAY, PARIS);
+  assert.deepEqual(placed.map((entry) => [entry.item.id, entry.lane, entry.lanes]), [["a", 0, 3], ["b", 1, 3]]);
+  assert.equal(overflow.length, 1);
+  assert.deepEqual(overflow[0].items.map((entry) => entry.id), ["c", "d", "e"]);
+  assert.equal(overflow[0].lane, 2);
+  assert.ok(placed.every((entry) => entry.height >= 60)); // one-minute runs: time + title readable
+  const three = layoutDay(crowd.slice(0, 3), SUNDAY, PARIS);
+  assert.equal(three.overflow.length, 0);
+  assert.deepEqual(three.placed.map((entry) => entry.lanes), [3, 3, 3]);
+  assert.equal(hourLabel(14), "14:00");
 });

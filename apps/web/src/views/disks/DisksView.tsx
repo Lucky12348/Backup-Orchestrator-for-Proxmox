@@ -172,8 +172,10 @@ export function DisksView({ disks, runs, language, t, onBackup, onEject, isStart
       </div>
 
       {/* B27: cards fill the width (auto-fill), the detail panel sits right next to them. */}
-      <div className="grid items-start gap-[18px] lg:grid-cols-[minmax(0,1fr)_minmax(340px,400px)]">
-        <div className="grid min-w-0 grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3.5">
+      {/* Cards and panel side by side with no hole: fixed 380 px panel, cards
+          auto-fit (empty tracks collapse, the cards fill the row). */}
+      <div className="grid items-start gap-[18px] lg:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(300px,1fr))] gap-3.5">
           {shown.length === 0 ? (
             <div className="col-span-full rounded-[14px] border border-dashed border-border-strong px-6 py-10 text-center">
               <p className="m-0 text-[15px] font-medium">{query ? text.noMatch : text.empty}</p>

@@ -102,6 +102,7 @@ def delete_external_backup_run(db: Session, run_id: int) -> None:
             detail="Pending or running external backup runs cannot be deleted.",
         )
 
+    _detach_planned_runs(db, [run.id])
     db.delete(run)
     db.commit()
 
@@ -123,10 +124,24 @@ def cleanup_external_backup_runs(db: Session, keep_last: int = 10) -> int:
         if run.status == BackupRunStatus.FAILED and run.id not in protected_ids
     ]
 
+    _detach_planned_runs(db, [run.id for run in deletable])
     for run in deletable:
         db.delete(run)
     db.commit()
     return len(deletable)
+
+
+def _detach_planned_runs(db: Session, run_ids: list[int]) -> None:
+    """B29: `scheduled_backup_runs.backup_run_id` references the run. Keep the
+    planning history, drop the link (PostgreSQL refused the DELETE: 500)."""
+    if not run_ids:
+        return
+    from sqlalchemy import update
+
+    from app.models import ScheduledBackupRun
+
+    db.execute(update(ScheduledBackupRun).where(ScheduledBackupRun.backup_run_id.in_(run_ids)).values(backup_run_id=None))
+    db.flush()
 
 
 def cleanup_legacy_external_export_objects() -> dict[str, object]:

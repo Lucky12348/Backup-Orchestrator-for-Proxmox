@@ -28,7 +28,9 @@ import {
   filterKinds,
   itemActions,
   itemTone,
+  hourLabel,
   itemsOn,
+  layoutDay,
   monthGrid,
   nowMinutes,
   periodTitle,
@@ -47,6 +49,7 @@ import {
   type Day,
   type ItemAction,
   type ItemKind,
+  type Overflow,
   type Tone,
 } from "./calendarModel";
 import { PlanningDialog, type DialogState } from "./PlanningDialog";
@@ -305,6 +308,7 @@ export function PlanningView(props: PlanningViewProps) {
             emptyLabel={text.emptySlot}
             tzLabel={fill(text.timezone, { tz })}
             t={t}
+            addAtLabel={text.addAt}
           />
         ) : null}
         {view === "month" ? (
@@ -357,7 +361,8 @@ export function PlanningView(props: PlanningViewProps) {
   );
 }
 
-function itemLabel(item: AgendaItem, t: TranslationDictionary): string {
+export function itemLabel(item: AgendaItem, t: TranslationDictionary): string {
+  if (item.kind === "proxmox") return fill(t.planningV2.proxmoxTitle, { storage: item.disk_label || item.job_id || "" });
   return item.title || (item.kind === "manual" ? t.planningV2.manualTitle : item.kind);
 }
 
@@ -439,8 +444,10 @@ function TimeGrid({
   emptyLabel,
   tzLabel,
   t,
+  addAtLabel,
 }: {
   t: TranslationDictionary;
+  addAtLabel: string;
   days: Day[];
   items: AgendaItem[];
   tz: string;
@@ -458,7 +465,9 @@ function TimeGrid({
   useEffect(() => {
     if (scroller.current) scroller.current.scrollTop = 7 * HOUR_PX;
   }, []);
-  const columns = `56px repeat(${days.length}, minmax(0, 1fr))`;
+  // Readable minimum width per day column (3 side-by-side events stay legible).
+  const columns = `56px repeat(${days.length}, minmax(${days.length > 1 ? 120 : 0}px, 1fr))`;
+  const [hover, setHover] = useState<{ day: string; hour: number } | null>(null);
   return (
     <div className="flex min-w-0 flex-1 flex-col overflow-x-auto">
       <div className="grid min-w-[520px] border-b border-solid border-border" style={{ gridTemplateColumns: columns }}>
@@ -496,6 +505,7 @@ function TimeGrid({
           {days.map((day) => {
             const isToday = sameDay(day, todayDay);
             const line = nowMinutes(now, day, tz);
+            const layout = layoutDay(items, day, tz);
             return (
               <div
                 key={dayKey(day)}
@@ -506,10 +516,35 @@ function TimeGrid({
                   const rect = event.currentTarget.getBoundingClientRect();
                   onEmptySlot(day, Math.floor((event.clientY - rect.top) / HOUR_PX));
                 }}
+                onMouseMove={(event) => {
+                  if (event.target !== event.currentTarget) return setHover(null);
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  const hour = Math.floor((event.clientY - rect.top) / HOUR_PX);
+                  if (hover?.day !== dayKey(day) || hover.hour !== hour) setHover({ day: dayKey(day), hour });
+                }}
+                onMouseLeave={() => setHover(null)}
                 className={cn("relative h-[816px] cursor-cell border-l border-solid border-border", isToday && "bg-accent/[0.04]")}
                 style={{ backgroundImage: "repeating-linear-gradient(to bottom, rgb(var(--pbo-border)) 0 1px, transparent 1px 34px)" }}
               >
-                {placeDay(items, day, tz).map((entry) => (
+                {hover?.day === dayKey(day) ? (
+                  <div
+                    className="pointer-events-none absolute left-0 right-0 flex items-start rounded-sm bg-accent/10 px-1.5 pt-0.5 text-[11px] font-medium text-accent-text"
+                    style={{ top: `${hover.hour * HOUR_PX}px`, height: `${HOUR_PX}px` }}
+                    data-hover-slot={hourLabel(hover.hour)}
+                  >
+                    {fill(addAtLabel, { time: hourLabel(hover.hour) })}
+                  </div>
+                ) : null}
+                {layout.overflow.map((group) => (
+                  <OverflowChip
+                    key={`more-${group.top}`}
+                    group={group}
+                    tz={tz}
+                    t={t}
+                    onSelect={onSelect}
+                  />
+                ))}
+                {layout.placed.map((entry) => (
                   <EventChip
                     key={entry.item.id}
                     item={entry.item}
@@ -540,6 +575,49 @@ function TimeGrid({
 }
 
 type Lang = Language;
+
+/** "+N" chip of an hour crowded with more than MAX_LANES events: opens their list. */
+function OverflowChip({ group, tz, t, onSelect }: { group: Overflow; tz: string; t: TranslationDictionary; onSelect: (id: string) => void }) {
+  return (
+    <div
+      className="absolute z-[1]"
+      style={{
+        top: `${(group.top / 60) * HOUR_PX + 1}px`,
+        left: `calc(${(group.lane / group.lanes) * 100}% + 3px)`,
+        width: `calc(${100 / group.lanes}% - 9px)`,
+      }}
+      onClick={(event) => event.stopPropagation()}
+      onMouseMove={(event) => event.stopPropagation()}
+    >
+      <Popover
+        label={t.planningV2.moreTitle}
+        placement="bottom-end"
+        className="w-[260px] p-1.5"
+        triggerClassName="flex h-[32px] w-full items-center justify-center rounded-md border-0 bg-subtle text-xs font-semibold text-fg hover:bg-hover"
+        trigger={<span data-overflow={group.items.length}>{fill(t.planningV2.moreShort, { n: group.items.length })}</span>}
+      >
+        {(close) => (
+          <ul className="m-0 flex list-none flex-col gap-1 p-0">
+            {group.items.map((item) => (
+              <li key={item.id}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    close();
+                    onSelect(item.id);
+                  }}
+                  className={cn("w-full truncate rounded-md border-0 px-2 py-1.5 text-left text-xs font-medium hover:brightness-110", TONE_CLASS[itemTone(item)])}
+                >
+                  {timeOf(item.starts_at, tz)} {itemLabel(item, t)}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Popover>
+    </div>
+  );
+}
 
 function MonthGrid({
   anchor,
@@ -733,8 +811,14 @@ export function DetailCard({
       <span className="text-xs text-muted">
         {day} · {timeOf(item.starts_at, tz)} – {timeOf(item.ends_at, tz)}
       </span>
-      {item.disk_label ? <span className="text-xs text-faint">{item.disk_label}</span> : null}
-      {item.message && item.status !== "success" ? <span className="text-xs text-faint [overflow-wrap:anywhere]">{item.message}</span> : null}
+      {item.kind === "proxmox" ? (
+        <span className="font-mono text-xs text-faint" data-job={item.job_id ?? ""}>
+          {[item.job_id, item.job_comment, item.message].filter(Boolean).join(" · ")}
+        </span>
+      ) : item.disk_label ? (
+        <span className="text-xs text-faint">{item.disk_label}</span>
+      ) : null}
+      {item.message && item.status !== "success" && item.kind !== "proxmox" ? <span className="text-xs text-faint [overflow-wrap:anywhere]">{item.message}</span> : null}
       {actions.length ? (
         <div className="flex flex-wrap gap-1.5 pt-1">
           {actions.map((action, index) => (
