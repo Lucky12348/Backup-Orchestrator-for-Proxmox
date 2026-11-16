@@ -2,7 +2,7 @@ import { useState } from "react";
 import { CalendarDays, HardDrive, Loader2, Play } from "lucide-react";
 import { Link } from "react-router-dom";
 
-import { cancelScheduledBackupRun, confirmScheduledBackupRun } from "../../api";
+import { cancelScheduledBackupRun, confirmScheduledBackupRun, type DiskAlert } from "../../api";
 import { useToast } from "../../ui/toast";
 import { ChooseDatastoreDialog } from "../datastores/ChooseDatastoreDialog";
 
@@ -12,6 +12,8 @@ import { openRunModal } from "../../runs/openRun";
 import type { AgentStatus, ExternalBackupRun, ExternalDisk, Overview, ScheduledBackupEvent, ScheduledBackupRun } from "../../types";
 import { InfoTip } from "../../ui/InfoTip";
 import { runKind } from "../disks/diskModel";
+import { alertValues } from "../disks/diskProfile";
+import { formatUsage } from "../../units";
 import { fill, formatDay, formatSize, formatTime, formatWhen } from "../format";
 import {
   currentOrLastRun,
@@ -41,6 +43,8 @@ export interface DashboardViewProps {
   onChanged?: () => Promise<void> | void;
   /** Source datastore deleted on PBS (Phase 6c): "Choose another datastore". */
   missingDatastore?: string | null;
+  /** Phase 5f: disk guards (GET /disks/alerts). */
+  alerts?: DiskAlert[];
 }
 
 const RING = 2 * Math.PI * 56;
@@ -126,6 +130,7 @@ export function DashboardView(props: DashboardViewProps) {
     agentConfigured: props.agentConfigured,
     now,
     missingDatastore: props.missingDatastore,
+    alerts: props.alerts,
   });
   const [choosing, setChoosing] = useState(false);
   const rotationList = rotationDisks(disks, runs);
@@ -285,13 +290,21 @@ export function DashboardView(props: DashboardViewProps) {
                       {t.datastoresV2.chooseAction}
                     </button>
                   </div>
+                ) : item.kind === "disk_alert" && item.alert ? (
+                  <Link key={`alert-${item.alert.disk_id}-${item.alert.code}`} to={item.href} className={cn(rowLink, "gap-3 px-[22px] py-3")} data-todo={`alert:${item.alert.code}`}>
+                    <span className={cn("h-2 w-2 flex-none rounded-full", item.tone === "err" ? "bg-danger" : "bg-warning")} />
+                    <span className="flex-1 text-sm">
+                      {fill((t.guards.alert as Record<string, string>)[item.alert.code] ?? item.alert.code, alertValues(item.alert, (iso) => when(iso)))}
+                    </span>
+                    <span className="text-[13px] text-accent-text">{(t.guards.action as Record<string, string>)[item.alert.code] ?? text.open}</span>
+                  </Link>
                 ) : item.kind === "to_confirm" && item.runId ? (
                   <ConfirmRow key={`${item.kind}-${item.runId}`} label={fill(text.todoItem.to_confirm, { name: item.label })} runId={item.runId} t={t} onChanged={props.onChanged} />
                 ) : (
                   <Link key={`${item.kind}-${index}`} to={item.href} className={cn(rowLink, "gap-3 px-[22px] py-3")} data-todo={item.kind}>
                     <span className={cn("h-2 w-2 flex-none rounded-full", item.tone === "err" ? "bg-danger" : "bg-warning")} />
-                    <span className="flex-1 text-sm">{fill(text.todoItem[item.kind], { name: item.label })}</span>
-                    <span className="text-[13px] text-accent-text">{text.todoAction[item.kind]}</span>
+                    <span className="flex-1 text-sm">{fill((text.todoItem as Record<string, string>)[item.kind] ?? "", { name: item.label })}</span>
+                    <span className="text-[13px] text-accent-text">{(text.todoAction as Record<string, string>)[item.kind]}</span>
                   </Link>
                 ),
               )
@@ -340,8 +353,9 @@ export function DashboardView(props: DashboardViewProps) {
                     <div className="h-full rounded-full bg-muted opacity-55" style={{ width: `${disk.usage ?? 0}%` }} />
                   </div>
                   <span className="text-xs text-faint">
-                    {disk.freeGb != null
-                      ? fill(text.freeOf, { free: formatSize(disk.freeGb, language), total: formatSize(disk.totalGb, language) })
+                    {/* Phase 5f: used and total in one unit, like the disk cards. */}
+                    {disk.usedGb != null
+                      ? fill(t.disksV2.usage, { usage: formatUsage(disk.usedGb, disk.totalGb, language), pct: disk.usage ?? 0 })
                       : formatSize(disk.totalGb, language)}
                   </span>
                 </div>

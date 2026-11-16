@@ -25,6 +25,8 @@ class ExternalBackupExecutionResult:
     pbs_sync_job_id: str | None = None
     pbs_remote_id: str | None = None
     pbs_task_upid: str | None = None
+    # Phase 5f: snapshot keys on the disk before the sync (PBS API mode).
+    pre_sync_snapshots: list[str] | None = None
 
 
 class ExternalBackupExecutionService:
@@ -194,6 +196,7 @@ class ExternalBackupExecutionService:
             ),
             target_path=actual_target_path,
             target_datastore_name=target_datastore_name,
+            pre_sync_snapshots=_extract_keys(export.payload),
             pbs_sync_job_id=_extract_string(export.payload, "pbs_sync_job_id"),
             pbs_remote_id=_extract_string(export.payload, "pbs_remote_id"),
             pbs_task_upid=_extract_string(export.payload, "pbs_task_upid"),
@@ -242,6 +245,11 @@ def _extract_string(payload: dict[str, Any] | None, key: str) -> str | None:
     if isinstance(value, str) and value.strip():
         return value.strip()
     return None
+
+
+def _extract_keys(payload: dict[str, Any] | None) -> list[str] | None:
+    value = payload.get("pre_sync_snapshots") if isinstance(payload, dict) else None
+    return [str(item) for item in value] if isinstance(value, list) else None
 
 
 def _format_prepare_target_details(

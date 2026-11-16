@@ -231,6 +231,43 @@ class PBSClient:
         """POST /admin/datastore/{store}/unmount → UPID."""
         return _require_upid(self._request("POST", f"admin/datastore/{_seg(store)}/unmount"), "unmount")
 
+    # --- retention, garbage collection, verification (Phase 5f) -------------------
+    def prune_datastore(self, store: str, *, keep: Mapping[str, int], dry_run: bool = False) -> str:
+        """POST /admin/datastore/{store}/prune-datastore → UPID.
+        `keep` = {"keep-last": 4, "keep-weekly": …} (each ≥ 1).
+        Permission: Datastore.Modify or Datastore.Prune."""
+        body: dict[str, Any] = {key: int(value) for key, value in keep.items() if value}
+        if not body:
+            raise ValueError("prune-datastore needs at least one keep-* option (it would delete everything)")
+        if dry_run:
+            body["dry-run"] = True
+        return _require_upid(self._request("POST", f"admin/datastore/{_seg(store)}/prune-datastore", body=body), "prune-datastore")
+
+    def start_garbage_collection(self, store: str) -> str:
+        """POST /admin/datastore/{store}/gc → UPID (Datastore.Modify)."""
+        return _require_upid(self._request("POST", f"admin/datastore/{_seg(store)}/gc"), "gc")
+
+    def verify(
+        self,
+        store: str,
+        *,
+        backup_type: str | None = None,
+        backup_id: str | None = None,
+        backup_time: int | None = None,
+        ignore_verified: bool = False,
+    ) -> str:
+        """POST /admin/datastore/{store}/verify → UPID: one snapshot (type+id+time),
+        one group (type+id) or the whole datastore. Datastore.Verify (or
+        Datastore.Backup + owner)."""
+        body: dict[str, Any] = {"ignore-verified": ignore_verified}
+        if backup_type:
+            body["backup-type"] = backup_type
+        if backup_id:
+            body["backup-id"] = backup_id
+        if backup_time is not None:
+            body["backup-time"] = int(backup_time)
+        return _require_upid(self._request("POST", f"admin/datastore/{_seg(store)}/verify", body=body), "verify")
+
     # --- sync jobs --------------------------------------------------------------
     def list_sync_jobs(self) -> list[dict]:
         data = self._get("config/sync")

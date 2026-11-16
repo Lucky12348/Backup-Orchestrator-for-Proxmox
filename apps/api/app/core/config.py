@@ -64,6 +64,9 @@ class Settings:
     # read to show its fingerprint when pairing an agent; uvicorn itself gets
     # the certificate from its command line.
     tls_cert_file: str = os.getenv("PBO_TLS_CERT_FILE", "")
+    # Writable data directory (disk photos). LXC install: StateDirectory=pbo
+    # → /var/lib/pbo (STATE_DIRECTORY). Empty = STATE_DIRECTORY, then /var/lib/pbo.
+    data_dir: str = os.getenv("PBO_DATA_DIR", "")
     planning_scheduler_enabled: bool = parse_bool(os.getenv("PLANNING_SCHEDULER_ENABLED"), default=True)
     planning_scheduler_interval_seconds: int = int(os.getenv("PLANNING_SCHEDULER_INTERVAL_SECONDS", "60"))
     # Legacy loop-image coexistence mode, kept as an operator escape hatch.
@@ -104,6 +107,9 @@ class Settings:
     notify_on_planned_backup_missed: bool = True
     low_coverage_threshold_percent: float = 100.0
     disk_detection_notify_cooldown_seconds: int = 1800
+    # Phase 5f: an approved disk without a successful backup for this many days
+    # is listed in "To do" (forgotten rotation).
+    rotation_stale_days: int = 30
     pve_api_url: str = ""
     pve_api_token_id: str = ""
     pve_api_token_secret: str = ""

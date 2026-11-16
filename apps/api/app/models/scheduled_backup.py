@@ -61,6 +61,8 @@ class ScheduledBackupEvent(Base):
     # VM/CT copied ("vm/100", "ct/101"): a PBS sync group filter (API mode).
     # None/empty = the whole datastore.
     vm_groups: Mapped[list | None] = mapped_column(JSON)
+    # Phase 5f: PBS verify of the copied snapshots after the sync.
+    verify_after_backup: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     last_status: Mapped[str | None] = mapped_column(String(32))
     last_triggered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False))
     last_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False))

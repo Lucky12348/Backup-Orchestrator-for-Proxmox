@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, HardDrive, Loader2, Play, RefreshCw, Search, Unplug } from "lucide-react";
-import { useLocation } from "react-router-dom";
+import { AlertTriangle, ChevronRight, Loader2, Play, RefreshCw, Search, ShieldCheck, Unplug } from "lucide-react";
+import { Link, useLocation } from "react-router-dom";
 
 import {
   decideDisk,
   getExternalBackupReadiness,
   rescanDisks,
   type DatastoreHealth,
+  type DiskAlert,
   type DiskDatastoreState,
   type DiskDecision,
   type ExternalBackupReadiness,
@@ -21,7 +22,10 @@ import type { ExternalBackupRun, ExternalDisk } from "../../types";
 import { useConfirm } from "../../ui/confirm";
 import { InfoTip } from "../../ui/InfoTip";
 import { useToast } from "../../ui/toast";
+import { formatUsage } from "../../units";
 import { fill, formatSize, formatWhen } from "../format";
+import { AlertBadges, DiskAvatar } from "./DiskBits";
+import { alertsFor, COLOR_CLASS, diskColor, launchState } from "./diskProfile";
 import {
   DISK_TABS,
   dataWarning,
@@ -65,6 +69,8 @@ export interface DisksViewProps {
   onChanged: () => Promise<void> | void;
   /** Phase 6c: verdict of the last datastore check. */
   datastoreHealth?: DatastoreHealth | null;
+  /** Phase 5f: guards (GET /disks/alerts). */
+  alerts?: DiskAlert[];
 }
 
 export function StatusPill({ status, label }: { status: DiskUiStatus; label: string }) {
@@ -89,7 +95,7 @@ function errorText(error: unknown, t: TranslationDictionary): string {
   return error instanceof Error ? error.message : t.error;
 }
 
-export function DisksView({ disks, runs, language, t, onBackup, onEject, isStarting, isEjecting, onChanged, datastoreHealth }: DisksViewProps) {
+export function DisksView({ disks, runs, language, t, onBackup, onEject, isStarting, isEjecting, onChanged, datastoreHealth, alerts }: DisksViewProps) {
   const text = t.disksV2;
   const { toast } = useToast();
   const search = useLocation().search;
@@ -199,6 +205,7 @@ export function DisksView({ disks, runs, language, t, onBackup, onEject, isStart
                 key={row.disk.id}
                 configNote={pbsConfigNote(datastoreHealth?.disks[String(row.disk.id)])}
                 row={row}
+                alerts={alertsFor(alerts, row.disk.id)}
                 selected={selected?.disk.id === row.disk.id}
                 onSelect={() => setSelectedId(row.disk.id)}
                 language={language}
@@ -236,7 +243,8 @@ export function DisksView({ disks, runs, language, t, onBackup, onEject, isStart
 function capacityLine(row: DiskRow<ExternalDisk>, language: Language, t: TranslationDictionary): string {
   const disk = row.disk;
   if (disk.filesystem_used_gb != null && disk.filesystem_total_gb) {
-    return fill(t.disksV2.usedOf, { used: formatSize(disk.filesystem_used_gb, language), total: formatSize(disk.filesystem_total_gb, language) });
+    // Phase 5f: used and total in one unit ("820 / 931 Gio").
+    return fill(t.disksV2.usage, { usage: formatUsage(disk.filesystem_used_gb, disk.filesystem_total_gb, language), pct: usagePercent(disk) ?? 0 });
   }
   if (row.status === "new") {
     const warning = dataWarning(disk);
@@ -259,8 +267,10 @@ export function DiskCard({
   language,
   t,
   configNote,
+  alerts = [],
 }: {
   configNote?: PbsConfigNote | null;
+  alerts?: DiskAlert[];
   row: DiskRow<ExternalDisk>;
   selected: boolean;
   onSelect: () => void;
@@ -270,6 +280,8 @@ export function DiskCard({
   const { disk, status } = row;
   const tone = TONE[STATUS_TONE[status]];
   const usage = usagePercent(disk);
+  const color = diskColor(disk.color);
+  const usageBar = usage !== null && usage >= 90 ? "bg-danger" : usage !== null && usage >= 80 ? "bg-warning" : tone.bar;
   const tags = [
     status === "new" || status === "approved" || status === "running" || status === "ejected" ? t.disksV2.tagPlugged : null,
     disk.trusted ? t.disksV2.status.approved : null,
@@ -283,13 +295,12 @@ export function DiskCard({
       data-disk={disk.id}
       className={cn(
         "flex flex-col gap-3 rounded-[14px] border border-solid bg-surface p-4 text-left text-fg",
+        color ? cn("border-l-4", COLOR_CLASS[color].stripe) : "",
         selected ? "border-accent shadow-[0_0_0_3px_rgb(var(--pbo-accent)/0.18)]" : "border-border hover:border-border-strong",
       )}
     >
       <div className="flex w-full items-start gap-3">
-        <div className={cn("flex h-[38px] w-[38px] flex-none items-center justify-center rounded-[10px]", tone.icon)}>
-          <HardDrive className="h-[18px] w-[18px]" />
-        </div>
+        <DiskAvatar disk={disk} t={t} toneClass={tone.icon} />
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="truncate text-[15px] font-semibold">{disk.display_name}</span>
           <span className="truncate text-xs text-faint">{disk.model_name ?? disk.serial_number}</span>
@@ -302,7 +313,7 @@ export function DiskCard({
           <span className="flex-none font-mono">{formatSize(disk.capacity_gb, language)}</span>
         </div>
         <div className="h-1.5 overflow-hidden rounded-full bg-subtle">
-          <div className={cn("h-full rounded-full", tone.bar)} style={{ width: `${usage ?? 0}%` }} />
+          <div className={cn("h-full rounded-full", usageBar)} style={{ width: `${usage ?? 0}%` }} />
         </div>
       </div>
       {configNote ? (
@@ -312,6 +323,7 @@ export function DiskCard({
       ) : (
         <span className={cn("text-[13px]", tone.note)}>{noteText(row, t)}</span>
       )}
+      <AlertBadges alerts={alerts} t={t} />
       {tags.length ? (
         <div className="flex flex-wrap gap-1.5">
           {tags.map((tag) => (
@@ -402,7 +414,28 @@ export function DiskDetail({
         <span className="text-xs text-faint">{text.selected}</span>
         <span className="text-[17px] font-semibold">{disk.display_name}</span>
         <span className="text-[13px] text-muted">{text.summary[status]}</span>
+        {status !== "new" ? (
+          <Link to={`/disks/${disk.id}`} className="mt-1 flex w-fit items-center gap-1 text-[13px] font-medium text-accent-text no-underline hover:underline">
+            {t.diskSheet.open}
+            <ChevronRight className="h-4 w-4" />
+          </Link>
+        ) : null}
       </div>
+
+      {disk.verify_recommended ? (
+        <div className="border-0 border-b border-solid border-border p-[18px]" data-verify-recommended>
+          <Link
+            to={`/disks/${disk.id}`}
+            className="flex gap-2.5 rounded-[10px] bg-warning/15 p-3 text-[13px] leading-[1.45] text-warning-text no-underline"
+          >
+            <ShieldCheck className="mt-0.5 h-4 w-4 flex-none" />
+            <span className="flex flex-col gap-0.5">
+              <b>{t.diskSheet.verify.title}</b>
+              <span>{t.diskSheet.verify.short}</span>
+            </span>
+          </Link>
+        </div>
+      ) : null}
 
       {pbsConfigNote(configState) ? (
         <div className="border-0 border-b border-solid border-border p-[18px]" data-config-detail={pbsConfigNote(configState)}>
@@ -433,8 +466,9 @@ export function DiskDetail({
           {actions.map((action) => {
             switch (action) {
               case "backup": {
-                const blocked = !readiness?.ready;
-                const title = readinessTitle(readiness, t.readiness as Record<string, string>);
+                // A failing SMART can be overridden in the launch dialog (explicit confirmation).
+                const blocked = !readiness || !launchState(readiness, true).canStart;
+                const title = readinessTitle(readiness, t.readiness as Record<string, string>, language);
                 return (
                   <div key={action} className="flex flex-col gap-1.5">
                     <button type="button" className={primary} disabled={blocked || starting} title={title} onClick={() => onBackup(disk)}>

@@ -53,6 +53,8 @@ class ScheduledBackupEventBase(BaseModel):
     rotation_disk_serials: list[str] | None = Field(default=None, max_length=16)
     # VM/CT copied ("vm/100", "ct/101"). Empty = the whole datastore.
     vm_groups: list[str] | None = Field(default=None, max_length=500)
+    # Phase 5f: PBS verify of the copied snapshots after the sync.
+    verify_after_backup: bool | None = False
 
 
 class ScheduledBackupEventCreate(ScheduledBackupEventBase):
@@ -75,6 +77,7 @@ class ScheduledBackupEventUpdate(BaseModel):
     auto_eject_after_success: bool | None = None
     rotation_disk_serials: list[str] | None = Field(default=None, max_length=16)
     vm_groups: list[str] | None = Field(default=None, max_length=500)
+    verify_after_backup: bool | None = None
 
 
 class ScheduledBackupEventRead(UTCDateTimeModel, ScheduledBackupEventBase):

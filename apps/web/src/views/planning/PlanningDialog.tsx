@@ -374,6 +374,13 @@ export function PlanningDialog({
                 <input type="checkbox" className="m-0 h-4 w-4" checked={form.autoEject} onChange={(event) => update({ autoEject: event.target.checked })} />
                 {t.planningV2.dialog.autoEject}
               </label>
+              <label className="flex cursor-pointer items-start gap-2 text-sm">
+                <input type="checkbox" className="m-0 mt-0.5 h-4 w-4" checked={form.verify} onChange={(event) => update({ verify: event.target.checked })} />
+                <span className="flex flex-col">
+                  {t.launch.verify}
+                  <span className="text-xs text-faint">{t.launch.verifyHelp}</span>
+                </span>
+              </label>
               <label className="flex flex-col gap-1.5">
                 <span className="text-[13px] font-medium">{t.planningV2.dialog.datastore}</span>
                 <select className={field} value={form.datastore} onChange={(event) => update({ datastore: event.target.value })}>

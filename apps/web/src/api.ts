@@ -39,6 +39,8 @@ import type {
   SystemTime,
   UnplannedAsset,
   VirtualMachine,
+  DiskColor,
+  DiskRetention,
 } from "./types";
 
 import { ApiError } from "./notices";
@@ -305,13 +307,21 @@ export function getExternalBackupPreview(diskId: number) {
   return request<ExternalBackupPreview>(`/external-backups/preview/${diskId}`);
 }
 
-export function runExternalBackup(diskId: number, autoEjectAfterSuccess = false) {
+export interface BackupLaunchOptions {
+  verifyAfterBackup?: boolean;
+  /** Back up on a disk SMART reports as failing (explicit confirmation). */
+  smartOverride?: boolean;
+}
+
+export function runExternalBackup(diskId: number, autoEjectAfterSuccess = false, options: BackupLaunchOptions = {}) {
   return request<ExternalBackupRun>("/external-backups/run", {
     method: "POST",
     body: JSON.stringify({
       disk_id: diskId,
       confirmation: true,
       auto_eject_after_success: autoEjectAfterSuccess,
+      verify_after_backup: Boolean(options.verifyAfterBackup),
+      smart_override: Boolean(options.smartOverride),
     }),
   });
 }
@@ -520,11 +530,24 @@ export interface ReadinessReason {
   [key: string]: unknown;
 }
 
+export interface SpaceEstimate {
+  needed_bytes: number;
+  free_bytes: number | null;
+  new_snapshots: number;
+  new_groups: number;
+  known: boolean;
+  sufficient: boolean | null;
+}
+
 export interface ExternalBackupReadiness {
   disk_id: number;
   ready: boolean;
   pbs_mode: string;
   reasons: ReadinessReason[];
+  /** Phase 5f: non-blocking (USB 2.0, SMART to watch, verify recommended). */
+  warnings?: ReadinessReason[];
+  estimate?: SpaceEstimate | null;
+  smart_status?: string | null;
 }
 
 export function getExternalBackupReadiness(diskId: number) {
@@ -681,4 +704,125 @@ export function checkDatastoreHealth() {
 
 export function chooseSourceDatastore(name: string) {
   return request<DatastoreHealth>("/datastores/source", { method: "PUT", body: JSON.stringify({ name }) });
+}
+
+// --- Phase 5f: disk sheet and guards ------------------------------------------------
+
+export type DiskAlertCode =
+  | "usage_critical"
+  | "usage_warning"
+  | "smart_danger"
+  | "smart_warning"
+  | "verify_recommended"
+  | "usb2_slow"
+  | "rotation_stale";
+
+export interface DiskAlert {
+  disk_id: number;
+  disk_name: string;
+  code: DiskAlertCode;
+  level: "warning" | "danger";
+  params: Record<string, unknown>;
+}
+
+export function getDiskAlerts() {
+  return request<DiskAlert[]>("/disks/alerts");
+}
+
+export interface DiskContentItem {
+  group: string;
+  type: "vm" | "ct" | "host";
+  id: string;
+  name: string | null;
+  versions: number;
+  oldest: string;
+  newest: string;
+  size_bytes: number | null;
+}
+
+export interface DiskContents {
+  disk_id: number;
+  cached_at: string | null;
+  items: DiskContentItem[];
+  total_versions: number;
+}
+
+export function getDiskContents(diskId: number) {
+  return request<DiskContents>(`/disks/${diskId}/contents`);
+}
+
+export function refreshDiskContents(diskId: number) {
+  return request<DiskContents>(`/disks/${diskId}/contents/refresh`, { method: "POST" });
+}
+
+export interface DiskProfilePatch {
+  display_name?: string;
+  color?: DiskColor | null;
+  location_note?: string | null;
+  retention?: DiskRetention;
+}
+
+export function updateDiskProfile(diskId: number, payload: DiskProfilePatch) {
+  return request<ExternalDisk>(`/disks/${diskId}`, { method: "PATCH", body: JSON.stringify(payload) });
+}
+
+export function diskPhotoUrl(disk: Pick<ExternalDisk, "id" | "photo_version">): string | null {
+  return disk.photo_version ? `${API_BASE_PATH}/disks/${disk.id}/photo?v=${encodeURIComponent(disk.photo_version)}` : null;
+}
+
+export async function uploadDiskPhoto(diskId: number, file: File): Promise<ExternalDisk> {
+  // multipart: no JSON Content-Type (the browser sets the boundary).
+  const body = new FormData();
+  body.append("file", file);
+  const response = await fetch(`${API_BASE_PATH}/disks/${diskId}/photo`, { method: "PUT", body, credentials: "same-origin" });
+  if (response.status === 401) {
+    window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+    throw new Error("Session expired. Please log in again.");
+  }
+  if (!response.ok) {
+    let code: string | undefined;
+    let message = `Request failed with status ${response.status}`;
+    try {
+      const parsed = (await response.json()) as { detail?: { code?: string; message?: string } | string };
+      if (parsed.detail && typeof parsed.detail === "object") {
+        code = parsed.detail.code;
+        message = parsed.detail.message ?? message;
+      } else if (typeof parsed.detail === "string") message = parsed.detail;
+    } catch {
+      // keep the generic message
+    }
+    throw new ApiError(message, response.status, code);
+  }
+  return (await response.json()) as ExternalDisk;
+}
+
+export function deleteDiskPhoto(diskId: number) {
+  return request<ExternalDisk>(`/disks/${diskId}/photo`, { method: "DELETE" });
+}
+
+export function startDiskVerify(diskId: number, autoEject = true) {
+  return request<{ run_id: number; status: string }>(`/disks/${diskId}/verify`, {
+    method: "POST",
+    body: JSON.stringify({ confirmation: true, auto_eject_after_success: autoEject }),
+  });
+}
+
+export function dismissDiskVerify(diskId: number) {
+  return request<ExternalDisk>(`/disks/${diskId}/verify/dismiss`, { method: "POST" });
+}
+
+interface SettingItem {
+  key: string;
+  value: unknown;
+}
+
+/** Forgotten-rotation reminder (ROTATION_STALE_DAYS, all disks). */
+export async function getRotationStaleDays(): Promise<number> {
+  const items = await request<SettingItem[]>("/settings?group=general");
+  const value = items.find((item) => item.key === "ROTATION_STALE_DAYS")?.value;
+  return typeof value === "number" ? value : 30;
+}
+
+export function setRotationStaleDays(days: number) {
+  return request<SettingItem[]>("/settings", { method: "PATCH", body: JSON.stringify({ values: { ROTATION_STALE_DAYS: days } }) });
 }

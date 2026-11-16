@@ -24,7 +24,7 @@ from urllib.parse import urlparse
 import httpx
 import uvicorn
 
-from agent import hotplug
+from agent import hotplug, smart
 from agent.usb_location import usb_location
 
 
@@ -76,6 +76,8 @@ AGENT_CAPABILITIES = {
     "disk-usb-location",
     "usb-hotplug-report",
     "disk-rescan",
+    "disk-smart",
+    "usb-link-speed",
 }
 
 
@@ -230,10 +232,18 @@ def post_real_disk_report(settings: AgentSettings, *, track_hotplug: bool = Fals
         "observed_at": current_timestamp(),
         "disks": disks,
     }
+    events: list[dict[str, Any]] = []
     if track_hotplug:
         events = hotplug.diff_and_store(disks)
         payload["hotplug"] = events
         payload["trigger"] = "udev" if events else "timer"
+    # Phase 5f: SMART read when a disk is plugged in (cached otherwise).
+    try:
+        smart.annotate(disks, added={str(event["serial"]) for event in events if event.get("action") == "added"})
+    except Exception as exc:  # noqa: BLE001 — SMART must never block the report
+        logger.warning("SMART read failed: %s", exc)
+    for disk in disks:
+        disk.pop("_device", None)
     post_json(settings, "/agent/disks/report", payload, token=settings.reporting_token)
     logger.info("Real disk report sent for host %s with %s disks", settings.hostname, len(disks))
 
@@ -1414,6 +1424,7 @@ def discover_real_disks(settings: AgentSettings) -> list[dict[str, Any]]:
             usb_location=usb_location(device_name(device), udev_props=udev_props),
         )
         if disk_report:
+            disk_report["_device"] = device_name(device)  # internal (SMART), not sent
             discovered.append(disk_report)
 
     return deduplicate_disk_reports(discovered)
@@ -1601,6 +1612,7 @@ def normalize_lsblk_node(
         "size": device.get("size"),
         "rm": device.get("rm"),
         "tran": device.get("tran"),
+        "rota": device.get("rota"),
         "mountpoint": first_value(device.get("mountpoint"), recover_mount_path(path, mount_lookup or {})),
         "fstype": device.get("fstype"),
         "pkname": device.get("pkname"),
@@ -2073,10 +2085,22 @@ def build_disk_report(
         "trusted": False,
         "connected": True,
         "usb_location": usb_location,
+        # Phase 5f: disk kind (2.5"/3.5" HDD, SSD, stick, NVMe enclosure).
+        "rotational": parse_rotational(device.get("rota")),
+        "transport": first_value(device.get("tran")),
         # What is already on the disk, shown before the operator approves
         # (and formats) it.
         "partitions": partition_summary(device),
     }
+
+
+def parse_rotational(value: Any) -> bool | None:
+    """lsblk ROTA: true/false (JSON) or "1"/"0" (older util-linux)."""
+    if isinstance(value, bool):
+        return value
+    if str(value).strip() in {"1", "0"}:
+        return str(value).strip() == "1"
+    return None
 
 
 def partition_summary(device: dict[str, Any]) -> list[dict[str, Any]]:

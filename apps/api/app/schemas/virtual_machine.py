@@ -25,6 +25,9 @@ class VirtualMachineRead(UTCDateTimeModel):
     ignore_reason: str | None = None
     # Last successful external copy of this VM/CT (services/external_copies.py).
     last_external_copy_at: datetime | None = None
+    # Phase 5f: rotation disks holding a copy (cached disk contents), newest first:
+    # [{"disk_id", "disk_name", "color", "newest", "versions", "cached_at"}].
+    external_copies: list[dict] = []
 
 
 class VirtualMachineUpdate(BaseModel):

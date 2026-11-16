@@ -24,6 +24,8 @@ class AgentUsbLocation(BaseModel):
     manufacturer: str | None = Field(default=None, max_length=255)
     product: str | None = Field(default=None, max_length=255)
     id_path: str | None = Field(default=None, max_length=255)
+    # Negotiated link speed in Mbit/s (sysfs `speed`: 1.5, 12, 480, 5000…).
+    speed_mbps: float | None = Field(default=None, ge=0, le=100000)
 
 
 class AgentPartition(BaseModel):
@@ -32,6 +34,21 @@ class AgentPartition(BaseModel):
     size_gb: int = Field(default=0, ge=0)
     label: str | None = Field(default=None, max_length=255)
     mount_path: str | None = Field(default=None, max_length=512)
+
+
+class AgentSmart(BaseModel):
+    """SMART health read by the host agent (smartctl) when the disk is plugged."""
+
+    status: Literal["ok", "warning", "danger", "unknown"]
+    reasons: list[str] = Field(default_factory=list, max_length=16)
+    reallocated: int | None = Field(default=None, ge=0)
+    pending: int | None = Field(default=None, ge=0)
+    uncorrectable: int | None = Field(default=None, ge=0)
+    media_errors: int | None = Field(default=None, ge=0)
+    temperature_c: int | None = None
+    power_on_hours: int | None = Field(default=None, ge=0)
+    checked_at: datetime | None = None
+    message: str | None = Field(default=None, max_length=255)
 
 
 class AgentDiskReportItem(BaseModel):
@@ -51,6 +68,10 @@ class AgentDiskReportItem(BaseModel):
     usb_location: AgentUsbLocation | None = None
     # None from agents older than Phase 5b (unknown, not "no partition").
     partitions: list[AgentPartition] | None = Field(default=None, max_length=64)
+    # Phase 5f (None from older agents = unknown).
+    rotational: bool | None = None
+    transport: str | None = Field(default=None, max_length=32)
+    smart: AgentSmart | None = None
 
 
 class AgentHotplugEvent(BaseModel):

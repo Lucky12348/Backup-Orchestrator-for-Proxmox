@@ -67,6 +67,31 @@ class ExternalDisk(Base):
     # Partitions seen by the host agent: [{"name", "filesystem_type",
     # "size_gb", "label", "mount_path"}], shown before approval.
     partitions: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # --- Phase 5f: disk profile -------------------------------------------------
+    color: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    location_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # File name in <data dir>/disk-photos (re-encoded by the API, never the upload).
+    photo_file: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Hardware read by the host agent (lsblk ROTA/TRAN, sysfs USB speed, smartctl).
+    rotational: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    transport: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    usb_speed_mbps: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # ok | warning | danger | unknown (USB bridge without SMART, no smartctl).
+    smart_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    smart_details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    smart_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
+    # PBS prune options applied on this disk's datastore after each sync.
+    retention: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # VM/CT on the disk, read in PBS while mounted (shown while unplugged).
+    contents_cache: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    contents_cached_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
+    # [{"at", "used_gb", "total_gb"}], one sample per day at most.
+    usage_history: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Highest usage alert already notified (80 / 90), reset below 80 %.
+    usage_alert_level: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Unplugged while mounted on PBS or during a run: a PBS verify is advised.
+    verify_recommended: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    unsafe_removal_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
 
     assignments = relationship("DiskAssignment", back_populates="disk", cascade="all, delete-orphan")
 
@@ -81,3 +106,21 @@ class ExternalDisk(Base):
         from app.services.disk_events import reject_reason
 
         return reject_reason(self)
+
+    # --- Phase 5f (derived, read by ExternalDiskRead) ------------------------------
+    @property
+    def kind(self) -> str:
+        from app.services.disk_profile import kind_of
+
+        return kind_of(self)
+
+    @property
+    def photo_version(self) -> str | None:
+        """Changes with each upload (cache-busting `?v=` of the photo URL)."""
+        return self.photo_file
+
+    @property
+    def effective_retention(self) -> dict:
+        from app.services.disk_profile import retention_of
+
+        return retention_of(self)

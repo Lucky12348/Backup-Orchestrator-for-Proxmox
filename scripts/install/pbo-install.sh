@@ -307,6 +307,9 @@ User=${PBO_USER}
 Group=${PBO_USER}
 WorkingDirectory=${PBO_DIR}/apps/api
 EnvironmentFile=${PBO_ENV}
+# Writable data (disk photos, Phase 5f): /var/lib/pbo, also under ProtectSystem=strict.
+StateDirectory=pbo
+StateDirectoryMode=0750
 Environment=PYTHONDONTWRITEBYTECODE=1
 # Clear message (no traceback) when the database is not UTF8.
 ExecStartPre=${PBO_DIR}/.venv/bin/python -m app.db.preflight

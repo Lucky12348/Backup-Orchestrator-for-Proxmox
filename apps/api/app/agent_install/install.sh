@@ -135,6 +135,11 @@ install_packages() {
   command -v openssl >/dev/null 2>&1 || missing+=(openssl)
   command -v python3 >/dev/null 2>&1 || missing+=(python3)
   python3 -c 'import ensurepip, venv' >/dev/null 2>&1 || missing+=(python3-venv)
+  # SMART health of the rotation disks (Phase 5f); optional: without it the
+  # disks show "health unknown".
+  if [[ "${ROLE}" == "host" ]]; then
+    command -v smartctl >/dev/null 2>&1 || missing+=(smartmontools)
+  fi
   if ((${#missing[@]})); then
     info "Installing ${missing[*]}"
     DEBIAN_FRONTEND=noninteractive apt-get update -qq

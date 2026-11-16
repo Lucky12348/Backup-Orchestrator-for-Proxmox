@@ -48,6 +48,8 @@ def start_run(
         payload.disk_id,
         payload.confirmation,
         auto_eject_after_success=payload.auto_eject_after_success,
+        verify_after_backup=payload.verify_after_backup,
+        smart_override=payload.smart_override,
     )
     background_tasks.add_task(execute_external_backup_run, run.id)
     disk = db.get(ExternalDisk, run.disk_id)
@@ -207,6 +209,8 @@ def _build_summary(run, disk_name: str, disk=None) -> ExternalBackupRunSummaryRe
         execution_cwd=run.execution_cwd,
         return_code=run.return_code,
         current_step=run.current_step,
+        verify_after_backup=run.verify_after_backup,
+        verify_only=run.verify_only,
         progress_message=run.progress_message,
         last_log_at=run.last_log_at,
         progress_percent=run.progress_percent,

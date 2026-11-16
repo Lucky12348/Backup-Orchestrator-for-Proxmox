@@ -74,10 +74,21 @@ _REJECT_MESSAGES = {
 }
 
 
-def local_disk_reasons(db: Session, disk: ExternalDisk) -> list[dict[str, Any]]:
+def local_disk_reasons(db: Session, disk: ExternalDisk, *, smart_override: bool = False) -> list[dict[str, Any]]:
     """The checks that need no network call: the disk itself and the other
     runs. `run_external_backup` refuses with them too (409, no run created)."""
     reasons: list[dict[str, Any]] = []
+    if disk.smart_status == "danger" and not smart_override:
+        # Phase 5f: SMART failing = blocked unless explicitly confirmed.
+        details = disk.smart_details if isinstance(disk.smart_details, dict) else {}
+        reasons.append(
+            _reason(
+                "smart_failed",
+                "SMART reports this disk as failing: confirm explicitly to back up on it anyway.",
+                overridable=True,
+                smart_reasons=details.get("reasons") or [],
+            )
+        )
     rejected = reject_reason(disk)
     if rejected:
         reasons.append(_reason(f"disk_{rejected}", _REJECT_MESSAGES[rejected], min_size_gb=MIN_DISK_SIZE_GB))
@@ -137,6 +148,7 @@ def external_backup_readiness(
     settings = effective_settings(db)
     mode = settings.pbs_mode
     reasons: list[dict[str, Any]] = []
+    pbs_api_client: Any | None = None
 
     reasons.extend(local_disk_reasons(db, disk))
 
@@ -178,6 +190,8 @@ def external_backup_readiness(
             payload, error = _cached_version(("pbs-api", settings.pbs_api_url), backend.get_version)
             if error is not None:
                 reasons.append(_reason("pbs_unreachable", f"The PBS API does not answer: {error}"))
+            else:
+                pbs_api_client = getattr(backend, "client", None)
     else:
         if not settings.pbs_agent_base_url:
             reasons.append(_reason("pbs_agent_missing", "PBS_MODE=agent but no PBS agent is configured."))
@@ -197,4 +211,28 @@ def external_backup_readiness(
                     _reason("pbs_agent_outdated", f"The PBS agent is too old (missing: {', '.join(missing)}).", missing=missing)
                 )
 
-    return {"disk_id": disk.id, "ready": not reasons, "pbs_mode": mode, "reasons": reasons}
+    # Phase 5f: estimated copy vs free space (refused when known too small),
+    # and non-blocking warnings shown at launch.
+    from app.services import capacity, disk_profile
+
+    estimate = None
+    if pbs_api_client is not None:
+        estimate = capacity.check_space(db, disk, client=pbs_api_client)
+        if reason := capacity.space_reason(estimate):
+            reasons.append(reason)
+    warnings: list[dict[str, Any]] = []
+    if disk_profile.is_usb2(disk):
+        warnings.append(_reason("usb2_slow", "USB 2.0 link: the copy will be about 10× slower.", speed_mbps=disk.usb_speed_mbps))
+    if disk.smart_status == "warning":
+        warnings.append(_reason("smart_warning", "SMART: this disk should be watched (reallocated sectors, errors)."))
+    if disk.verify_recommended:
+        warnings.append(_reason("verify_recommended", "The disk was unplugged without eject: a PBS verify is recommended."))
+    return {
+        "disk_id": disk.id,
+        "ready": not reasons,
+        "pbs_mode": mode,
+        "reasons": reasons,
+        "warnings": warnings,
+        "estimate": estimate,
+        "smart_status": disk.smart_status,
+    }

@@ -426,6 +426,54 @@ should reach them — and every call is additionally protected with an
   the previous entry's time; end-of-run blocks are journalled line by line,
   `_journal_block`), and a PBO message is never shown twice.
 
+## Disk sheet and safety guards (Phase 5f)
+
+- **Disk sheet** `/disks/:id` (`views/disks/DiskSheetView.tsx`): name,
+  colour (6, `diskProfile.COLOR_CLASS`), location note, photo; kind deduced
+  server-side (`services/disk_profile.disk_kind`: rotation, transport, size,
+  model → `ExternalDiskRead.kind`). Photos: `PUT|GET|DELETE
+  /disks/{id}/photo` (`services/disk_photos.py`): decoded by Pillow
+  (JPEG/PNG/WebP only, ≤ 5 MB, decompression-bomb guard), EXIF-rotated,
+  ≤ 1024 px, re-encoded WebP (no metadata) in `<PBO_DATA_DIR>/disk-photos`
+  (LXC: systemd `StateDirectory=pbo` → `/var/lib/pbo`; Docker: `pbo_data`
+  volume). The upload itself is never stored.
+- **Contents** (`services/disk_contents.py`): snapshots of the disk's
+  datastore cached on the disk after each run (and `POST
+  /disks/{id}/contents/refresh` while mounted); `/vms` and the Proxmox
+  inventory return `external_copies` (disks holding a copy, newest first).
+- **Usage** history: one sample per day in `external_disks.usage_history`,
+  recorded wherever the filesystem usage is refreshed
+  (`disk_profile.record_usage`), which also notifies once at 80 % and 90 %
+  (`usage_alert_level`). Sizes "used / total" in ONE unit (`units.formatUsage`).
+- **After the sync, same run**: Cleanup (prune + GC with the disk's
+  retention, default keep-last 4) → contents → Verification when asked
+  (`services/post_sync.py`, modal steps `cleanup`/`verify`, 7 steps). API
+  mode only; see docs/PBS_API.md.
+- **Guards**: decided server-side. `GET /disks/alerts`
+  (`services/disk_guards.py`): usage_warning/critical, smart_warning/danger,
+  verify_recommended, usb2_slow, rotation_stale (`ROTATION_STALE_DAYS`,
+  default 30, editable on the disk sheet) → cards, dashboard "To do".
+  Readiness adds `smart_failed` (blocks unless `smart_override` on the run
+  request, the launch dialog asks), `insufficient_space` (with numbers,
+  `services/capacity.py`), `warnings` (usb2_slow, smart_warning,
+  verify_recommended) and `estimate`. The launch dialog is
+  `views/disks/LaunchBackupDialog.tsx`; the legacy confirm modal is no longer
+  used to start a backup.
+- **SMART** (host agent, `apps/agent/src/agent/smart.py`): `smartctl --json
+  -H -A -i -n standby`, retried with `-d sat` (USB bridges), cached per serial
+  in the agent state dir; read when the disk is plugged (hot-plug "added"),
+  unknown or a day old. Status ok | warning | danger | unknown. The installer
+  adds `smartmontools` (host role). The agent also reports `rotational`,
+  `transport` and the USB link speed (`usb_location.speed_mbps`, sysfs).
+- **Removal without eject**: a disk handed to the PBS VM is invisible to the
+  host; seeing it in a host report while `attached_to_pbs` (no active run) =
+  pulled out without eject; unplugged during a run too →
+  `verify_recommended` + activity `unsafe_removal` + notification. The disk
+  sheet proposes a verify-only run (`POST /disks/{id}/verify`, `verify_only`
+  on the run, kind "verify") or "Not needed" (`/verify/dismiss`).
+- Run journal appends reload the run's logs first (other sessions — PBS API
+  backend progress, agent callbacks — append to the same run).
+
 ## Disk ↔ USB port (Phase 4.4, read before touching the USB passthrough)
 
 - The host agent reports, for each USB disk, its physical USB location read

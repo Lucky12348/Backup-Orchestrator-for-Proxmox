@@ -54,6 +54,22 @@ class ExternalDiskRead(UTCDateTimeModel):
     # Derived (app/services/disk_events.py): new | known | ejected | unplugged | rejected.
     status: str = "new"
     reject_reason: str | None = None
+    # Phase 5f: profile, hardware, guards.
+    color: str | None = None
+    location_note: str | None = None
+    photo_version: str | None = None
+    kind: str = "unknown"
+    rotational: bool | None = None
+    transport: str | None = None
+    usb_speed_mbps: int | None = None
+    smart_status: str | None = None
+    smart_details: dict | None = None
+    smart_checked_at: datetime | None = None
+    effective_retention: dict | None = None
+    usage_history: list[dict] | None = None
+    verify_recommended: bool | None = None
+    unsafe_removal_at: datetime | None = None
+    contents_cached_at: datetime | None = None
 
 
 class ExternalDiskDecision(BaseModel):
@@ -63,8 +79,18 @@ class ExternalDiskDecision(BaseModel):
     confirm_name: str | None = Field(default=None, max_length=255)
 
 
+class DiskRetention(BaseModel):
+    keep_last: int | None = Field(default=None, ge=1, le=1000)
+    keep_weekly: int | None = Field(default=None, ge=1, le=1000)
+    keep_monthly: int | None = Field(default=None, ge=1, le=1000)
+
+
 class ExternalDiskUpdate(BaseModel):
     display_name: str | None = Field(default=None, max_length=255)
+    # Phase 5f
+    color: Literal["slate", "blue", "green", "amber", "red", "violet"] | None = None
+    location_note: str | None = Field(default=None, max_length=500)
+    retention: DiskRetention | None = None
     dedicated_backup_disk: bool | None = None
     allow_existing_data: bool | None = None
     trusted: bool | None = None

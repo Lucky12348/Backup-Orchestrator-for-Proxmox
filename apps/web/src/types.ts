@@ -21,6 +21,33 @@ export interface VirtualMachine {
   ignore_reason: string | null;
   /** Last successful external copy (Phase 6b). */
   last_external_copy_at?: string | null;
+  /** Rotation disks holding a copy (cached disk contents, Phase 5f), newest first. */
+  external_copies?: ExternalCopy[];
+}
+
+export interface ExternalCopy {
+  disk_id: number;
+  disk_name: string;
+  color: DiskColor | null;
+  newest: string | null;
+  versions: number | null;
+  cached_at: string | null;
+}
+
+export type DiskColor = "slate" | "blue" | "green" | "amber" | "red" | "violet";
+export type DiskKind = "hdd_portable" | "hdd_desktop" | "ssd" | "usb_stick" | "nvme_enclosure" | "unknown";
+export type SmartStatus = "ok" | "warning" | "danger" | "unknown";
+
+export interface DiskRetention {
+  keep_last: number | null;
+  keep_weekly: number | null;
+  keep_monthly: number | null;
+}
+
+export interface UsageSample {
+  at: string;
+  used_gb: number;
+  total_gb: number;
 }
 
 export interface AssetIgnore {
@@ -81,6 +108,34 @@ export interface ExternalDisk {
   partitions?: DiskPartition[] | null;
   /** Physical USB port reported by the host agent ({ port_id: "2-3", … }). */
   usb_location?: { port_id?: string } & Record<string, unknown> | null;
+  // --- Phase 5f: profile, hardware, guards ---
+  color?: DiskColor | null;
+  location_note?: string | null;
+  /** Changes with each upload (photo URL cache buster); null = no photo. */
+  photo_version?: string | null;
+  kind?: DiskKind;
+  rotational?: boolean | null;
+  transport?: string | null;
+  usb_speed_mbps?: number | null;
+  smart_status?: SmartStatus | null;
+  smart_details?: SmartDetails | null;
+  smart_checked_at?: string | null;
+  effective_retention?: DiskRetention | null;
+  usage_history?: UsageSample[] | null;
+  verify_recommended?: boolean | null;
+  unsafe_removal_at?: string | null;
+  contents_cached_at?: string | null;
+}
+
+export interface SmartDetails {
+  reasons?: string[];
+  reallocated?: number | null;
+  pending?: number | null;
+  uncorrectable?: number | null;
+  media_errors?: number | null;
+  temperature_c?: number | null;
+  power_on_hours?: number | null;
+  message?: string | null;
 }
 
 export type DiskServerStatus = "new" | "known" | "ignored" | "ejected" | "unplugged" | "rejected";
@@ -298,8 +353,11 @@ export interface ExternalBackupRun {
   pbs_task_upid: string | null;
   elapsed_seconds: number | null;
   auto_eject_after_success: boolean;
-  /** "backup" | "eject" (API run_log.run_kind). */
-  kind?: "backup" | "eject";
+  /** "backup" | "eject" | "verify" (API run_log.run_kind). */
+  kind?: "backup" | "eject" | "verify";
+  /** Phase 5f: PBS verify after the sync; verify-only run. */
+  verify_after_backup?: boolean | null;
+  verify_only?: boolean | null;
   /** "main → pbo-pbotesta" (eject runs only know the target). */
   source_datastore?: string | null;
   target_datastore?: string | null;
@@ -439,6 +497,8 @@ export interface ScheduledBackupEvent {
   rotation_disk_serials?: string[] | null;
   /** VM/CT copied ("vm/100"); empty = the whole datastore. */
   vm_groups?: string[] | null;
+  /** Phase 5f: PBS verify of the copied snapshots after the sync. */
+  verify_after_backup?: boolean | null;
   last_status: string | null;
   last_triggered_at: string | null;
   last_completed_at: string | null;

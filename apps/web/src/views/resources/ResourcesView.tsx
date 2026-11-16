@@ -1,9 +1,11 @@
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { Search, Server, ShieldCheck } from "lucide-react";
 
 import { cn } from "../../components/ui/utils";
 import type { Language, TranslationDictionary } from "../../i18n";
-import type { ProxmoxBackupJob, VirtualMachine } from "../../types";
+import type { ExternalCopy, ProxmoxBackupJob, VirtualMachine } from "../../types";
+import { COLOR_CLASS, diskColor } from "../disks/diskProfile";
 import { InfoTip } from "../../ui/InfoTip";
 import { useToast } from "../../ui/toast";
 import { formatGib } from "../../units";
@@ -206,7 +208,7 @@ export function ResourcesView({ vms, jobs, language, t, onIgnore, onJobSelection
                     className="m-0 h-4 w-4"
                   />
                 </th>
-                {[text.col.name, text.col.type, text.col.node, text.col.state, text.col.protection, text.col.size, text.col.lastCopy, text.col.job].map((label) => (
+                {[text.col.name, text.col.type, text.col.node, text.col.state, text.col.protection, text.col.size, text.col.lastCopy, text.col.onDisks, text.col.job].map((label) => (
                   <th key={label} className="border-0 border-b border-solid border-border px-3 py-2.5 font-medium">
                     {label}
                   </th>
@@ -247,6 +249,9 @@ export function ResourcesView({ vms, jobs, language, t, onIgnore, onJobSelection
                     <td className="whitespace-nowrap border-0 border-b border-solid border-border px-3 py-2.5 text-muted">
                       {formatWhen(vm.last_external_copy_at ?? null, language, now, t.dashboardV2)}
                     </td>
+                    <td className="border-0 border-b border-solid border-border px-3 py-2.5" data-copies={(vm.external_copies ?? []).length}>
+                      <DiskCopies copies={vm.external_copies ?? []} language={language} now={now} t={t} />
+                    </td>
                     <td className="border-0 border-b border-solid border-border px-3 py-2.5 text-muted">
                       {jobText || <span className="text-faint">{text.noJob}</span>}
                     </td>
@@ -257,6 +262,32 @@ export function ResourcesView({ vms, jobs, language, t, onIgnore, onJobSelection
           </table>
         )}
       </section>
+    </div>
+  );
+}
+
+/** Phase 5f: the rotation disks holding a copy of this VM/CT, newest first. */
+export function DiskCopies({ copies, language, now, t }: { copies: ExternalCopy[]; language: Language; now: Date; t: TranslationDictionary }) {
+  if (!copies.length) return <span className="text-faint">{t.resourcesV2.noDiskCopy}</span>;
+  const shown = copies.slice(0, 3);
+  const more = copies.length - shown.length;
+  return (
+    <div className="flex flex-col gap-1">
+      {shown.map((copy) => {
+        const color = diskColor(copy.color);
+        return (
+          <Link
+            key={copy.disk_id}
+            to={`/disks/${copy.disk_id}`}
+            className="flex items-center gap-1.5 whitespace-nowrap text-xs text-muted no-underline hover:text-fg"
+          >
+            <span className={cn("h-2 w-2 flex-none rounded-full", color ? COLOR_CLASS[color].swatch : "bg-faint")} />
+            <span className="font-medium text-fg">{copy.disk_name}</span>
+            <span>{formatWhen(copy.newest, language, now, t.dashboardV2)}</span>
+          </Link>
+        );
+      })}
+      {more > 0 ? <span className="text-xs text-faint">{fill(t.resourcesV2.moreDisks, { n: more })}</span> : null}
     </div>
   );
 }

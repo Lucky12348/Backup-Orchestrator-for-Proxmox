@@ -101,12 +101,15 @@ class ExternalBackupAgentBridge:
         disk: ExternalDisk,
         datastore_name: str,
         run_id: int | None = None,
+        reuse_only: bool = False,
     ) -> AgentCommandResult:
         payload: dict[str, object] = {
             "disk": disk.serial_number,
             "datastore_name": datastore_name,
             "confirmation": True,
         }
+        if reuse_only:
+            payload["reuse_only"] = True
         pbs_mount_path = getattr(disk, "pbs_mount_path", None)
         if pbs_mount_path:
             payload["mount_path"] = pbs_mount_path
@@ -195,6 +198,13 @@ class ExternalBackupAgentBridge:
     def assert_external_backup_capabilities(self) -> None:
         _assert_capabilities(self.pbs_client, REQUIRED_PBS_CAPABILITIES, "Agent PBS incompatible ou non mis a jour. Mettre a jour l'agent PBS.")
         _assert_capabilities(self.host_client, REQUIRED_HOST_CAPABILITIES, "Agent Proxmox incompatible ou non mis a jour. Mettre a jour l'agent Proxmox.")
+
+    def pbs_command(self, path: str, payload: dict[str, object], *, run_id: int | None = None) -> AgentCommandResult:
+        """Phase 5f PBS-side operations (PBS_MODE=api backend: prune, verify, snapshots)."""
+        body = dict(payload)
+        if run_id is not None:
+            body.update(self._callback_payload(run_id))
+        return self._run_command(self.pbs_client, path, body)
 
     def _run_command(self, client, path: str, payload: dict[str, object]) -> AgentCommandResult:
         try:

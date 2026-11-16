@@ -457,6 +457,37 @@ def notify_planned_backup_missed(event_title: str) -> None:
     )
 
 
+def notify_disk_space(disk_label: str, level: int, used_gb: int, total_gb: int) -> None:
+    """Phase 5f: rotation disk usage crossed 80 % or 90 %."""
+    _send_event_notification(
+        "disk_space",
+        f"PBO: Disque {disk_label} rempli a {level} %",
+        f"Le disque {disk_label} utilise {used_gb} / {total_gb} Gio. Reduire la retention ou changer de disque.",
+        priority="high" if level >= 90 else "default",
+        tags=["warning", "floppy_disk"],
+    )
+
+
+def notify_disk_health(disk_label: str, status: str, detail: str | None = None) -> None:
+    """Phase 5f: SMART says "to watch" or "failing"."""
+    title = "PBO: Disque en danger (SMART)" if status == "danger" else "PBO: Disque a surveiller (SMART)"
+    body = f"Disque {disk_label}: etat SMART {status}."
+    if detail:
+        body = f"{body} {_shorten(detail)}"
+    _send_event_notification("disk_health", title, body, priority="high" if status == "danger" else "default", tags=["warning", "floppy_disk"])
+
+
+def notify_unsafe_removal(disk_label: str) -> None:
+    """Phase 5f: unplugged while mounted on PBS or during a run."""
+    _send_event_notification(
+        "disk_unsafe_removal",
+        "PBO: Disque retire sans ejection",
+        f"Le disque {disk_label} a ete debranche sans ejection. Verification PBS recommandee au prochain branchement.",
+        priority="high",
+        tags=["warning", "eject"],
+    )
+
+
 def _send_event_notification(
     event_name: str,
     title: str,

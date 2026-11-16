@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { RunProgressData } from "../events";
 import { useEvents } from "../useEvents";
+import type { BackupLaunchOptions, DiskAlert } from "../api";
 import { makeNotice, noticeFromError, type Notice } from "../notices";
 import { createRequestGuard } from "../requestGuard";
 
@@ -24,6 +25,7 @@ import {
   getProxmoxStatus,
   getSystemVersion,
   getDatastoreHealth,
+  getDiskAlerts,
   type DatastoreHealth,
   getUnplannedAssets,
   getVMs,
@@ -76,6 +78,8 @@ export interface AppDataState {
   systemVersion: SystemVersion | null;
   /** Phase 6c: verdict of the last datastore check (null: not available). */
   datastoreHealth: DatastoreHealth | null;
+  /** Phase 5f: guards decided server-side (usage, SMART, removal, USB 2.0, rotation). */
+  diskAlerts: DiskAlert[];
 }
 
 async function fetchAppData(): Promise<AppDataState> {
@@ -98,6 +102,7 @@ async function fetchAppData(): Promise<AppDataState> {
     pbsInventory,
     systemVersion,
     datastoreHealth,
+    diskAlerts,
   ] = await Promise.all([
     getAgentStatus(),
     getOverview(),
@@ -117,6 +122,7 @@ async function fetchAppData(): Promise<AppDataState> {
     getPBSInventory(),
     getSystemVersion().catch(() => null),
     getDatastoreHealth().catch(() => null),
+    getDiskAlerts().catch(() => []),
   ]);
 
   return {
@@ -137,6 +143,7 @@ async function fetchAppData(): Promise<AppDataState> {
     proxmoxBackupJobs,
     systemVersion,
     datastoreHealth,
+    diskAlerts,
   };
 }
 
@@ -252,8 +259,9 @@ export function useAppData() {
         disks ? getPreferredDisks() : Promise.resolve(null),
         agent || disks ? getAgentStatus() : Promise.resolve(null),
         runs ? getExternalBackupRuns() : Promise.resolve(null),
+        disks ? getDiskAlerts().catch(() => null) : Promise.resolve(null),
       ])
-        .then(([nextDisks, nextAgent, nextRuns]) => {
+        .then(([nextDisks, nextAgent, nextRuns, nextAlerts]) => {
           setData((current) =>
             current
               ? {
@@ -261,6 +269,7 @@ export function useAppData() {
                   disks: nextDisks ?? current.disks,
                   agentStatus: nextAgent ?? current.agentStatus,
                   externalBackupRuns: nextRuns ?? current.externalBackupRuns,
+                  diskAlerts: nextAlerts ?? current.diskAlerts,
                 }
               : current,
           );
@@ -276,7 +285,11 @@ export function useAppData() {
     (event) => {
       if (event.type.startsWith("disk.")) scheduleRefresh("disks");
       else if (event.type.startsWith("agent.")) scheduleRefresh("agent");
-      else if (event.type === "run.finished") scheduleRefresh("runs");
+      else if (event.type === "run.finished") {
+        // A finished run also changes its disk (contents, usage, verify flag).
+        scheduleRefresh("runs");
+        scheduleRefresh("disks");
+      }
       else if (event.type === "run.progress") {
         const progress = event.data as RunProgressData;
         if (progress.kind !== "external_backup") return;
@@ -404,12 +417,12 @@ export function useAppData() {
   // second request before React re-renders the disabled button (B25).
   const guard = useRef(createRequestGuard());
 
-  async function startExternalBackup(diskId: number, successMessage: string, autoEjectAfterSuccess = false) {
+  async function startExternalBackup(diskId: number, successMessage: string, autoEjectAfterSuccess = false, options: BackupLaunchOptions = {}) {
     const key = `external-backup-${diskId}`;
     return guard.current.run(key, async () => {
       startSaving(key);
       try {
-        const run = await runExternalBackup(diskId, autoEjectAfterSuccess);
+        const run = await runExternalBackup(diskId, autoEjectAfterSuccess, options);
         setData((current) =>
           current
             ? {

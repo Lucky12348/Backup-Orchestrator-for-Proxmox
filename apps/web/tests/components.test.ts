@@ -41,6 +41,10 @@ before(async () => {
         'export { ChooseDatastoreDialog } from "./src/views/datastores/ChooseDatastoreDialog";',
         'export { PlanningDialog } from "./src/views/planning/PlanningDialog";',
         'export { UserMenu } from "./src/shell/AppShellV2";',
+        'export { DiskAvatar, AlertBadges } from "./src/views/disks/DiskBits";',
+        'export { ContentsCard } from "./src/views/disks/DiskSheetView";',
+        'export { UsageChart } from "./src/views/disks/UsageChart";',
+        'export { DiskCopies } from "./src/views/resources/ResourcesView";',
       ].join("\n"),
       resolveDir: WEB,
       loader: "tsx",
@@ -58,11 +62,11 @@ before(async () => {
 
 const html = (element: unknown) => renderToStaticMarkup(element as never);
 
-test("StepList: 6 steps with their state", () => {
+test("StepList: 7 steps with their state", () => {
   const markup = html(
-    createElement(ui.StepList, { states: ["done", "done", "done", "active", "upcoming", "upcoming"], t: translations.fr }),
+    createElement(ui.StepList, { states: ["done", "done", "done", "active", "upcoming", "upcoming", "upcoming"], t: translations.fr }),
   );
-  for (const label of ["Détection", "Passthrough", "Montage", "Synchronisation", "Vérification", "Éjection sûre"]) {
+  for (const label of ["Détection", "Passthrough", "Montage", "Synchronisation", "Nettoyage", "Vérification", "Éjection sûre"]) {
     assert.ok(markup.includes(label), label);
   }
   assert.equal((markup.match(/data-state="done"/g) ?? []).length, 3);
@@ -149,7 +153,8 @@ test("DiskCard: name, status pill, capacity", () => {
   );
   assert.ok(markup.includes("WD 4 To"));
   assert.ok(markup.includes('data-status="approved"') && markup.includes("Approuvé"));
-  assert.ok(markup.includes("727 Gio utilisés sur 3,57 Tio"));
+  // Phase 5f: used and total in one unit.
+  assert.ok(markup.includes("0,71 / 3,57 Tio utilisés · 20 %"));
   assert.ok(markup.includes('aria-pressed="true"'));
 });
 
@@ -512,4 +517,65 @@ test("Planning and datastore dialogs render nothing while closed", () => {
   assert.ok(!datastore.includes("Choisir un autre datastore"));
   const planning = html(inApp(createElement(ui.PlanningDialog, { state: null, onClose: () => undefined, onSaved: () => undefined, disks: [], vms: [], defaultDatastore: "main", tz: "UTC", language: "fr", t: translations.fr })));
   assert.ok(!planning.includes("Quand ?"));
+});
+
+// --- Phase 5f: disk sheet, guards ----------------------------------------------------------------
+
+test("DiskAvatar: kind icon in its colour, or the photo", () => {
+  const icon = html(createElement(ui.DiskAvatar, { disk: { ...baseDisk, kind: "hdd_desktop", color: "violet" }, t: translations.fr }));
+  assert.ok(icon.includes('data-kind="hdd_desktop"') && icon.includes("bg-violet-500/15") && icon.includes("Disque dur de bureau 3,5"));
+  const photo = html(createElement(ui.DiskAvatar, { disk: { ...baseDisk, photo_version: "disk-1-ab.webp" }, t: translations.fr }));
+  assert.ok(photo.includes('src="/api/v1/disks/1/photo?v=disk-1-ab.webp"') && photo.includes('alt="Photo de WD 4 To"'));
+});
+
+test("DiskCard: guard badges and usage bar colour", () => {
+  const alerts = [
+    { disk_id: 1, disk_name: "WD 4 To", code: "usage_critical", level: "danger", params: { percent: 93.4 } },
+    { disk_id: 1, disk_name: "WD 4 To", code: "usb2_slow", level: "warning", params: { speed_mbps: 480 } },
+  ];
+  const disk = { ...baseDisk, filesystem_used_gb: 3420 };
+  const markup = html(
+    createElement(ui.DiskCard, { row: { disk, status: "approved" }, alerts, selected: false, onSelect: () => undefined, language: "fr", t: translations.fr }),
+  );
+  assert.ok(markup.includes('data-alerts="usage_critical,usb2_slow"') && markup.includes("Plein à 93 %") && markup.includes("USB 2.0"));
+  assert.ok(markup.includes("bg-danger"));
+});
+
+test("ContentsCard: VM/CT on the disk, as of the cached date", () => {
+  const contents = {
+    disk_id: 1,
+    cached_at: "2026-11-10T08:00:00Z",
+    total_versions: 5,
+    items: [
+      { group: "vm/100", type: "vm", id: "100", name: "web", versions: 4, oldest: "2026-10-20T01:00:00Z", newest: "2026-11-09T01:00:00Z", size_bytes: 32 * 1024 ** 3 },
+      { group: "ct/101", type: "ct", id: "101", name: null, versions: 1, oldest: "2026-11-09T01:00:00Z", newest: "2026-11-09T01:00:00Z", size_bytes: null },
+    ],
+  };
+  const markup = html(inApp(createElement(ui.ContentsCard, { disk: baseDisk, t: translations.fr, language: "fr", initial: contents })));
+  assert.ok(markup.includes("Contenu") && markup.includes('data-contents="2"'));
+  assert.ok(markup.includes("web") && markup.includes("vm/100") && markup.includes("32 Gio"));
+  assert.ok(markup.includes("Plus ancienne") && markup.includes("Relire"));
+});
+
+test("UsageChart: one series with 80/90 % lines and a table view", () => {
+  const points = [
+    { at: "2026-10-01T00:00:00Z", time: Date.parse("2026-10-01T00:00:00Z"), percent: 40, usedGb: 1464, totalGb: 3660 },
+    { at: "2026-11-01T00:00:00Z", time: Date.parse("2026-11-01T00:00:00Z"), percent: 85, usedGb: 3111, totalGb: 3660 },
+  ];
+  const markup = html(createElement(ui.UsageChart, { points, name: "WD 4 To", language: "fr", t: translations.fr }));
+  assert.ok(markup.includes('role="img"') && markup.includes('aria-label="Occupation de WD 4 To dans le temps, en pourcentage"'));
+  assert.ok(markup.includes("stroke-warning") && markup.includes("stroke-danger"));
+  assert.ok(markup.includes("Afficher en tableau") && markup.includes("85 %") && markup.includes("3,04 / 3,57 Tio"));
+  const empty = html(createElement(ui.UsageChart, { points: [], name: "x", language: "en", t: translations.en }));
+  assert.ok(empty.includes("No usage measured yet"));
+});
+
+test("DiskCopies: the disks holding a copy of a VM, newest first", () => {
+  const copies = [
+    { disk_id: 1, disk_name: "WD 4 To", color: "blue", newest: "2026-11-09T01:00:00Z", versions: 4, cached_at: null },
+    { disk_id: 2, disk_name: "Toshiba", color: null, newest: "2026-10-01T01:00:00Z", versions: 2, cached_at: null },
+  ];
+  const markup = html(inApp(createElement(ui.DiskCopies, { copies, language: "fr", now: new Date("2026-11-16T12:00:00Z"), t: translations.fr })));
+  assert.ok(markup.includes('href="/disks/1"') && markup.includes("WD 4 To") && markup.includes("bg-sky-500"));
+  assert.ok(html(inApp(createElement(ui.DiskCopies, { copies: [], language: "fr", now: new Date(), t: translations.fr }))).includes("sur aucun disque"));
 });

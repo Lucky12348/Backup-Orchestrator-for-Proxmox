@@ -51,7 +51,7 @@ listed in [PBS_API.md](PBS_API.md#endpoints-used-checked-against-the-pbs-4x-api-
 |---|---|---|---|
 | `/system/disks` | `Admin` | `Sys.Audit` (disk list, guards), `Sys.Modify` (wipe, create removable datastore, mount / unmount) | `Admin` is the only built-in role with `Sys.Modify`; the ACL is limited to the disks subtree |
 | `/system/tasks` | `Audit` | `Sys.Audit` (list and follow PBS tasks the token did not start, e.g. sync jobs) | read-only |
-| `/datastore` | `DatastoreAdmin` | `Datastore.Allocate` (create removable datastores at runtime), `Datastore.Modify` (PBO marker, mount), `Datastore.Backup` (local sync jobs), `Datastore.Read`/`Audit` (source datastore, snapshot inventory) | target datastores do not exist yet when the ACL is set, so it sits on the parent path |
+| `/datastore` | `DatastoreAdmin` | `Datastore.Allocate` (create removable datastores at runtime), `Datastore.Modify` (PBO marker, mount), `Datastore.Backup` (local sync jobs), `Datastore.Read`/`Audit` (source datastore, snapshot inventory, disk contents), `Datastore.Prune`/`Modify` (retention: prune-datastore, then gc — Phase 5f), `Datastore.Verify` (verify of the copied snapshots — Phase 5f) | target datastores do not exist yet when the ACL is set, so it sits on the parent path |
 
 The wizard refuses PBS older than **3.3** (no removable datastores, so no API
 mode) before creating anything.

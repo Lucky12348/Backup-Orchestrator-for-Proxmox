@@ -2,7 +2,22 @@
 
 export interface ReadinessLike {
   ready: boolean;
-  reasons: { code: string; message: string }[];
+  reasons: { code: string; message: string; [key: string]: unknown }[];
+}
+
+/** A reason's text, its {params} filled (numbers with the language's decimal mark). */
+export function reasonText(
+  reason: { code: string; message: string; [key: string]: unknown },
+  texts: Record<string, string>,
+  lang: "fr" | "en" = "en",
+): string {
+  const template = texts[reason.code];
+  if (!template) return reason.message;
+  return template.replace(/\{(\w+)\}/g, (whole, key: string) => {
+    const value = reason[key];
+    if (typeof value === "number") return lang === "fr" ? String(value).replace(".", ",") : String(value);
+    return typeof value === "string" ? value : whole;
+  });
 }
 
 /**
@@ -13,9 +28,10 @@ export interface ReadinessLike {
 export function readinessTitle(
   readiness: ReadinessLike | undefined,
   texts: Record<string, string>,
+  lang: "fr" | "en" = "en",
 ): string | undefined {
   if (!readiness) return texts.checking;
   if (readiness.ready) return undefined;
   if (!readiness.reasons.length) return texts.unknown;
-  return readiness.reasons.map((reason) => texts[reason.code] ?? reason.message).join("\n");
+  return readiness.reasons.map((reason) => reasonText(reason, texts, lang)).join("\n");
 }

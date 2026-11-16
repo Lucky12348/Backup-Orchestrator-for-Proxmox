@@ -44,7 +44,8 @@ function run(overrides: Partial<RunLike> = {}): RunLike {
 test("real reuse backup: every step done, resources from the [ct/NNN] lines", () => {
   const { entries } = journal("backup-reuse");
   const finished = run({ status: "success", current_step: "auto_eject", progress_percent: 100, auto_eject_after_success: true });
-  assert.deepEqual(stepStates(finished, entries), ["done", "done", "done", "done", "done", "done"]);
+  // Phase 5f: a run older than the cleanup step shows it as skipped.
+  assert.deepEqual(stepStates(finished, entries), ["done", "done", "done", "done", "skipped", "done", "done"]);
   const { rows, pending } = resourceRows(finished, entries);
   assert.deepEqual(rows.map((row) => [row.group, row.state, row.noChanges]), [
     ["ct/101", "done", true],
@@ -57,7 +58,7 @@ test("running sync: earlier steps done, sync active, time left estimated", () =>
   const { entries } = journal("backup-reuse");
   const syncing = run({ status: "running", current_step: "sync_job", progress_percent: 50, current_group: "ct/102" });
   assert.deepEqual(stepStates(syncing, entries.filter((entry) => entry.step !== "success" && entry.step !== "auto_eject")), [
-    "done", "done", "done", "active", "upcoming", "upcoming",
+    "done", "done", "done", "active", "upcoming", "upcoming", "upcoming",
   ]);
   const stats = runStats(syncing, Date.parse("2026-11-16T01:41:54Z"));
   assert.equal(stats.elapsedSeconds, 120);
@@ -69,14 +70,14 @@ test("running sync: earlier steps done, sync active, time left estimated", () =>
 test("failure at the USB handoff: passthrough marked failed", () => {
   const entries: JournalEntry[] = journal("backup-reuse").entries.filter((entry) => ["starting", "handoff_disk"].includes(entry.step ?? ""));
   const failed = run({ status: "failed", current_step: "usb_device_not_found", progress_percent: 0 });
-  assert.deepEqual(stepStates(failed, entries), ["done", "failed", "upcoming", "upcoming", "upcoming", "upcoming"]);
+  assert.deepEqual(stepStates(failed, entries), ["done", "failed", "upcoming", "upcoming", "upcoming", "upcoming", "upcoming"]);
 });
 
 test("real eject run: only the eject step applies", () => {
   const { entries } = journal("eject");
   const eject = run({ status: "success", current_step: "ejected", source_datastore: null });
   assert.equal(isEjectRun(eject, entries), true);
-  assert.deepEqual(stepStates(eject, entries), ["skipped", "skipped", "skipped", "skipped", "skipped", "done"]);
+  assert.deepEqual(stepStates(eject, entries), ["skipped", "skipped", "skipped", "skipped", "skipped", "skipped", "done"]);
 });
 
 test("first backup: per-VM sizes and statistics from Summary", () => {
@@ -168,16 +169,16 @@ test("B24: while the auto-eject runs, the backup run shows step 6 active (same r
   const entries = [entry("handoff_disk"), entry("prepare_datastore"), entry("sync_job"), entry("success", "ok"), entry("eject", "info", "eject_unmount")];
   const ejecting = run({ status: "running", current_step: "eject", auto_eject_after_success: true });
   assert.equal(isEjectRun(ejecting, entries), false);
-  assert.deepEqual(stepStates(ejecting, entries), ["done", "done", "done", "done", "done", "active"]);
+  assert.deepEqual(stepStates(ejecting, entries), ["done", "done", "done", "done", "skipped", "done", "active"]);
 });
 
 test("B24: the run ends once ejected; a failed auto-eject fails step 6 only", () => {
   const base = [entry("handoff_disk"), entry("prepare_datastore"), entry("sync_job"), entry("success", "ok"), entry("eject", "info", "eject_unmount")];
   const ejected = run({ status: "success", current_step: "ejected", auto_eject_after_success: true });
-  assert.deepEqual(stepStates(ejected, [...base, entry("ejected", "ok", "auto_ejected")]), ["done", "done", "done", "done", "done", "done"]);
+  assert.deepEqual(stepStates(ejected, [...base, entry("ejected", "ok", "auto_ejected")]), ["done", "done", "done", "done", "skipped", "done", "done"]);
   const failedEject = run({ status: "success", current_step: "eject", auto_eject_after_success: true });
   assert.deepEqual(stepStates(failedEject, [...base, entry("eject", "err", "auto_eject_failed")]), [
-    "done", "done", "done", "done", "done", "failed",
+    "done", "done", "done", "done", "skipped", "done", "failed",
   ]);
 });
 
@@ -185,5 +186,33 @@ test("a manual eject stays a run of its own (earlier steps are not part of it)",
   const manual = run({ status: "success", current_step: "ejected", source_datastore: null });
   const entries = [entry("eject", "info", "eject_unmount"), entry("eject", "info", "eject_detach")];
   assert.equal(isEjectRun(manual, entries), true);
-  assert.deepEqual(stepStates(manual, entries), ["skipped", "skipped", "skipped", "skipped", "skipped", "done"]);
+  assert.deepEqual(stepStates(manual, entries), ["skipped", "skipped", "skipped", "skipped", "skipped", "skipped", "done"]);
+});
+
+// --- Phase 5f: cleanup and verification steps ---------------------------------------------------
+
+test("5f: cleanup between sync and verify; verify skipped when not asked", () => {
+  const base = [entry("handoff_disk"), entry("prepare_datastore"), entry("sync_job"), entry("cleanup", "info", "cleanup_done"), entry("success", "ok")];
+  const plain = run({ status: "success", current_step: "success", verify_after_backup: false });
+  assert.deepEqual(stepStates(plain, base), ["done", "done", "done", "done", "done", "skipped", "upcoming"]);
+  const verified = run({ status: "success", current_step: "success", verify_after_backup: true });
+  assert.deepEqual(stepStates(verified, [...base.slice(0, 4), entry("verify", "ok", "verify_ok"), entry("success", "ok")]), [
+    "done", "done", "done", "done", "done", "done", "upcoming",
+  ]);
+  const cleaning = run({ status: "running", current_step: "cleanup", verify_after_backup: true });
+  assert.deepEqual(stepStates(cleaning, base.slice(0, 4)), ["done", "done", "done", "done", "active", "upcoming", "upcoming"]);
+});
+
+test("5f: a failed verification fails the verify step", () => {
+  const entries = [entry("handoff_disk"), entry("sync_job"), entry("cleanup", "info", "cleanup_done"), entry("verify_failed", "err", "verify_failed")];
+  const failed = run({ status: "failed", current_step: "verify_failed", verify_after_backup: true });
+  assert.deepEqual(stepStates(failed, entries), ["done", "done", "done", "done", "done", "failed", "upcoming"]);
+});
+
+test("5f: agent mode skips cleanup and verification; a verify-only run skips the copy", () => {
+  const agent = [entry("sync_job"), entry("cleanup", "info", "cleanup_agent_mode"), entry("verify", "info", "verify_agent_mode"), entry("success", "ok")];
+  assert.deepEqual(stepStates(run({ status: "success", current_step: "success", verify_after_backup: true }), agent).slice(3, 6), ["done", "skipped", "skipped"]);
+  const verifyOnly = run({ status: "success", current_step: "success", verify_only: true, verify_after_backup: true });
+  const entries = [entry("handoff_disk"), entry("verify", "info", "verify_only_start"), entry("prepare_dedicated_datastore"), entry("verify", "ok", "verify_ok")];
+  assert.deepEqual(stepStates(verifyOnly, entries), ["done", "done", "done", "skipped", "skipped", "done", "upcoming"]);
 });

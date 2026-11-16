@@ -17,6 +17,10 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://postgres:postgres@db:5432/proxmox_backup_orchestrator}
       PLANNING_SCHEDULER_ENABLED: ${PLANNING_SCHEDULER_ENABLED:-true}
       PLANNING_SCHEDULER_INTERVAL_SECONDS: ${PLANNING_SCHEDULER_INTERVAL_SECONDS:-60}
+      # Disk photos (Phase 5f), kept across rebuilds in the pbo_data volume.
+      PBO_DATA_DIR: /var/lib/pbo
+    volumes:
+      - pbo_data:/var/lib/pbo
     ports:
       # Web UI + API on the same port (no separate web container anymore).
       - "${API_PORT:-8000}:8000"
@@ -57,3 +61,4 @@ services:
 
 volumes:
   postgres_data:
+  pbo_data:

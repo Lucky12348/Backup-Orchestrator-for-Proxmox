@@ -16,6 +16,7 @@ from app.services.disk_handoff import handoff_disk_to_pbs
 from app.services.external_backup_agent import AgentCommandError, AgentCompatibilityError
 from app.services.external_backup_agent import get_external_backup_agent_bridge
 from app.services.external_backup_execution import build_export_target_path, get_external_backup_execution_service
+from app.services import post_sync
 from app.services.notifications import notify_backup_failure, notify_backup_success
 from app.services.run_log import is_progress_line
 from app.services.pbs_progress import parse_pbs_progress_line, summarize_pbs_failure
@@ -190,6 +191,9 @@ def run_external_backup(
     datastore_name: str | None = None,
     auto_eject_after_success: bool = False,
     group_filter: list[str] | None = None,
+    verify_after_backup: bool = False,
+    smart_override: bool = False,
+    verify_only: bool = False,
 ) -> ExternalBackupRun:
     if not confirmation:
         raise HTTPException(
@@ -205,7 +209,17 @@ def run_external_backup(
         # rejected, another run) creates no run: 409 with the coded reasons.
         from app.services.backup_readiness import local_disk_reasons
 
-        reasons = local_disk_reasons(db, disk)
+        reasons = local_disk_reasons(db, disk, smart_override=smart_override)
+        estimate = None
+        if verify_only:
+            reasons.extend(_verify_only_reasons(disk))
+        else:
+            # Phase 5f: estimated copy vs free space (PBS API; unknown = no refusal).
+            from app.services.capacity import check_space, space_reason
+
+            estimate = check_space(db, disk, group_filter=group_filter, datastore=datastore_name)
+            if reason := space_reason(estimate):
+                reasons.append(reason)
         if reasons:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -235,6 +249,8 @@ def run_external_backup(
             failed_groups=[],
             auto_eject_after_success=auto_eject_after_success,
             group_filter=group_filter or None,
+            verify_after_backup=verify_after_backup or verify_only,
+            verify_only=verify_only or None,
             mode=plan.mode,
             created_at=now,
         )
@@ -248,8 +264,37 @@ def run_external_backup(
         step="starting",
         message="External backup run created. Background execution will start shortly.",
     )
+    from app.services import disk_profile
+
+    if smart_override and disk.smart_status == "danger":
+        append_external_backup_run_log(
+            db, run.id, step="starting",
+            message="SMART reports this disk as failing: backup started anyway on explicit confirmation.",
+            stream="stderr",
+        )
+    if disk_profile.is_usb2(disk):
+        append_external_backup_run_log(
+            db, run.id, step="starting",
+            message=f"USB 2.0 link ({disk.usb_speed_mbps} Mbit/s): the copy will be about 10× slower.",
+        )
+    if estimate and estimate.get("known"):
+        append_external_backup_run_log(
+            db, run.id, step="starting",
+            message=(
+                f"Space check: about {estimate['needed_bytes'] / 1024**3:.1f} GiB to copy, "
+                f"{estimate['free_bytes'] / 1024**3:.1f} GiB free."
+            ),
+        )
     db.refresh(run)
     return run
+
+
+def _verify_only_reasons(disk: ExternalDisk) -> list[dict[str, str]]:
+    if get_settings().pbs_mode != "api":
+        return [{"code": "verify_api_mode_only", "message": "A verify-only run needs PBS_MODE=api."}]
+    if not (disk.prepared_as_pbs_datastore and disk.pbs_datastore_name):
+        return [{"code": "verify_needs_datastore", "message": "This disk holds no PBO datastore to verify."}]
+    return []
 
 
 def execute_external_backup_run(run_id: int) -> None:
@@ -310,59 +355,79 @@ def execute_external_backup_run(run_id: int) -> None:
                 step="handoff_disk",
                 message=handoff_status.message,
             )
-            if run.group_filter and get_settings().pbs_mode != "api":
-                append_external_backup_run_log(
-                    db, run.id, step="run_export",
-                    message="VM selection needs PBS_MODE=api: the whole datastore is copied.",
-                )
-            execution_result = execution_service.execute(
-                **({"group_filter": run.group_filter} if run.group_filter else {}),
-                disk=disk,
-                datastore_name=run.datastore_name,
-                mode=run.mode,
-                run_id=run.id,
-                progress=lambda step, message, line=None: append_external_backup_run_log(
-                    db,
-                    run.id,
-                    step=step,
-                    message=message,
-                    line=line,
-                ),
-            )
-            prepare_result = execution_result.prepare
-            export_result = execution_result.export
-            run.target_path = execution_result.target_path
-            run.pbs_sync_job_id = getattr(execution_result, "pbs_sync_job_id", None) or run.pbs_sync_job_id
-            run.pbs_remote_id = getattr(execution_result, "pbs_remote_id", None) or run.pbs_remote_id
-            run.pbs_task_upid = getattr(execution_result, "pbs_task_upid", None) or run.pbs_task_upid
-            if execution_result.target_datastore_name:
-                disk.pbs_datastore_name = execution_result.target_datastore_name
-                disk.pbs_mount_path = execution_result.target_path
-                disk.pbs_filesystem_type = "ext4"
-                disk.prepared_as_pbs_datastore = True
-                db.add(disk)
-                db.commit()
-                db.refresh(disk)
-                from app.services.disks import refresh_disk_filesystem_usage_from_pbs
-                refresh_disk_filesystem_usage_from_pbs(db, disk)
 
-            # B24: the run stays RUNNING until the optional eject (step 6) is
-            # done, so the backup and its eject are one run and one modal.
-            run.message = f"{handoff_status.message} {export_result.message}".strip()
-            # The handoff message is already in the journal; the preparation
-            # details (target paths...) become timestamped lines, the PBS task
-            # lines were streamed live (B22: no raw block merged at the end).
-            _journal_block(db, run, "prepare_datastore", prepare_result.stdout_log)
-            _journal_block(db, run, "sync_job", export_result.stdout_log)
-            run.stderr_log = _merge_logs(run.stderr_log, prepare_result.stderr_log, export_result.stderr_log)
-            run.command_summary = _merge_logs(prepare_result.command_summary, export_result.command_summary)
-            run.execution_cwd = _merge_logs(prepare_result.execution_cwd, export_result.execution_cwd)
-            run.return_code = export_result.return_code
-            _apply_progress_text(run, export_result.stdout_log)
-            run.current_step = "success"
-            run.progress_message = run.message
-            run.last_log_at = datetime.utcnow()
-            backup_message = run.message
+            def log(**kwargs) -> None:
+                append_external_backup_run_log(db, run.id, **kwargs)
+
+            if run.verify_only:
+                run.message = _execute_verify_only(db, run, disk, handoff_status.message, log)
+                run.current_step = "success"
+                run.progress_message = run.message
+                run.last_log_at = datetime.utcnow()
+                backup_message = run.message
+            else:
+                if run.group_filter and get_settings().pbs_mode != "api":
+                    append_external_backup_run_log(
+                        db, run.id, step="run_export",
+                        message="VM selection needs PBS_MODE=api: the whole datastore is copied.",
+                    )
+                execution_result = execution_service.execute(
+                    **({"group_filter": run.group_filter} if run.group_filter else {}),
+                    disk=disk,
+                    datastore_name=run.datastore_name,
+                    mode=run.mode,
+                    run_id=run.id,
+                    progress=lambda step, message, line=None: append_external_backup_run_log(
+                        db,
+                        run.id,
+                        step=step,
+                        message=message,
+                        line=line,
+                    ),
+                )
+                prepare_result = execution_result.prepare
+                export_result = execution_result.export
+                run.target_path = execution_result.target_path
+                run.pbs_sync_job_id = getattr(execution_result, "pbs_sync_job_id", None) or run.pbs_sync_job_id
+                run.pbs_remote_id = getattr(execution_result, "pbs_remote_id", None) or run.pbs_remote_id
+                run.pbs_task_upid = getattr(execution_result, "pbs_task_upid", None) or run.pbs_task_upid
+                if execution_result.target_datastore_name:
+                    disk.pbs_datastore_name = execution_result.target_datastore_name
+                    disk.pbs_mount_path = execution_result.target_path
+                    disk.pbs_filesystem_type = "ext4"
+                    disk.prepared_as_pbs_datastore = True
+                    db.add(disk)
+                    db.commit()
+                    db.refresh(disk)
+                    from app.services.disks import refresh_disk_filesystem_usage_from_pbs
+                    refresh_disk_filesystem_usage_from_pbs(db, disk)
+
+                # B24: the run stays RUNNING until the optional eject (step 6) is
+                # done, so the backup and its eject are one run and one modal.
+                run.message = f"{handoff_status.message} {export_result.message}".strip()
+                # The handoff message is already in the journal; the preparation
+                # details (target paths...) become timestamped lines, the PBS task
+                # lines were streamed live (B22: no raw block merged at the end).
+                _journal_block(db, run, "prepare_datastore", prepare_result.stdout_log)
+                _journal_block(db, run, "sync_job", export_result.stdout_log)
+                run.stderr_log = _merge_logs(run.stderr_log, prepare_result.stderr_log, export_result.stderr_log)
+                run.command_summary = _merge_logs(prepare_result.command_summary, export_result.command_summary)
+                run.execution_cwd = _merge_logs(prepare_result.execution_cwd, export_result.execution_cwd)
+                run.return_code = export_result.return_code
+                _apply_progress_text(run, export_result.stdout_log)
+                # Phase 5f: Cleanup (retention + GC), contents, Verification.
+                store = execution_result.target_datastore_name
+                if store:
+                    bridge = _post_sync_bridge(execution_service)
+                    post_sync.cleanup(bridge, run, disk, store, log)
+                    after = post_sync.refresh_contents(db, bridge, run, disk, store, log)
+                    if run.verify_after_backup:
+                        copied, verify_all = post_sync.copied_keys(execution_result.pre_sync_snapshots, after)
+                        post_sync.verify(bridge, run, store, log, copied=copied, verify_all=verify_all)
+                run.current_step = "success"
+                run.progress_message = run.message
+                run.last_log_at = datetime.utcnow()
+                backup_message = run.message
             append_external_backup_run_log(db, run.id, step="success", message=run.message)
 
             if run.auto_eject_after_success:
@@ -442,6 +507,14 @@ def execute_external_backup_run(run_id: int) -> None:
                 stream="stderr",
                 line=None if code else technical,
             )
+        except post_sync.VerifyFailed as exc:
+            run.status = BackupRunStatus.FAILED
+            run.finished_at = datetime.utcnow()
+            run.message = str(exc)
+            run.return_code = None
+            run.current_step = "verify_failed"
+            run.progress_message = str(exc)
+            run.last_log_at = datetime.utcnow()
         except RuntimeError as exc:
             run.status = BackupRunStatus.FAILED
             run.finished_at = datetime.utcnow()
@@ -496,6 +569,36 @@ def execute_external_backup_run(run_id: int) -> None:
             notify_backup_failure(disk_label, run.current_step, run.message)
 
 
+def _post_sync_bridge(execution_service):
+    bridge = getattr(execution_service, "_bridge", None)
+    return bridge if hasattr(bridge, "pbs_command") else get_external_backup_agent_bridge()
+
+
+def _execute_verify_only(db: Session, run: ExternalBackupRun, disk: ExternalDisk, handoff_message: str, log) -> str:
+    """Hand-off done: reuse the disk's datastore (never format), verify every
+    snapshot, refresh the contents, clear "verification recommended"."""
+    from app.services import disk_guards
+    from app.services.external_backup_execution import build_dedicated_datastore_name
+
+    log(step="verify", message="Verify-only run: the disk's datastore is checked, nothing is copied.")
+    bridge = get_external_backup_agent_bridge()
+    store = disk.pbs_datastore_name or build_dedicated_datastore_name(disk.serial_number)
+    inspect = bridge.inspect_disk_on_pbs(disk)
+    if not inspect.ok:
+        raise RuntimeError(inspect.message)
+    log(step="prepare_dedicated_datastore", message="Preparing or reusing dedicated PBS datastore.")
+    prepared = bridge.prepare_dedicated_pbs_datastore(disk, store, run_id=run.id, reuse_only=True)
+    if not prepared.ok:
+        raise RuntimeError(prepared.message)
+    store = str((prepared.payload or {}).get("datastore_name") or store)
+    post_sync.verify(bridge, run, store, log, copied=None, verify_all=True)
+    post_sync.refresh_contents(db, bridge, run, disk, store, log)
+    disk_guards.clear_verify_recommended(disk)
+    db.add(disk)
+    db.commit()
+    return f"{handoff_message} PBS verify completed on `{store}`.".strip()
+
+
 def append_external_backup_run_log(
     db: Session,
     run_id: int,
@@ -507,6 +610,12 @@ def append_external_backup_run_log(
     command: str | None = None,
 ) -> ExternalBackupRun:
     run = get_external_backup_run(db, run_id)
+    # Other sessions append to the same run (PBS API backend progress, agent
+    # callbacks): reload the logs before appending, or this session's copy
+    # (expire_on_commit=False) would overwrite their lines. Pending changes
+    # of this session are flushed first so the refresh cannot drop them.
+    db.flush()
+    db.refresh(run, attribute_names=["stdout_log", "stderr_log"])
     now = datetime.utcnow()
     clean_step = (step or run.current_step or "progress").strip()[:128]
     clean_message = (message or line or command or "Progress update.").strip()

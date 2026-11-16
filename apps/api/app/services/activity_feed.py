@@ -91,7 +91,8 @@ def build_activity(db: Session, *, days: int = 90, now: datetime | None = None) 
             {
                 "id": f"event-{event.id}",
                 "type": "detection",
-                "status": "plugged" if event.action == "usb_added" else "unplugged",
+                # Phase 5f: "unsafe_removal" = unplugged without eject.
+                "status": {"usb_added": "plugged", "unsafe_removal": "unsafe_removal"}.get(event.action, "unplugged"),
                 "at": _iso(event.created_at),
                 "finished_at": None,
                 "duration_seconds": None,

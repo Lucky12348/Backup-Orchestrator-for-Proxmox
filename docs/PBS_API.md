@@ -55,6 +55,10 @@ Source: `https://pbs.proxmox.com/docs/api-viewer/apidoc.js` (schema of the
 | List PBO jobs | `GET /config/sync` | – | sync job objects [V] | – |
 | Running tasks / find the sync task | `GET /nodes/{node}/tasks` | `running=1`, `typefilter=syncjob`, `since`, `limit` | items `upid, worker_type, worker_id, starttime, status` [V] | own tasks, Sys.Audit `/system/tasks` for all |
 | Follow a task to the end | `GET /nodes/{node}/tasks/{upid}/status` | – | `status` ("running"/"stopped" per description [V]), `exitstatus` ("OK", "Error: …", "unknown" [V]; "WARNINGS: n" treated as success) | own tasks or Sys.Audit |
+| Disk contents (cache), copy estimate, verify diff (5f) | `GET /admin/datastore/{store}/snapshots` | – | items `backup-type, backup-id, backup-time, size` (sum of archive sizes, optional), `files`, `verification{state}`, `protected`, `owner` [V] | Datastore.Audit, or Datastore.Backup + owner |
+| Retention after each sync (5f) | `POST /admin/datastore/{store}/prune-datastore` | `keep-last` / `keep-weekly` / `keep-monthly` (≥ 1; at least one, refused otherwise — a prune without keep deletes everything) | UPID [V] | "Datastore.Modify or Datastore.Prune" [V] |
+| Free the pruned chunks (5f) | `POST /admin/datastore/{store}/gc` | – | UPID [V] | Datastore.Modify `/datastore/{store}` [V] |
+| Verify the copy (5f) | `POST /admin/datastore/{store}/verify` | one snapshot: `backup-type`, `backup-id`, `backup-time`, `ignore-verified=false`; whole store: `ignore-verified=false` | UPID [V] | Datastore.Verify, or Datastore.Backup + owner [V] |
 | Task log into the run journal | `GET /nodes/{node}/tasks/{upid}/log` | `start`, `limit=500` | untyped in schema [U]: parsed as `[{n, t}]` (PBS's actual format), plain strings accepted | own tasks or Sys.Audit |
 
 Notes:
@@ -134,6 +138,36 @@ while copying every task log line into the run journal (progress parsing of
 Not available in API mode (explicit error, use `PBS_MODE=agent`): the
 coexistence / loop-image mode, `/prepare-disk` on the PBS side, PBS agent
 maintenance.
+
+### Cleanup, contents and verification (Phase 5f)
+
+After the sync, in the same run (`services/post_sync.py`, API mode only;
+agent mode journals `cleanup_agent_mode` / `verify_agent_mode` and skips):
+
+1. **Cleanup** — `prune-datastore` on the disk's datastore with the disk's
+   retention (`external_disks.retention`, default `keep-last=4`), then `gc`.
+   A failed cleanup is a WARN line; the copy stays valid.
+2. **Contents** — `GET …/snapshots` of the disk's datastore, cached on the
+   disk (`contents_cache`, `contents_cached_at`): shown on the disk sheet while
+   unplugged, used by the next copy estimate and the Resources page.
+3. **Verification** (when asked: launch dialog or planning option) — the
+   snapshots copied by this run = snapshots after the cleanup minus those
+   listed before the sync (`pre_sync_snapshots` of `/run-external-export`);
+   one `verify` per snapshot (`ignore-verified=false`), the whole datastore
+   above 200 snapshots or when "before" is unknown. A failed verify fails the
+   run (`current_step = verify_failed`).
+
+Verify-only run (`POST /api/v1/disks/{id}/verify`, proposed after a removal
+without eject): hand-off → `/prepare-dedicated-pbs-datastore` with
+`reuse_only` (a disk without a PBO datastore is refused, **never formatted**)
+→ verify everything → contents → optional eject.
+
+Space estimate (`services/capacity.py`): source snapshots (filtered by the
+VM/CT selection) missing from the disk's cached contents; a VM/CT new to the
+disk costs its newest snapshot's size, other missing snapshots 10 % of theirs
+(deduplication). Compared with the datastore's free space (or the whole disk
+when never prepared); `insufficient_space` (409, no run) only when the
+contents are known. [U]: snapshot `size` is logical, so this is an estimate.
 
 ### Deleted datastore configuration (Phase 6c)
 

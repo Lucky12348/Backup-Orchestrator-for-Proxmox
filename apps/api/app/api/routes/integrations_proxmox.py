@@ -95,4 +95,6 @@ def list_proxmox_inventory(db: DbSession) -> list[dict]:
     ensure_infrastructure_ignored(db, vms)
     ignore_map = get_asset_ignore_map(db, vms)
     copies = last_external_copies(db, vms)
-    return [vm_read_payload(vm, ignore_map, copies) for vm in vms]
+    from app.services.disk_contents import copies_by_group
+
+    return [vm_read_payload(vm, ignore_map, copies, copies_by_group(db)) for vm in vms]

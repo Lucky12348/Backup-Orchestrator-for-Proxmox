@@ -26,6 +26,10 @@ export interface RunLike {
   source_datastore?: string | null;
   target_datastore?: string | null;
   cancellable?: boolean;
+  /** Phase 5f: PBS verify after the sync; verify-only run (no copy). */
+  verify_after_backup?: boolean | null;
+  verify_only?: boolean | null;
+  kind?: string | null;
 }
 
 export interface JournalEntry {
@@ -39,7 +43,7 @@ export interface JournalEntry {
   count: number;
 }
 
-export const RUN_STEPS = ["detect", "passthrough", "mount", "sync", "verify", "eject"] as const;
+export const RUN_STEPS = ["detect", "passthrough", "mount", "sync", "cleanup", "verify", "eject"] as const;
 export type RunStepKey = (typeof RUN_STEPS)[number];
 export type StepState = "done" | "active" | "upcoming" | "failed" | "skipped";
 
@@ -57,6 +61,10 @@ const STEP_OF: Record<string, RunStepKey> = {
   sync_job: "sync",
   sync: "sync",
   export: "sync",
+  // Phase 5f: retention (prune + GC) and contents, then the PBS verify.
+  cleanup: "cleanup",
+  verify: "verify",
+  verify_failed: "verify",
   success: "verify",
   auto_eject: "eject",
   eject: "eject",
@@ -85,7 +93,35 @@ export function isEjectRun(run: RunLike, entries: JournalEntry[]): boolean {
   return [...steps, ...(current === null ? [] : [current])].every((index) => index === RUN_STEPS.indexOf("eject")) && (steps.length > 0 || current !== null);
 }
 
+/** Steps this run does not do: no cleanup (agent mode), no verification
+ *  (not asked), no copy (verify-only run). Old runs keep their verify step. */
+export function skippedSteps(run: RunLike, entries: JournalEntry[]): Set<number> {
+  const index = (key: RunStepKey) => RUN_STEPS.indexOf(key);
+  const own = (key: RunStepKey) => entries.filter((entry) => entry.step !== "success" && stepIndex(entry.step) === index(key));
+  const reached = reachedIndex(run, entries);
+  const skip = new Set<number>();
+  if (run.verify_only) {
+    skip.add(index("sync"));
+    skip.add(index("cleanup"));
+  }
+  const cleanup = own("cleanup");
+  if (cleanup.length ? cleanup.every((entry) => entry.code === "cleanup_agent_mode") : reached > index("cleanup") || run.status === "success") {
+    skip.add(index("cleanup"));
+  }
+  const verify = own("verify");
+  if (verify.some((entry) => entry.code === "verify_agent_mode") || (run.verify_after_backup === false && !verify.length && !run.verify_only)) {
+    skip.add(index("verify"));
+  }
+  return skip;
+}
+
 export function stepStates(run: RunLike, entries: JournalEntry[]): StepState[] {
+  const states = rawStepStates(run, entries);
+  const skip = skippedSteps(run, entries);
+  return states.map((state, index) => (skip.has(index) && (state === "done" || state === "upcoming") ? "skipped" : state));
+}
+
+function rawStepStates(run: RunLike, entries: JournalEntry[]): StepState[] {
   const reached = Math.max(0, reachedIndex(run, entries));
   const eject = RUN_STEPS.indexOf("eject");
   if (isEjectRun(run, entries)) {

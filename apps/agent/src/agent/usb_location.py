@@ -30,6 +30,14 @@ def _read(path: Path) -> str | None:
     return value or None
 
 
+def _speed(value: str | None) -> float | None:
+    try:
+        speed = float(value) if value else None
+    except ValueError:
+        return None
+    return speed if speed and speed > 0 else None
+
+
 def usb_location_from_device_path(device_path: Path, *, stop_at: Path = SYS_ROOT) -> dict[str, Any] | None:
     """First USB device (busnum + devpath, not a root hub) above `device_path`."""
     for candidate in (device_path, *device_path.parents):
@@ -50,6 +58,8 @@ def usb_location_from_device_path(device_path: Path, *, stop_at: Path = SYS_ROOT
             "serial": _read(candidate / "serial"),
             "manufacturer": _read(candidate / "manufacturer"),
             "product": _read(candidate / "product"),
+            # Negotiated link speed, Mbit/s (480 = USB 2.0, 5000 = USB 3.0…).
+            "speed_mbps": _speed(_read(candidate / "speed")),
         }
     return None
 

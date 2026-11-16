@@ -15,6 +15,9 @@ Supported agent endpoints:
                                                    → PBO marker comment → mount
   /run-external-export (dedicated)                 local sync job (no remote) → run → UPID log
   /eject-dedicated-pbs-datastore                   idle check → unmount → wait UPID
+  /list-datastore-snapshots                        snapshots of a disk's datastore (contents, diffs)
+  /prune-datastore                                 retention: prune-datastore → gc (Phase 5f)
+  /verify-snapshots                                PBS verify of given snapshots, or all (Phase 5f)
   /external-export-objects/status|cleanup, /cleanup-legacy-external-export-objects
 Everything else (coexistence/loop-image mode, /prepare-disk, maintenance) needs
 PBS_MODE=agent and fails with an explicit message.
@@ -34,6 +37,7 @@ from typing import Any
 from sqlalchemy import or_, select
 
 from app.core.config import Settings, get_settings
+from app.services.disk_contents import snapshot_key
 from app.services.disk_identity import (
     canonical_serial_number,
     disk_matches_serial,
@@ -66,6 +70,8 @@ EJECT_NOT_FINISHED_ERROR_CODE = "eject_not_finished"  # same value as the agent 
 REUSED_MESSAGE = "Existing dedicated PBS datastore reused."  # compared by external_backup_execution
 CREATED_MESSAGE = "Dedicated PBS datastore created."
 EJECT_OK_MESSAGE = "External datastore unmounted safely. Disk can be detached."
+# Above this many copied snapshots: one verify task of the whole datastore.
+MAX_VERIFY_TASKS = 200
 API_MODE_CAPABILITIES = frozenset(
     {
         "version-endpoint",
@@ -75,6 +81,8 @@ API_MODE_CAPABILITIES = frozenset(
         "dedicated-pbs-eject",
         "filesystem-usage",
         "pbs-api-mode",
+        "datastore-retention",
+        "datastore-verify",
     }
 )
 ProgressFn = Callable[..., None]
@@ -130,6 +138,9 @@ class PBSApiBackend:
             "/prepare-dedicated-pbs-datastore": self._prepare_dedicated,
             "/run-external-export": self._run_external_export,
             "/eject-dedicated-pbs-datastore": self._eject_dedicated,
+            "/list-datastore-snapshots": self._list_snapshots,
+            "/prune-datastore": self._prune_datastore,
+            "/verify-snapshots": self._verify_snapshots,
             "/external-export-objects/status": lambda _payload: self._export_objects_status(),
             "/external-export-objects/cleanup": lambda _payload: self._cleanup_export_objects(),
             "/cleanup-legacy-external-export-objects": lambda _payload: self._cleanup_export_objects(),
@@ -215,6 +226,12 @@ class PBSApiBackend:
             recorded_backing_device=getattr(record, "pbs_backing_device", None),
             recorded_path=getattr(record, "pbs_datastore_path", None),
         )
+        if payload.get("reuse_only") and plan.action == "format":
+            # Verify-only runs never prepare (let alone format) a disk.
+            raise GuardViolation(
+                "verify_needs_datastore",
+                f"Disk `{serial}` holds no PBO datastore to verify: nothing is formatted.",
+            )
         lines: list[str] = []
         commands: list[str] = []
 
@@ -334,6 +351,8 @@ class PBSApiBackend:
             raise GuardViolation("source_missing", f"Source datastore `{source}` does not exist on PBS.")
         assert_store_idle(target, self.client.list_tasks(running=True, limit=200))
         self._cleanup_export_objects()
+        # Phase 5f: what the disk held before the sync (copied = after - before).
+        pre_sync = sorted(filter(None, (snapshot_key(item) for item in self.client.list_snapshots(target))))
 
         job_id = f"{SYNC_JOB_PREFIX}{run_id}" if run_id is not None else f"{SYNC_JOB_PREFIX}{int(self._wall_clock())}"
         owner = self.settings.pbs_token_id.split("!", 1)[0] if "!" in self.settings.pbs_token_id else None
@@ -378,6 +397,7 @@ class PBSApiBackend:
             "message": "PBS local sync job completed.",
             "pbs_sync_job_id": job_id,
             "pbs_task_upid": upid,
+            "pre_sync_snapshots": pre_sync,
             "target_path": f"{PBS_DATASTORE_ROOT}/{target}",
             "datastore_name": target,
             "stdout_log": "\n".join(lines) or None,
@@ -435,6 +455,98 @@ class PBSApiBackend:
             "mount_path": f"{PBS_DATASTORE_ROOT}/{store}",
             "stdout_log": "\n".join(lines) or None,
             "command_summary": f"POST /admin/datastore/{store}/unmount",
+        }
+
+    # --- contents, retention, verification (Phase 5f) -------------------------------------------
+    def _mounted_store(self, payload: dict[str, Any]) -> str:
+        store = fit_datastore_name(str(payload.get("datastore_name") or "").strip())
+        state = self._mount_status(store)
+        if state is None:
+            raise GuardViolation("datastore_missing", f"Datastore `{store}` does not exist on PBS.")
+        if state == "notmounted":
+            raise GuardViolation("datastore_not_mounted", f"Datastore `{store}` is not mounted.")
+        return store
+
+    def _list_snapshots(self, payload: dict[str, Any]) -> dict[str, Any]:
+        store = self._mounted_store(payload)
+        snapshots = self.client.list_snapshots(store)
+        return {"ok": True, "datastore_name": store, "snapshots": snapshots, "message": f"{len(snapshots)} snapshot(s) on `{store}`."}
+
+    def _prune_datastore(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Retention of a rotation disk: prune-datastore with the disk's keep
+        options, then garbage collection (frees the space of pruned chunks)."""
+        store = self._mounted_store(payload)
+        keep = {str(key): int(value) for key, value in (payload.get("keep") or {}).items() if value}
+        if not keep:
+            raise GuardViolation("retention_missing", "No retention option: prune refused (it would delete every snapshot).")
+        progress = self._progress(payload.get("callback_run_id"))
+        lines: list[str] = []
+
+        def on_line(line: str) -> None:
+            lines.append(line)
+            progress("cleanup", None, line)
+
+        options = " ".join(f"{key}={value}" for key, value in sorted(keep.items()))
+        progress("cleanup", f"Applying retention on `{store}`: {options} (POST /admin/datastore/{store}/prune-datastore).")
+        self.client.wait_for_task(
+            self.client.prune_datastore(store, keep=keep),
+            timeout_seconds=self.settings.pbs_task_timeout_seconds,
+            on_line=on_line,
+        )
+        progress("cleanup", f"Garbage collection on `{store}` (POST /admin/datastore/{store}/gc).")
+        self.client.wait_for_task(
+            self.client.start_garbage_collection(store),
+            timeout_seconds=self.settings.pbs_task_timeout_seconds,
+            on_line=on_line,
+        )
+        return {
+            "ok": True,
+            "datastore_name": store,
+            "keep": keep,
+            "message": f"Retention applied on `{store}` ({options}), garbage collection done.",
+            "stdout_log": "\n".join(lines) or None,
+            "command_summary": f"POST /admin/datastore/{store}/prune-datastore {options}\nPOST /admin/datastore/{store}/gc",
+        }
+
+    def _verify_snapshots(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """PBS verify of the given snapshot keys ("vm/100/1700000000"), or of
+        the whole datastore (`all`: everything re-verified)."""
+        store = self._mounted_store(payload)
+        progress = self._progress(payload.get("callback_run_id"))
+        lines: list[str] = []
+
+        def on_line(line: str) -> None:
+            lines.append(line)
+            progress("verify", None, line)
+
+        keys = [str(key) for key in payload.get("snapshots") or []]
+        verify_all = bool(payload.get("all")) or len(keys) > MAX_VERIFY_TASKS
+        count: int | None = None
+        if verify_all:
+            progress("verify", f"Verifying every snapshot of `{store}` (POST /admin/datastore/{store}/verify).")
+            self.client.wait_for_task(
+                self.client.verify(store, ignore_verified=False),
+                timeout_seconds=self.settings.pbs_task_timeout_seconds,
+                on_line=on_line,
+            )
+        else:
+            progress("verify", f"Verifying {len(keys)} copied snapshot(s) on `{store}`.")
+            for key in keys:
+                group, when = key.rsplit("/", 1)
+                kind, ident = group.split("/", 1)
+                self.client.wait_for_task(
+                    self.client.verify(store, backup_type=kind, backup_id=ident, backup_time=int(when), ignore_verified=False),
+                    timeout_seconds=self.settings.pbs_task_timeout_seconds,
+                    on_line=on_line,
+                )
+            count = len(keys)
+        suffix = f" ({count} snapshot(s))." if count is not None else " (all snapshots)."
+        return {
+            "ok": True,
+            "datastore_name": store,
+            "verified": count,
+            "message": f"PBS verify OK on `{store}`{suffix}",
+            "stdout_log": "\n".join(lines) or None,
         }
 
     def _wait_unmounted(self, store: str, attempts: int = 5, delay_seconds: float = 2.0) -> bool:

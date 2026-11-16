@@ -55,6 +55,13 @@ class FakePBS:
         self.task_polls = task_polls
         self.sync_exitstatus = "OK"
         self.hang_unmount = False
+        # Phase 5f: snapshots per datastore, retention/verify behaviour, space.
+        self.snapshots: dict[str, list[dict[str, Any]]] = {"main": []}
+        self.verify_exitstatus = "OK"
+        self.verify_calls: list[dict[str, Any]] = []
+        self.prune_calls: list[dict[str, Any]] = []
+        self.gc_calls: list[str] = []
+        self.status_bytes: dict[str, dict[str, int]] = {}
         self._pid = 0x1000
         self._clock = 1_700_000_000
 
@@ -92,6 +99,35 @@ class FakePBS:
 
     def _disk(self, name: str) -> dict:
         return next(disk for disk in self.disks if disk["name"] == name)
+
+    def add_snapshot(self, store: str, group: str, backup_time: int, size: int = 10 * GIB) -> dict:
+        kind, ident = group.split("/", 1)
+        snapshot = {"backup-type": kind, "backup-id": ident, "backup-time": backup_time, "size": size, "files": ["index.json.blob"]}
+        self.snapshots.setdefault(store, []).append(snapshot)
+        return snapshot
+
+    def _sync_effect(self, job: dict) -> None:
+        source = self.snapshots.get(job["remote-store"], [])
+        target = self.snapshots.setdefault(job["store"], [])
+        groups = {item.removeprefix("group:") for item in job.get("group-filter") or []}
+        have = {(item["backup-type"], item["backup-id"], item["backup-time"]) for item in target}
+        for snapshot in source:
+            key = (snapshot["backup-type"], snapshot["backup-id"], snapshot["backup-time"])
+            if key in have or (groups and f"{key[0]}/{key[1]}" not in groups):
+                continue
+            target.append(dict(snapshot))
+
+    def _prune(self, store: str, body: dict) -> None:
+        keep_last = body.get("keep-last")
+        if not keep_last:
+            return  # weekly/monthly not simulated
+        kept: list[dict] = []
+        by_group: dict[tuple, list[dict]] = {}
+        for snapshot in self.snapshots.get(store, []):
+            by_group.setdefault((snapshot["backup-type"], snapshot["backup-id"]), []).append(snapshot)
+        for items in by_group.values():
+            kept.extend(sorted(items, key=lambda item: item["backup-time"])[-int(keep_last):])
+        self.snapshots[store] = kept
 
     def add_running_task(self, worker_type: str, worker_id: str) -> str:
         upid = self._task(worker_type, worker_id, [], hang=True)
@@ -170,7 +206,23 @@ class FakePBS:
         if parts[:2] == ["admin", "datastore"] and len(parts) == 4:
             store, action = parts[2], parts[3]
             if action == "status":
-                return {"total": 2000 * GIB, "used": 500 * GIB, "avail": 1500 * GIB}
+                return self.status_bytes.get(store, {"total": 2000 * GIB, "used": 500 * GIB, "avail": 1500 * GIB})
+            if action == "snapshots" and method == "GET":
+                return [dict(item) for item in self.snapshots.get(store, [])]
+            if action == "prune-datastore" and method == "POST":
+                assert any(key.startswith("keep-") for key in body), "prune without keep-* deletes everything"
+                self.prune_calls.append({"store": store, **body})
+                return self._task("prune", store, [f"prune datastore '{store}'", "TASK OK"], lambda: self._prune(store, body))
+            if action == "gc" and method == "POST":
+                self.gc_calls.append(store)
+                return self._task("garbage_collection", store, ["starting garbage collection", "TASK OK"])
+            if action == "verify" and method == "POST":
+                self.verify_calls.append({"store": store, **(body or {})})
+                ok = self.verify_exitstatus == "OK"
+                return self._task(
+                    "verify", store, ["verify datastore", "TASK OK" if ok else "TASK ERROR: verification failed"],
+                    exitstatus=self.verify_exitstatus,
+                )
             if action == "mount":
                 return self._task("mount-device", store, ["mounting"], lambda: self.mount_status.__setitem__(store, "mounted"))
             if action == "unmount":
@@ -203,7 +255,7 @@ class FakePBS:
                 "percentage done: 100.00% (2/2 groups)",
                 "TASK OK" if self.sync_exitstatus == "OK" else f"TASK ERROR: {self.sync_exitstatus}",
             ]
-            self._task("syncjob", worker_id, log, exitstatus=self.sync_exitstatus)
+            self._task("syncjob", worker_id, log, lambda: self._sync_effect(job), exitstatus=self.sync_exitstatus)
             return None  # schema: returns null
         if (method, path) == ("GET", "nodes/localhost/tasks"):
             items = list(self.tasks.values())

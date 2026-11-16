@@ -107,6 +107,7 @@ SETTING_SPECS: tuple[SettingSpec, ...] = (
     *(_spec(flag, bool, "notifications") for flag in _NOTIFY_FLAGS),
     _spec("LOW_COVERAGE_THRESHOLD_PERCENT", float, "notifications"),
     _spec("DISK_DETECTION_NOTIFY_COOLDOWN_SECONDS", int, "notifications"),
+    _spec("ROTATION_STALE_DAYS", int, "general"),
     # Inventory sync
     _spec("AUTO_SYNC_ENABLED", bool, "sync"),
     _spec("PROXMOX_SYNC_INTERVAL_SECONDS", int, "sync"),
@@ -156,6 +157,8 @@ def coerce_value(spec: SettingSpec, raw: Any) -> Any:
         raise SettingValidationError(f"{spec.key}: must not be negative")
     if spec.key == "AUTH_TOKEN_EXPIRE_MINUTES" and not 5 <= value <= MAX_AUTH_TOKEN_EXPIRE_MINUTES:
         raise SettingValidationError(f"{spec.key}: must be between 5 and {MAX_AUTH_TOKEN_EXPIRE_MINUTES}")
+    if spec.key == "ROTATION_STALE_DAYS" and not 1 <= value <= 365:
+        raise SettingValidationError(f"{spec.key}: must be between 1 and 365")
     return value
 
 

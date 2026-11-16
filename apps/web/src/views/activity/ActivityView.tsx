@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { CalendarClock, ChevronDown, CheckCircle2, HardDrive, Loader2, Search, Trash2, Unplug, XCircle } from "lucide-react";
+import { CalendarClock, ChevronDown, CheckCircle2, HardDrive, Loader2, Search, ShieldCheck, Trash2, Unplug, XCircle } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { getActivityFeed, type ActivityItem } from "../../api";
@@ -33,7 +33,7 @@ const STATE_ICON: Record<ActivityState, { icon: typeof CheckCircle2; className: 
   running: { icon: Loader2, className: "bg-accent/15 text-accent-text" },
   info: { icon: HardDrive, className: "bg-subtle text-muted" },
 };
-const TYPE_ICON: Record<ActivityType, typeof HardDrive> = { backup: HardDrive, eject: Unplug, detection: HardDrive, planning: CalendarClock };
+const TYPE_ICON: Record<ActivityType, typeof HardDrive> = { backup: HardDrive, eject: Unplug, verify: ShieldCheck, detection: HardDrive, planning: CalendarClock };
 
 /** Failure step code → its translated label (usb_device_not_found…). */
 function handoffStepTexts(t: TranslationDictionary): Record<string, string> {

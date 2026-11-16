@@ -3,7 +3,7 @@
 
 import { formatBytes, type Lang } from "../../units.ts";
 
-export type ActivityType = "backup" | "eject" | "detection" | "planning";
+export type ActivityType = "backup" | "eject" | "verify" | "detection" | "planning";
 export type ActivityState = "ok" | "failed" | "running" | "info";
 
 export interface ActivityLike {
@@ -25,7 +25,7 @@ export interface ActivityLike {
   message: string | null;
 }
 
-export const ACTIVITY_TYPES: readonly ActivityType[] = ["backup", "eject", "detection", "planning"];
+export const ACTIVITY_TYPES: readonly ActivityType[] = ["backup", "eject", "verify", "detection", "planning"];
 export const ACTIVITY_STATES: readonly ActivityState[] = ["ok", "failed", "running", "info"];
 export const PERIODS = [1, 7, 30, 90, 366] as const;
 
@@ -53,7 +53,7 @@ export function filterActivity<T extends ActivityLike>(items: readonly T[], filt
   const since = now.getTime() - filters.days * 24 * 3600 * 1000;
   const needle = compact(filters.query.trim());
   return items.filter((item) => {
-    if (filters.type === "runs" && item.type !== "backup" && item.type !== "eject") return false;
+    if (filters.type === "runs" && item.type !== "backup" && item.type !== "eject" && item.type !== "verify") return false;
     if (filters.type && filters.type !== "runs" && item.type !== filters.type) return false;
     if (filters.state && activityState(item) !== filters.state) return false;
     if (filters.diskId !== null && item.disk_id !== filters.diskId) return false;
@@ -87,6 +87,11 @@ export interface SummaryTexts {
   plugged: string;
   unplugged: string;
   replugged: string;
+  /** Phase 5f */
+  unsafeRemoval: string;
+  verifyOk: string;
+  verifyFailed: string;
+  verifyRunning: string;
   missed: string;
   cancelled: string;
   to_confirm: string;
@@ -96,7 +101,14 @@ export interface SummaryTexts {
 export function activitySummary(item: ActivityLike, texts: SummaryTexts, lang: Lang, stepTexts: Record<string, string> = {}): string {
   const reason = (item.step && stepTexts[item.step]) || item.message || "";
   const state = activityState(item);
-  if (item.type === "detection") return item.status === "replugged" ? texts.replugged : item.status === "plugged" ? texts.plugged : texts.unplugged;
+  if (item.type === "detection") {
+    if (item.status === "unsafe_removal") return texts.unsafeRemoval;
+    return item.status === "replugged" ? texts.replugged : item.status === "plugged" ? texts.plugged : texts.unplugged;
+  }
+  if (item.type === "verify") {
+    if (state === "running") return texts.verifyRunning;
+    return state === "ok" ? texts.verifyOk : texts.verifyFailed.replace("{reason}", reason);
+  }
   if (item.type === "planning") {
     const template = texts[item.status as "missed" | "cancelled" | "to_confirm"] ?? texts.missed;
     return template.replace("{title}", item.event_title ?? "");

@@ -238,6 +238,12 @@ bash pbo-agent-install.sh --uninstall                      # services, udev rule
 bash pbo-agent-install.sh --uninstall --purge-pve-access   # + token pbo@pve!pbo, user pbo@pve, role PBO
 ```
 
+Phase 5f: the host agent reads the disks' SMART health with `smartctl`; the
+installer adds the `smartmontools` package on the Proxmox host when it is
+missing (without it, disks show "health unknown"). Disk photos uploaded in the
+web UI are stored by the app in `/var/lib/pbo/disk-photos` (LXC, systemd
+`StateDirectory=pbo`; override with `PBO_DATA_DIR`).
+
 **Firewall.** The installer offers (answer *yes* by default, `--firewall` to
 skip the question, `--no-firewall` to refuse) to limit port 8090 to the app:
 two rules tagged `# pbo-agent` are inserted at the top of `[RULES]` in

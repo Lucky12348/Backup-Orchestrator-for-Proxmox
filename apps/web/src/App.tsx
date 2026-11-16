@@ -1,8 +1,8 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
-import { getExternalBackupPreview, AUTH_EXPIRED_EVENT } from "./api";
+import { AUTH_EXPIRED_EVENT } from "./api";
 import { AuthProvider, useAuth } from "./AuthContext";
 import { LoginPage } from "./pages/LoginPage";
 import { SETUP_PATH, reconfigureStep, setupRedirect } from "./setup/logic";
@@ -10,6 +10,8 @@ import { AppShellV2, LegacyPage } from "./shell/AppShellV2";
 import { NoticeToasts } from "./shell/NoticeToasts";
 import { DashboardView } from "./views/dashboard/DashboardView";
 import { DisksView } from "./views/disks/DisksView";
+import { DiskSheetView } from "./views/disks/DiskSheetView";
+import { LaunchBackupDialog, type LaunchChoice } from "./views/disks/LaunchBackupDialog";
 import { ActivityView } from "./views/activity/ActivityView";
 import { PlanningView } from "./views/planning/PlanningView";
 import { IntegrationsView } from "./views/integrations/IntegrationsView";
@@ -40,9 +42,6 @@ function AuthenticatedApp() {
   // Language: English by default, per account + localStorage (AuthContext).
   const { markSessionExpired, language, setLanguage } = useAuth();
   const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
-  // Read at confirm-time by handleExternalBackupRequest; a ref (not state) so
-  // toggling the checkbox doesn't re-render/recreate the modal's onConfirm closure.
-  const autoEjectAfterSuccessRef = useRef(true);
 
   // Listen for auth-expired events from api.ts
   useEffect(() => {
@@ -92,7 +91,10 @@ function AuthenticatedApp() {
   function openConfirm(nextState: ConfirmState) { setConfirmState(nextState); }
   function closeConfirm() { setConfirmState(null); }
 
-  async function handleExternalBackupRequest(disk: ExternalDisk) {
+  // Phase 5f: the launch dialog (estimate, warnings, SMART confirmation, options).
+  const [launchDisk, setLaunchDisk] = useState<ExternalDisk | null>(null);
+
+  function handleExternalBackupRequest(disk: ExternalDisk) {
     if (!disk.trusted) {
       openConfirm({
         title: t.confirmExternalBackupTitle,
@@ -102,64 +104,18 @@ function AuthenticatedApp() {
       });
       return;
     }
-    if (!disk.connected) {
-      openConfirm({
-        title: t.confirmExternalBackupTitle,
-        description: t.externalBackupBlockedDisconnected,
-        confirmLabel: t.dismiss, cancelLabel: t.cancel, tone: "warning",
-        onConfirm: closeConfirm,
-      });
-      return;
-    }
-    try {
-      const preview = await getExternalBackupPreview(disk.id);
-      const modeLabel = preview.mode === "dedicated" ? t.externalBackupDedicatedMode : t.externalBackupCoexistenceMode;
-      const preserveText = preview.preserves_existing_data ? t.externalBackupPreservesData : t.externalBackupUsesDedicatedPath;
-      const preparationWarning = disk.prepared_as_pbs_datastore ? t.externalBackupReuseWarning : t.externalBackupDestructiveWarning;
-      const loopSizeText = preview.mode === "coexistence" && preview.loop_image_size_gb !== null
-        ? `${t.externalBackupLoopSize}: ${preview.loop_image_size_gb} GiB.` : null;
-      const loopWarningText = preview.loop_image_size_warning ? t.externalBackupLoopSizeWarning : null;
-      autoEjectAfterSuccessRef.current = true;
-      openConfirm({
-        title: t.confirmExternalBackupTitle,
-        description: [
-          `${t.confirmExternalBackupDescription}`,
-          `${t.diskName}: ${disk.display_name}`,
-          `${t.externalBackupMode}: ${modeLabel}`,
-          `${t.externalBackupTargetPath}: ${preview.target_path}`,
-          `${t.externalBackupPBSHandoff}`,
-          `${t.externalBackupPBSExclusive}`,
-          preparationWarning, preserveText, loopSizeText, loopWarningText,
-        ].filter(Boolean).join(" "),
-        confirmLabel: t.externalBackupAction,
-        cancelLabel: t.cancel,
-        tone: "info",
-        extra: (
-          <label className="checkbox-field">
-            <input
-              defaultChecked
-              onChange={(event) => { autoEjectAfterSuccessRef.current = event.target.checked; }}
-              type="checkbox"
-            />
-            <span>{t.externalBackupAutoEject}</span>
-          </label>
-        ),
-        onConfirm: () => {
-          closeConfirm();
-          // Long action: follow it in the live run modal.
-          void startExternalBackup(disk.id, t.externalBackupSummary, autoEjectAfterSuccessRef.current).then((run) => {
-            if (run) openRunModal(run.id);
-          });
-        },
-      });
-    } catch (previewError) {
-      openConfirm({
-        title: t.confirmExternalBackupTitle,
-        description: previewError instanceof Error ? previewError.message : t.error,
-        confirmLabel: t.dismiss, cancelLabel: t.cancel, tone: "warning",
-        onConfirm: closeConfirm,
-      });
-    }
+    setLaunchDisk(disk);
+  }
+
+  function startLaunch(disk: ExternalDisk, choice: LaunchChoice) {
+    setLaunchDisk(null);
+    // Long action: follow it in the live run modal.
+    void startExternalBackup(disk.id, t.externalBackupSummary, choice.autoEject, {
+      verifyAfterBackup: choice.verifyAfterBackup,
+      smartOverride: choice.smartOverride,
+    }).then((run) => {
+      if (run) openRunModal(run.id);
+    });
   }
 
   function handleDiskEjectRequest(disk: ExternalDisk) {
@@ -222,6 +178,7 @@ function AuthenticatedApp() {
                 t={t}
                 onChanged={refresh}
                 missingDatastore={missingDatastore}
+                alerts={data.diskAlerts}
               />
             }
             path="/"
@@ -251,7 +208,8 @@ function AuthenticatedApp() {
                 runs={data.externalBackupRuns}
                 language={language}
                 t={t}
-                onBackup={(disk) => void handleExternalBackupRequest(disk)}
+                onBackup={(disk) => handleExternalBackupRequest(disk)}
+                alerts={data.diskAlerts}
                 onEject={handleDiskEjectRequest}
                 isStarting={(diskId) => isSaving(`external-backup-${diskId}`)}
                 isEjecting={(diskId) => isSaving(`disk-eject-${diskId}`)}
@@ -260,6 +218,10 @@ function AuthenticatedApp() {
               />
             }
             path="/disks"
+          />
+          <Route
+            element={<DiskSheetView disks={data.disks} runs={data.externalBackupRuns} alerts={data.diskAlerts} language={language} t={t} onChanged={refresh} />}
+            path="/disks/:id"
           />
           <Route
             element={
@@ -305,6 +267,7 @@ function AuthenticatedApp() {
           <Route element={<LegacyPage><SettingsPage t={t} /></LegacyPage>} path="/settings" />
         </Routes>
 
+      <LaunchBackupDialog disk={launchDisk} onClose={() => setLaunchDisk(null)} onStart={startLaunch} language={language} t={t} />
       <ConfirmModal
         cancelLabel={confirmState?.cancelLabel ?? t.cancel}
         confirmLabel={confirmState?.confirmLabel ?? t.confirm}

@@ -10,6 +10,10 @@ class ExternalBackupRunRequest(BaseModel):
     disk_id: int = Field(gt=0)
     confirmation: bool = False
     auto_eject_after_success: bool = False
+    # Phase 5f: PBS verify of the copied snapshots; back up on a disk SMART
+    # reports as failing (explicit confirmation).
+    verify_after_backup: bool = False
+    smart_override: bool = False
 
 
 class ExternalBackupRunRead(UTCDateTimeModel):
@@ -55,6 +59,9 @@ class ExternalBackupRunRead(UTCDateTimeModel):
     # "backup" | "eject" (services/run_log.run_kind).
     kind: str | None = None
     cancellable: bool = False
+    # Phase 5f
+    verify_after_backup: bool | None = None
+    verify_only: bool | None = None
     created_at: datetime
 
 
@@ -100,6 +107,9 @@ class ExternalBackupRunSummaryRead(UTCDateTimeModel):
     # "backup" | "eject" (services/run_log.run_kind).
     kind: str | None = None
     cancellable: bool = False
+    # Phase 5f
+    verify_after_backup: bool | None = None
+    verify_only: bool | None = None
     created_at: datetime
 
 

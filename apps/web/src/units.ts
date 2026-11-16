@@ -34,3 +34,12 @@ export function formatGib(gib: number | null | undefined, lang: Lang): string {
   if (gib < 1024) return `${Math.round(gib)} ${UNITS[lang][3]}`;
   return formatBytes(gib * 1024 ** 3, lang);
 }
+
+/** Used and total in ONE unit (Phase 5f): "820 / 931 Gio", "0,85 / 3,64 Tio". */
+export function formatUsage(usedGib: number | null | undefined, totalGib: number | null | undefined, lang: Lang): string {
+  if (usedGib === null || usedGib === undefined || !totalGib) return "—";
+  const tera = totalGib >= 1024;
+  const scale = tera ? 1024 : 1;
+  const digits = tera ? 2 : 0;
+  return `${number(Math.max(0, usedGib) / scale, digits, lang)} / ${number(totalGib / scale, digits, lang)} ${UNITS[lang][tera ? 4 : 3]}`;
+}

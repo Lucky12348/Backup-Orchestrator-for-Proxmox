@@ -8,11 +8,12 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.models import AgentHeartbeat, ExternalDisk, ScheduledBackupEvent
 from app.schemas.agent import AgentDiskReportCreate, AgentHeartbeatCreate
-from app.services import disk_events
+from app.services import disk_events, disk_guards
 from app.services.disk_events import is_ejected
 from app.services.host_agent import HostAgentError, get_host_agent_client, get_pbs_agent_client
 from app.services.disk_identity import canonical_serial_number, serial_aliases, serials_match
 from app.services.notifications import (
+    notify_disk_health,
     get_disk_detection_notify_cooldown_seconds,
     notify_known_disk_detected,
     notify_new_disk_detected,
@@ -91,6 +92,7 @@ def ingest_agent_disk_report(db: Session, payload: AgentDiskReportCreate) -> lis
     removed_disks: list[ExternalDisk] = []
     updated_disks: list[ExternalDisk] = []
     before_snapshots: dict[int, tuple] = {}
+    health_notifications: list[tuple[str, str, str | None]] = []
 
     report_marker = db.scalar(
         select(ExternalDisk)
@@ -185,6 +187,15 @@ def ingest_agent_disk_report(db: Session, payload: AgentDiskReportCreate) -> lis
             disk.trusted = False
             disk.dedicated_backup_disk = False
             disk.allow_existing_data = False
+        if (
+            not is_new_disk
+            and item.connected
+            and _is_pbs_handoff_disk(disk)
+            and disk_guards.active_run_for(db, disk.id) is None
+        ):
+            # Phase 5f: a disk handed to the PBS VM is invisible to the host;
+            # seen again here = pulled out without eject (mounted on PBS).
+            disk_guards.mark_unsafe_removal(db, disk, reason="mounted_on_pbs")
         if is_ejected(disk) and item.connected:
             # B25: still plugged in after a safe eject. It stays "ejected" (not
             # usable, no disk.added) until it is unplugged and plugged back.
@@ -201,6 +212,7 @@ def ingest_agent_disk_report(db: Session, payload: AgentDiskReportCreate) -> lis
             disk.usb_location_seen_at = observed_at
         if item.partitions is not None:
             disk.partitions = [part.model_dump() for part in item.partitions]
+        _apply_hardware(disk, item, observed_at, health_notifications)
         if disk.connected and previous_presence == "absent" and disk.operator_decision == "ignored":
             disk.operator_decision = None  # "Ignore" lasts until the disk is plugged again
         disk.source = "agent"
@@ -235,6 +247,9 @@ def ingest_agent_disk_report(db: Session, payload: AgentDiskReportCreate) -> lis
 
         if disk.connected or disk.presence_state == "present":
             removed_disks.append(disk)
+            if disk.id is not None and disk_guards.active_run_for(db, disk.id) is not None:
+                # Phase 5f: unplugged during a run (before the hand-off).
+                disk_guards.mark_unsafe_removal(db, disk, reason="during_run")
         if is_ejected(disk):
             disk.handoff_status = None  # unplugged (or powered off) after its eject
         disk.connected = False
@@ -251,6 +266,9 @@ def ingest_agent_disk_report(db: Session, payload: AgentDiskReportCreate) -> lis
     for disk in removed_disks:
         db.refresh(disk)
     disk_events.publish_report_events(added_disks, removed_disks, updated_disks)
+
+    for label, smart_status, detail in health_notifications:
+        notify_disk_health(label, smart_status, detail)
 
     for detection_type, disk in detection_notifications:
         try:
@@ -276,6 +294,32 @@ def ingest_agent_disk_report(db: Session, payload: AgentDiskReportCreate) -> lis
             continue
 
     return upserted
+
+
+def _apply_hardware(
+    disk: ExternalDisk,
+    item,
+    observed_at: datetime,
+    health_notifications: list[tuple[str, str, str | None]],
+) -> None:
+    """Phase 5f: rotation/transport (disk kind), USB link speed and SMART."""
+    if item.rotational is not None:
+        disk.rotational = item.rotational
+    if item.transport:
+        disk.transport = item.transport
+    if item.usb_location is not None:
+        speed = item.usb_location.speed_mbps
+        disk.usb_speed_mbps = int(speed) if speed else None
+    smart = item.smart
+    if smart is None:
+        return
+    previous = disk.smart_status
+    disk.smart_status = smart.status
+    disk.smart_details = smart.model_dump(mode="json", exclude={"status"})
+    disk.smart_checked_at = smart.checked_at.replace(tzinfo=None) if smart.checked_at else observed_at
+    if smart.status in {"warning", "danger"} and smart.status != previous:
+        detail = ", ".join(smart.reasons) or smart.message
+        health_notifications.append((disk.display_name or disk.serial_number, smart.status, detail))
 
 
 def _find_existing_disk_by_serial_identity(db: Session, reported_serial: str) -> ExternalDisk | None:
@@ -491,6 +535,10 @@ def _apply_filesystem_usage_payload(disk: ExternalDisk, payload: dict[str, objec
     disk.filesystem_total_gb = _optional_int(payload.get("filesystem_total_gb"))
     disk.filesystem_used_gb = _optional_int(payload.get("filesystem_used_gb"))
     disk.filesystem_free_gb = _optional_int(payload.get("filesystem_free_gb"))
+    # Phase 5f: usage history (graph) and 80 % / 90 % alerts.
+    from app.services.disk_profile import record_usage
+
+    record_usage(disk)
 
 
 def _optional_int(value: object) -> int | None:

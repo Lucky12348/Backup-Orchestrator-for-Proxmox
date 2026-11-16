@@ -343,6 +343,7 @@ def _start_run(
             # B24: the eject is the last step of the same run (one run, one modal).
             auto_eject_after_success=bool(event.auto_eject_after_success),
             group_filter=group_filter_for(event.vm_groups),
+            verify_after_backup=bool(event.verify_after_backup),
         )
     except Exception as exc:
         detail = getattr(exc, "detail", None)

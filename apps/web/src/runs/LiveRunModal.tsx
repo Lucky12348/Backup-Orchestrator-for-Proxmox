@@ -87,14 +87,20 @@ export function RunView({ run, t, language }: { run: RunLike; t: TranslationDict
     : run.status === "failed"
       ? text.title.failed
       : run.status === "success"
-        ? states[RUN_STEPS.indexOf("eject")] === "done"
-          ? text.title.success
-          : text.title.successKeep
+        ? run.verify_only
+          ? text.title.verifyOk
+          : states[RUN_STEPS.indexOf("eject")] === "done"
+            ? text.title.success
+            : text.title.successKeep
         : phase === RUN_STEPS.indexOf("eject")
           ? text.title.ejecting
           : phase === RUN_STEPS.indexOf("verify")
             ? text.title.verify
-            : text.title.running;
+            : phase === RUN_STEPS.indexOf("cleanup")
+              ? text.title.cleanup
+              : run.verify_only
+                ? text.title.verify
+                : text.title.running;
 
   const headerTone =
     run.status === "failed" ? "bg-danger/15 text-danger-text" : run.status === "success" ? "bg-success/15 text-success-text" : "bg-accent text-accent-fg";
@@ -144,7 +150,7 @@ export function RunView({ run, t, language }: { run: RunLike; t: TranslationDict
         <div className="flex min-w-[240px] flex-1 flex-col gap-1">
           <DialogTitle className="m-0 text-lg font-semibold tracking-[-0.01em]">{title}</DialogTitle>
           <DialogDescription id="run-subtitle" className="m-0 text-[13px] text-muted">
-            {eject ? text.kind.eject : text.kind.backup} · {fill(text.subtitle, { time: clockTime(run.started_at.endsWith("Z") ? run.started_at : `${run.started_at}Z`) })} · {diskName}
+            {eject ? text.kind.eject : run.verify_only ? text.kind.verify : text.kind.backup} · {fill(text.subtitle, { time: clockTime(run.started_at.endsWith("Z") ? run.started_at : `${run.started_at}Z`) })} · {diskName}
             {target ? (
               <>
                 {" "}

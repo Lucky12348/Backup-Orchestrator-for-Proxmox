@@ -27,6 +27,8 @@ export interface PlanForm {
   windowMinutes: number;
   confirmation: boolean;
   autoEject: boolean;
+  /** Phase 5f: PBS verify of the copied snapshots after each backup. */
+  verify: boolean;
   datastore: string;
   enabled: boolean;
   /** Edit: the first occurrence is kept while the schedule is unchanged (rotation order). */
@@ -51,6 +53,7 @@ export function newPlanForm(datastore: string, start?: { day: Day; hour: number 
     windowMinutes: 240,
     confirmation: false,
     autoEject: true,
+    verify: false,
     datastore,
     enabled: true,
   };
@@ -102,6 +105,7 @@ export interface EventLike {
   window_duration_minutes: number;
   start_mode: "auto_on_disk_detected" | "manual_confirmation";
   auto_eject_after_success: boolean;
+  verify_after_backup?: boolean | null;
 }
 
 export function planFormFromEvent(event: EventLike, tz: string): PlanForm {
@@ -128,6 +132,7 @@ export function planFormFromEvent(event: EventLike, tz: string): PlanForm {
     windowMinutes: event.window_duration_minutes,
     confirmation: event.start_mode === "manual_confirmation",
     autoEject: event.auto_eject_after_success,
+    verify: Boolean(event.verify_after_backup),
     datastore: event.datastore,
     enabled: event.enabled,
   };
@@ -216,5 +221,6 @@ export function planPayload(form: PlanForm, texts: FormTexts, lang: Lang, now: D
     window_duration_minutes: form.windowMinutes,
     start_mode: form.confirmation ? "manual_confirmation" : "auto_on_disk_detected",
     auto_eject_after_success: form.autoEject,
+    verify_after_backup: form.verify,
   } as const;
 }

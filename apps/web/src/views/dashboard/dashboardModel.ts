@@ -2,6 +2,7 @@
 // rotation, "to do" list, rotation disks, last runs. Pure (node:test).
 
 import { activeRunFor, diskUiStatus, type DiskLike, type DiskUiStatus, type RunLike, usagePercent } from "../disks/diskModel.ts";
+import { todoAlerts, type AlertLike } from "../disks/diskProfile.ts";
 
 export interface OverviewLike {
   total_vms: number;
@@ -108,7 +109,7 @@ export function nextRotation(events: readonly EventLike[], disks: readonly DiskL
   };
 }
 
-export type TodoKind = "datastore_missing" | "to_confirm" | "new_disk" | "missed_rotation" | "agent_offline" | "recent_failure";
+export type TodoKind = "datastore_missing" | "to_confirm" | "new_disk" | "missed_rotation" | "agent_offline" | "recent_failure" | "disk_alert";
 
 export interface TodoItem {
   kind: TodoKind;
@@ -118,6 +119,8 @@ export interface TodoItem {
   href: string;
   /** to_confirm: the planned run to confirm or cancel. */
   runId?: number;
+  /** disk_alert (Phase 5f): the server-side guard (usage, SMART, removal, rotation). */
+  alert?: AlertLike;
 }
 
 const DAY_MS = 24 * 3600 * 1000;
@@ -132,6 +135,8 @@ export function todoItems(input: {
   now: Date;
   /** Name of the source datastore when it no longer exists on PBS. */
   missingDatastore?: string | null;
+  /** Phase 5f: GET /disks/alerts. */
+  alerts?: readonly AlertLike[];
 }): TodoItem[] {
   const items: TodoItem[] = [];
   if (input.missingDatastore) {
@@ -147,6 +152,15 @@ export function todoItems(input: {
     if (diskUiStatus(disk, input.runs) === "new") {
       items.push({ kind: "new_disk", tone: "warn", label: disk.display_name, href: `/disks?disk=${disk.id}` });
     }
+  }
+  for (const alert of todoAlerts(input.alerts)) {
+    items.push({
+      kind: "disk_alert",
+      tone: alert.level === "danger" ? "err" : "warn",
+      label: alert.disk_name ?? "",
+      href: `/disks/${alert.disk_id}`,
+      alert,
+    });
   }
   const recentMissed = input.scheduledRuns
     .filter((run) => run.status === "missed" && input.now.getTime() - new Date(run.scheduled_for).getTime() < 7 * DAY_MS)

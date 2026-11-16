@@ -265,7 +265,9 @@ def _codes(result):
 def test_api_mode_ready_without_any_pbs_agent(db):
     _configure(db, "api")
     result = backup_readiness.external_backup_readiness(db, _ready_disk(db), host_client=HOST_OK, pbs_client=PBS_API_OK)
-    assert result == {"disk_id": result["disk_id"], "ready": True, "pbs_mode": "api", "reasons": []}
+    assert {key: result[key] for key in ("disk_id", "ready", "pbs_mode", "reasons", "warnings")} == {
+        "disk_id": result["disk_id"], "ready": True, "pbs_mode": "api", "reasons": [], "warnings": [],
+    }
 
 
 def test_reasons_are_specific(db):

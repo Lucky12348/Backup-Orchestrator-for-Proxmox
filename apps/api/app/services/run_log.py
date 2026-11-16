@@ -31,7 +31,7 @@ _SIZE_RE = re.compile(r"(?P<n>\d+(?:\.\d+)?)\s*(?P<unit>B|KiB|MiB|GiB|TiB)\b")
 _RATE_RE = re.compile(r"(?P<n>\d+(?:\.\d+)?)\s*(?P<unit>B|KiB|MiB|GiB|TiB)/s\b")
 _UNITS = {"B": 1, "KiB": 1024, "MiB": 1024**2, "GiB": 1024**3, "TiB": 1024**4}
 
-FAILURE_STEPS = {"failure", "eject_not_finished", "usb_device_not_found", "usb_location_not_in_proxmox", "disk_not_plugged", "usb_device_ambiguous"}
+FAILURE_STEPS = {"failure", "verify_failed", "eject_not_finished", "usb_device_not_found", "usb_location_not_in_proxmox", "disk_not_plugged", "usb_device_ambiguous"}
 
 # PBO messages → stable code + params (the UI holds the FR/EN texts).
 # Keep in sync with `runLog` in apps/web/src/i18n.ts (a test checks it).
@@ -82,6 +82,23 @@ PBO_MESSAGES: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
         ("target_path_requested", r"^Requested target path: (?P<path>\S+)$"),
         ("target_path_actual", r"^Actual datastore path: (?P<path>\S+)$"),
         ("cancel_requested", r"^Cancellation requested by (?P<user>\S+)\.$"),
+        # Phase 5f: cleanup, contents, verification, guards.
+        ("cleanup_retention", r"^Applying retention on `(?P<store>[^`]+)`: (?P<options>.+?) \(POST"),
+        ("cleanup_gc", r"^Garbage collection on `(?P<store>[^`]+)`"),
+        ("cleanup_done", r"^Retention applied on `(?P<store>[^`]+)` \((?P<options>.+)\), garbage collection done\.$"),
+        ("cleanup_failed", r"^Retention warning: (?P<reason>.+)$"),
+        ("cleanup_agent_mode", r"^Retention needs PBS_MODE=api: nothing was pruned on the disk\.$"),
+        ("contents_updated", r"^Disk contents updated: (?P<groups>\d+) VM/CT, (?P<versions>\d+) version\(s\)\.$"),
+        ("verify_copied", r"^Verifying (?P<count>\d+) copied snapshot\(s\) on `(?P<store>[^`]+)`\.$"),
+        ("verify_all", r"^Verifying every snapshot of `(?P<store>[^`]+)`"),
+        ("verify_ok", r"^PBS verify OK on `(?P<store>[^`]+)`"),
+        ("verify_failed", r"^PBS verify failed: (?P<reason>.+)$"),
+        ("verify_nothing", r"^Nothing new was copied: no snapshot to verify\.$"),
+        ("verify_agent_mode", r"^Verification needs PBS_MODE=api: skipped\.$"),
+        ("verify_only_start", r"^Verify-only run: the disk's datastore is checked, nothing is copied\.$"),
+        ("smart_override", r"^SMART reports this disk as failing: backup started anyway on explicit confirmation\.$"),
+        ("usb2_warning", r"^USB 2\.0 link \((?P<speed>\d+) Mbit/s\): the copy will be about 10× slower\.$"),
+        ("space_estimate", r"^Space check: about (?P<needed>\S+) GiB to copy, (?P<free>\S+) GiB free\.$"),
     )
 )
 
@@ -240,7 +257,10 @@ def datastore_pair(run: Any, disk: Any | None) -> dict[str, str | None]:
 
 def run_kind(run: Any, disk: Any | None) -> str:
     """"eject" for a manual eject run (it only knows the target datastore),
-    "backup" otherwise (a backup with auto-eject included, B24)."""
+    "verify" for a verify-only run (Phase 5f), "backup" otherwise (a backup
+    with auto-eject included, B24)."""
+    if getattr(run, "verify_only", False):
+        return "verify"
     if getattr(run, "auto_eject_after_success", False):
         return "backup"
     return "eject" if datastore_pair(run, disk)["source_datastore"] is None else "backup"
