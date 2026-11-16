@@ -1,0 +1,32 @@
+[2026-11-15T19:02:11Z] starting External backup run created. Background execution will start shortly.
+[2026-11-15T19:02:11Z] starting Starting external backup execution.
+[2026-11-15T19:02:11Z] handoff_disk Handing off USB disk to PBS VM.
+[2026-11-15T19:02:14Z] handoff_disk Disk is now visible on PBS as /dev/sdc.
+[2026-11-15T19:02:15Z] prepare_dedicated_datastore Preparing or reusing dedicated PBS datastore.
+[2026-11-15T19:02:15Z] destructive_format Wiping `sdc` on PBS (PUT /nodes/localhost/disks/wipedisk).
+[2026-11-15T19:02:16Z] destructive_format 2026-11-15T20:02:15+01:00: wipe disk sdc
+[2026-11-15T19:02:16Z] destructive_format 2026-11-15T20:02:15+01:00: Wiping /dev/sdc
+[2026-11-15T19:02:16Z] destructive_format 2026-11-15T20:02:15+01:00: Wiping /dev/sdc
+[2026-11-15T19:02:17Z] destructive_format 2026-11-15T20:02:16+01:00: TASK OK
+[2026-11-15T19:02:17Z] create_datastore Creating removable datastore `pbo-pbotesta` (ext4) on `sdc`.
+[2026-11-15T19:02:18Z] create_datastore 2026-11-15T20:02:17+01:00: create datastore 'pbo-pbotesta' on disk sdc
+[2026-11-15T19:02:19Z] create_datastore 2026-11-15T20:02:18+01:00: Chunkstore create: 1%
+[2026-11-15T19:02:19Z] create_datastore 2026-11-15T20:02:18+01:00: Chunkstore create: 2%
+[2026-11-15T19:02:20Z] create_datastore 2026-11-15T20:02:19+01:00: Chunkstore create: 3%
+[2026-11-15T19:02:31Z] create_datastore 2026-11-15T20:02:30+01:00: Chunkstore create: 99%
+[2026-11-15T19:02:31Z] create_datastore 2026-11-15T20:02:30+01:00: TASK OK
+[2026-11-15T19:02:32Z] run_export Starting PBS datastore export to dedicated disk.
+[2026-11-15T19:02:33Z] sync_job Creating local PBS sync job `pbo-sync-1`: `main` → `pbo-pbotesta` (no remote).
+[2026-11-15T19:02:33Z] sync_job 2026-11-15T20:02:33+01:00: Starting datastore sync job '-:main:pbo-pbotesta::pbo-sync-1'
+[2026-11-15T19:02:33Z] sync_job 2026-11-15T20:02:33+01:00: Found 2 groups to sync (out of 2 total)
+[2026-11-15T19:02:33Z] sync_job 2026-11-15T20:02:33+01:00: [ct/101]: sync snapshot 2026-11-15T18:47:31Z
+[2026-11-15T19:02:35Z] sync_job 2026-11-15T20:02:35+01:00: [ct/101]: sync archive root.pxar.didx
+[2026-11-15T19:02:36Z] sync_job 2026-11-15T20:02:36+01:00: [ct/101]: downloaded 180.250 MiB (60.104 MiB/s)
+[2026-11-15T19:02:36Z] sync_job 2026-11-15T20:02:36+01:00: [ct/101]: percentage done: 50.00% (1/2 groups)
+[2026-11-15T19:02:36Z] sync_job 2026-11-15T20:02:36+01:00: [ct/102]: sync snapshot 2026-11-15T18:47:55Z
+[2026-11-15T19:02:38Z] sync_job 2026-11-15T20:02:38+01:00: [ct/102]: sync archive root.pxar.didx
+[2026-11-15T19:02:39Z] sync_job 2026-11-15T20:02:39+01:00: [ct/102]: downloaded 172.432 MiB (70.010 MiB/s)
+[2026-11-15T19:02:39Z] sync_job 2026-11-15T20:02:39+01:00: [ct/102]: percentage done: 100.00% (2/2 groups)
+[2026-11-15T19:02:39Z] sync_job 2026-11-15T20:02:39+01:00: Summary: sync job pulled 352.682 MiB in 9 chunks (average rate: 64.208 MiB/s)
+[2026-11-15T19:02:39Z] sync_job 2026-11-15T20:02:39+01:00: TASK OK
+[2026-11-15T19:02:40Z] success Disk is now visible on PBS as /dev/sdc. PBS local sync job completed.

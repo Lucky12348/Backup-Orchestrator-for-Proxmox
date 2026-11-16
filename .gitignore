@@ -35,6 +35,8 @@ coverage/
 
 # Logs
 *.log
+# Run log fixtures used by the tests (apps/api/tests/test_run_log.py).
+!docs/design/fixtures/*.log
 
 # Docker
 *.pid

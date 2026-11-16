@@ -1,0 +1,41 @@
+[2026-11-16T01:39:54Z] starting External backup run created. Background execution will start shortly.
+[2026-11-16T01:39:54Z] starting Starting external backup execution.
+[2026-11-16T01:39:54Z] handoff_disk Handing off USB disk to PBS VM.
+[2026-11-16T01:39:55Z] handoff_disk USB device chosen by usb_location: 3-1.
+[2026-11-16T01:39:55Z] handoff_disk Selected USB mapping `3-1` for `PBOTESTA`.
+[2026-11-16T01:39:55Z] handoff_disk Attach payload: `usb0=host=3-1,usb3=1`.
+[2026-11-16T01:39:56Z] handoff_disk Host agent USB attach response: `message=QEMU USB passthrough attached.; command=qm set 100 -usb0 host=3-1,usb3=1; stdout=update VM 100: -usb0 host=3-1,usb3=1; stderr=None`.
+[2026-11-16T01:39:57Z] handoff_disk VM config verification attempt 1/15 for `usb0`: `host=3-1,usb3=1`.
+[2026-11-16T01:39:57Z] inspect_disk PBS inspect retry 1/60 failed: Disk `PBOTEST-a` is not visible on PBS.
+[2026-11-16T01:39:59Z] inspect_disk PBS inspect retry 2/60 used identifier `PBOTESTA`.
+[2026-11-16T01:39:59Z] inspect_disk PBS inspect retry 2/60 succeeded: /dev/sdc.
+[2026-11-16T01:39:59Z] handoff_disk Disk is now visible on PBS as /dev/sdc.
+[2026-11-16T01:39:59Z] inspect_disk Inspecting disk on PBS agent.
+[2026-11-16T01:40:00Z] prepare_dedicated_datastore Preparing or reusing dedicated PBS datastore.
+[2026-11-16T01:40:00Z] prepare_dedicated_datastore Existing dedicated PBS datastore reused. No formatting performed.
+[2026-11-16T01:40:00Z] run_export Starting PBS datastore export to dedicated disk.
+
+Disk is now visible on PBS as /dev/sdc.
+
+Requested target path: /mnt/datastore/pbo-pbotesta
+Actual datastore path: /mnt/datastore/pbo-pbotesta
+
+2026-11-16T02:40:00+01:00: Starting datastore sync job '-:main:pbo-pbotesta::pbo-sync-7'
+2026-11-16T02:40:00+01:00: sync datastore 'pbo-pbotesta' from 'main'
+2026-11-16T02:40:00+01:00: ----
+2026-11-16T02:40:00+01:00: Syncing datastore 'main', root namespace into datastore 'pbo-pbotesta', root namespace
+2026-11-16T02:40:00+01:00: Found 2 groups to sync (out of 2 total)
+2026-11-16T02:40:00+01:00: Found 2 groups to sync (out of 2 total)
+2026-11-16T02:40:00+01:00: [ct/101]: re-sync snapshot 2026-11-15T18:47:31Z
+2026-11-16T02:40:00+01:00: [ct/101]: 2026-11-15T18:47:31Z: no data changes
+2026-11-16T02:40:00+01:00: [ct/101]: percentage done: 50.00% (1/2 groups)
+2026-11-16T02:40:00+01:00: [ct/102]: re-sync snapshot 2026-11-15T18:47:55Z
+2026-11-16T02:40:00+01:00: [ct/102]: 2026-11-15T18:47:55Z: no data changes
+2026-11-16T02:40:00+01:00: [ct/102]: percentage done: 100.00% (2/2 groups)
+2026-11-16T02:40:00+01:00: Finished syncing root namespace, current progress: 2 groups, 0 snapshots
+2026-11-16T02:40:00+01:00: Summary: sync job found no new data to pull
+2026-11-16T02:40:00+01:00: sync job '-:main:pbo-pbotesta::pbo-sync-7' end
+2026-11-16T02:40:00+01:00: queued notification (id=ed9797e8-a965-4379-9b37-6ce3eaf7a251)
+2026-11-16T02:40:00+01:00: TASK OK
+[2026-11-16T01:40:03Z] success Disk is now visible on PBS as /dev/sdc. PBS local sync job completed.
+[2026-11-16T01:40:08Z] auto_eject Disk ejected automatically after a successful backup.

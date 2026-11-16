@@ -1,0 +1,12 @@
+[2026-11-16T01:40:03Z] eject Unmounting dedicated PBS datastore on PBS.
+[2026-11-16T01:40:03Z] eject Unmounting removable datastore `pbo-pbotesta` (POST /admin/datastore/pbo-pbotesta/unmount).
+[2026-11-16T01:40:05Z] eject_flush 2026-11-16T02:40:03+01:00: TASK OK
+[2026-11-16T01:40:05Z] eject_flush 2026-11-16T02:40:03+01:00: TASK OK
+[2026-11-16T01:40:05Z] eject Detaching USB disk from PBS VM. 2026-11-16T02:40:03+01:00: TASK OK
+2026-11-16T02:40:03+01:00: TASK OK
+[2026-11-16T01:40:08Z] eject Disk spin-down/power-off attempted.
+
+2026-11-16T02:40:03+01:00: TASK OK
+2026-11-16T02:40:03+01:00: TASK OK
+
+USB passthrough slot `usb0` removed from the PBS VM.
