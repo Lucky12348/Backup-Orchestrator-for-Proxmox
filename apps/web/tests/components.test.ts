@@ -37,6 +37,9 @@ before(async () => {
         'export { ActivityRow, ActivityGroupRow } from "./src/views/activity/ActivityView";',
         'export { ResourcesView } from "./src/views/resources/ResourcesView";',
         'export { IntegrationCard } from "./src/views/integrations/IntegrationsView";',
+        'export { ProxmoxJobsSection, DayPills } from "./src/views/resources/ProxmoxJobsSection";',
+        'export { ChooseDatastoreDialog } from "./src/views/datastores/ChooseDatastoreDialog";',
+        'export { PlanningDialog } from "./src/views/planning/PlanningDialog";',
         'export { UserMenu } from "./src/shell/AppShellV2";',
       ].join("\n"),
       resolveDir: WEB,
@@ -405,7 +408,8 @@ test("ResourcesView: table, protection badges (infrastructure), filters, last ex
   );
   assert.ok(markup.includes("<h1") && markup.includes("Ressources"));
   assert.ok(markup.includes('data-protection="protected"') && markup.includes('data-protection="infrastructure"'));
-  assert.ok(markup.includes("Infrastructure") && markup.includes("backup-1"));
+  assert.ok(markup.includes("Infrastructure") && markup.includes("Sauvegarde Proxmox → pbs"));
+  assert.ok(!markup.includes(">backup-1<")); // the raw job id only in the job details
   assert.ok(markup.includes("Dernière copie externe") && markup.includes("32 Gio"));
   assert.ok(markup.includes("Nom ou VMID"));
 });
@@ -453,4 +457,59 @@ test("ActivityGroupRow: identical failures in one line ×N (folded)", () => {
   );
   assert.ok(markup.includes('data-group="4"') && markup.includes("×4") && markup.includes('aria-expanded="false"'));
   assert.equal((markup.match(/data-activity=/g) ?? []).length, 1); // folded: one visible line
+});
+
+// --- Phase 6c: Proxmox jobs section, day pills, PBS configuration notes ----------------
+
+test("ProxmoxJobsSection: readable names, the raw id only in the folded details", () => {
+  const markup = html(
+    inApp(
+      createElement(ui.ProxmoxJobsSection, {
+        jobs: [
+          {
+            job_id: "backup-7f3a2c", enabled: true, node: null, schedule: "sun 03:00", storage: "pbs-test", retention: "keep-daily=7",
+            selection_mode: "include_selected_vms", selected_vmids: [100], comment: null, next_run: null, supported: true,
+            unsupported_reason: null, included_assets: [], available_assets: [],
+          },
+        ],
+        vms: [{ id: 1, name: "web", vm_type: "vm", external_id: "100" }],
+        language: "fr",
+        t: translations.fr,
+        onChanged: () => undefined,
+      }),
+    ),
+  );
+  assert.ok(markup.includes("Jobs de sauvegarde Proxmox") && markup.includes("Sauvegarde Proxmox → pbs-test · dim. 03:00"));
+  assert.ok(markup.includes("Gérer la sélection") && markup.includes("Modifier") && markup.includes("Supprimer") && markup.includes("Nouveau job"));
+  // Visible text: the raw id only inside the folded details (data-job is an attribute).
+  assert.ok(markup.includes("<details") && markup.indexOf("backup-7f3a2c · ") > markup.indexOf("<details"));
+  assert.equal((markup.match(/>backup-7f3a2c</g) ?? []).length, 0);
+  assert.ok(markup.includes("web"));
+});
+
+test("DayPills: L M M J V S D, pressed state", () => {
+  const markup = html(createElement(ui.DayPills, { days: ["sun"], onToggle: () => undefined, lang: "fr" }));
+  assert.equal((markup.match(/aria-pressed="true"/g) ?? []).length, 1);
+  assert.ok(markup.includes('aria-label="dimanche"') && markup.includes(">D<"));
+});
+
+test("DiskCard: 'PBS configuration missing' note", () => {
+  const markup = html(
+    createElement(ui.DiskCard, {
+      row: { disk: baseDisk, status: "approved" },
+      selected: false,
+      onSelect: () => undefined,
+      language: "fr",
+      t: translations.fr,
+      configNote: "missing_recoverable",
+    }),
+  );
+  assert.ok(markup.includes('data-config="missing_recoverable"') && markup.includes("Configuration PBS manquante"));
+});
+
+test("Planning and datastore dialogs render nothing while closed", () => {
+  const datastore = html(inApp(createElement(ui.ChooseDatastoreDialog, { open: false, missing: "main", onClose: () => undefined, onChanged: () => undefined, language: "fr", t: translations.fr })));
+  assert.ok(!datastore.includes("Choisir un autre datastore"));
+  const planning = html(inApp(createElement(ui.PlanningDialog, { state: null, onClose: () => undefined, onSaved: () => undefined, disks: [], vms: [], defaultDatastore: "main", tz: "UTC", language: "fr", t: translations.fr })));
+  assert.ok(!planning.includes("Quand ?"));
 });

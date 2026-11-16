@@ -211,6 +211,9 @@ class PBSApiBackend:
             target_name=target,
             confirmation=bool(payload.get("confirmation")),
             running_tasks=self.client.list_tasks(running=True, limit=200),
+            recorded_name=getattr(record, "pbs_datastore_name", None) if getattr(record, "prepared", False) else None,
+            recorded_backing_device=getattr(record, "pbs_backing_device", None),
+            recorded_path=getattr(record, "pbs_datastore_path", None),
         )
         lines: list[str] = []
         commands: list[str] = []
@@ -251,11 +254,32 @@ class PBSApiBackend:
                 ) from exc
             commands.append(f"PUT /config/datastore/{target} comment={pbo_marker(serial)}")
             message = CREATED_MESSAGE
+        elif plan.action == "recreate":
+            progress(
+                "prepare_dedicated_datastore",
+                f"PBS configuration of `{plan.datastore_name}` was missing: re-created with reuse-datastore from the "
+                f"PBO-marked filesystem {plan.backing_device} (no formatting).",
+            )
+            commands.append(
+                f"POST /config/datastore name={plan.datastore_name} path={plan.path} backing-device={plan.backing_device} "
+                f"reuse-datastore=1 comment={pbo_marker(serial)}"
+            )
+            upid = self.client.create_datastore(
+                name=plan.datastore_name,
+                path=str(plan.path),
+                backing_device=plan.backing_device,
+                reuse_datastore=True,
+                comment=pbo_marker(serial),
+            )
+            if upid:
+                self.client.wait_for_task(upid, timeout_seconds=self.settings.pbs_task_timeout_seconds, on_line=on_line("prepare_dedicated_datastore"))
+            message = REUSED_MESSAGE
         else:
             progress("prepare_dedicated_datastore", f"PBO-marked datastore `{plan.datastore_name}` found on this disk.")
             message = REUSED_MESSAGE
 
         self._ensure_mounted(plan.datastore_name, progress, lines)
+        self._record_marker(serial, plan.datastore_name)
         mount_path = f"{PBS_DATASTORE_ROOT}/{plan.datastore_name}"
         return {
             "ok": True,
@@ -497,6 +521,27 @@ class PBSApiBackend:
 
         return SessionLocal()
 
+    def _record_marker(self, serial: str, store: str) -> None:
+        """Stores the PBO marker of this disk's datastore (filesystem UUID +
+        path) so a deleted PBS configuration can be re-created later."""
+        from app.models.external_disk import ExternalDisk
+
+        try:
+            config = self.client.get_datastore_config(store)
+        except PBSApiError as exc:
+            logger.warning("Could not read the configuration of %s: %s", store, exc)
+            return
+        record = self._disk_record(serial)
+        if record is None:
+            return
+        with self._sessions() as db:
+            disk = db.get(ExternalDisk, record.id)
+            if disk is None:
+                return
+            disk.pbs_backing_device = str(config.get("backing-device") or "") or disk.pbs_backing_device
+            disk.pbs_datastore_path = str(config.get("path") or "") or disk.pbs_datastore_path
+            db.commit()
+
     def _disk_record(self, serial: str) -> SimpleNamespace | None:
         from app.models.external_disk import ExternalDisk
 
@@ -514,6 +559,10 @@ class PBSApiBackend:
                 serial_number=disk.serial_number,
                 trusted=bool(disk.trusted),
                 pbs_device_path=disk.pbs_device_path,
+                prepared=bool(disk.prepared_as_pbs_datastore and disk.pbs_datastore_name),
+                pbs_datastore_name=disk.pbs_datastore_name,
+                pbs_backing_device=disk.pbs_backing_device,
+                pbs_datastore_path=disk.pbs_datastore_path,
             )
 
     def _progress(self, run_id: Any) -> ProgressFn:

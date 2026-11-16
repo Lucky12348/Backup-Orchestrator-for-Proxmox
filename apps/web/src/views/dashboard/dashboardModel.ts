@@ -108,7 +108,7 @@ export function nextRotation(events: readonly EventLike[], disks: readonly DiskL
   };
 }
 
-export type TodoKind = "to_confirm" | "new_disk" | "missed_rotation" | "agent_offline" | "recent_failure";
+export type TodoKind = "datastore_missing" | "to_confirm" | "new_disk" | "missed_rotation" | "agent_offline" | "recent_failure";
 
 export interface TodoItem {
   kind: TodoKind;
@@ -130,8 +130,13 @@ export function todoItems(input: {
   agentConnected: boolean;
   agentConfigured: boolean;
   now: Date;
+  /** Name of the source datastore when it no longer exists on PBS. */
+  missingDatastore?: string | null;
 }): TodoItem[] {
   const items: TodoItem[] = [];
+  if (input.missingDatastore) {
+    items.push({ kind: "datastore_missing", tone: "warn", label: input.missingDatastore, href: "/integrations" });
+  }
   // Planned runs waiting for a confirmation (start_mode = manual confirmation).
   for (const run of input.scheduledRuns) {
     if (run.status === "waiting_for_confirmation") {

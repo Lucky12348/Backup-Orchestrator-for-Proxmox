@@ -59,6 +59,7 @@ PBO_MESSAGES: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
         ("wiping", r"^Wiping `(?P<device>[^`]+)` on PBS"),
         ("creating_datastore", r"^Creating removable datastore `(?P<store>[^`]+)` \(ext4\) on `(?P<device>[^`]+)`\.$"),
         ("datastore_marked", r"^PBO-marked datastore `(?P<store>[^`]+)` found on this disk\.$"),
+        ("datastore_recreated", r"^PBS configuration of `(?P<store>[^`]+)` was missing: re-created with reuse-datastore from the PBO-marked filesystem (?P<uuid>\S+) \(no formatting\)\.$"),
         ("mounting", r"^Mounting removable datastore `(?P<store>[^`]+)`\.$"),
         ("export_start", r"^Starting PBS datastore export to dedicated disk\.$"),
         ("sync_job_create", r"^Creating local PBS sync job `(?P<job>[^`]+)`: `(?P<source>[^`]+)` → `(?P<target>[^`]+)` \(no remote\)\.$"),
@@ -165,20 +166,24 @@ def build_entries(stdout_log: str | None, stderr_log: str | None = None) -> list
             return
         add(LogEntry(text=text.strip(), source="pbs", at=at, step=step, level=_level(text, step, "pbs")))
 
+    seen_pbo: set[str] = set()
     for stream, raw_log in (("stdout", stdout_log), ("stderr", stderr_log)):
         current_step: str | None = None
+        current_at: str | None = None
         for raw in (raw_log or "").splitlines():
             line = raw.rstrip()
             if not line.strip():
                 continue
             if match := _PBO_ENTRY_RE.match(line):
                 current_step = match.group("step")
+                current_at = match.group("at")
                 body = match.group("text").strip()
                 if _PBS_LINE_RE.match(body):  # PBO entry carrying one PBS task line
                     add_pbs_line(body, current_step)
                     continue
                 message, glued = _split_glued_pbs(body)
                 if message:
+                    seen_pbo.add(message)
                     entry = _pbo_entry(message, at=match.group("at"), step=current_step)
                     if stream == "stderr" and entry.level == "info":
                         entry.level = "err"
@@ -188,7 +193,12 @@ def build_entries(stdout_log: str | None, stderr_log: str | None = None) -> list
             elif _PBS_LINE_RE.match(line.strip()):
                 add_pbs_line(line.strip(), current_step)
             else:  # detail line of a merged block (PBO text without timestamp)
-                add(_pbo_entry(line.strip(), at=None, step=current_step))
+                text = line.strip()
+                if text in seen_pbo:
+                    continue  # already journalled with its timestamp (leftover of B22)
+                seen_pbo.add(text)
+                # Every line is timestamped: the one of the entry it belongs to.
+                add(_pbo_entry(text, at=current_at, step=current_step))
     return entries
 
 

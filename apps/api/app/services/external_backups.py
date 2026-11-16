@@ -349,12 +349,11 @@ def execute_external_backup_run(run_id: int) -> None:
             # B24: the run stays RUNNING until the optional eject (step 6) is
             # done, so the backup and its eject are one run and one modal.
             run.message = f"{handoff_status.message} {export_result.message}".strip()
-            run.stdout_log = _merge_logs(
-                run.stdout_log,
-                handoff_status.message,
-                prepare_result.stdout_log,
-                export_result.stdout_log,
-            )
+            # The handoff message is already in the journal; the preparation
+            # details (target paths...) become timestamped lines, the PBS task
+            # lines were streamed live (B22: no raw block merged at the end).
+            _journal_block(db, run, "prepare_datastore", prepare_result.stdout_log)
+            _journal_block(db, run, "sync_job", export_result.stdout_log)
             run.stderr_log = _merge_logs(run.stderr_log, prepare_result.stderr_log, export_result.stderr_log)
             run.command_summary = _merge_logs(prepare_result.command_summary, export_result.command_summary)
             run.execution_cwd = _merge_logs(prepare_result.execution_cwd, export_result.execution_cwd)
@@ -623,6 +622,20 @@ def _format_disk_notification_label(disk: ExternalDisk, datastore_name: str | No
     if disk.source:
         details.append(f"source {disk.source}")
     return f"{label} ({', '.join(details)})"
+
+
+def _journal_block(db: Session, run: ExternalBackupRun, step: str, text: str | None) -> None:
+    """Appends the lines of a result block that are not in the journal yet,
+    each one timestamped (instead of a raw block without timestamps)."""
+    from app.services.run_log import _PBS_LINE_RE
+
+    for raw in (text or "").splitlines():
+        line = raw.strip()
+        if not line or line in (run.stdout_log or ""):
+            continue
+        if _PBS_LINE_RE.match(line) or is_progress_line(line):
+            continue  # PBS task lines were streamed live; progress is not journal
+        append_external_backup_run_log(db, run.id, step=step, message=line)
 
 
 def _merge_logs(*values: str | None) -> str | None:

@@ -16,7 +16,9 @@ export type ItemStatus =
   | "success"
   | "failed"
   | "missed"
-  | "cancelled";
+  | "cancelled"
+  /** Its source datastore no longer exists on PBS (Phase 6c). */
+  | "blocked";
 
 export const VIEWS: readonly CalendarView[] = ["day", "week", "month", "year"];
 export const KINDS: readonly ItemKind[] = ["external", "monthly", "manual", "proxmox"];
@@ -314,7 +316,7 @@ export function nowMinutes(now: Date, day: Day, tz: string): number | null {
   return sameDay(p, day) ? p.h * 60 + p.min : null;
 }
 
-export type Tone = "planned" | "plannedMonthly" | "plannedManual" | "proxmox" | "success" | "failed" | "running" | "confirm" | "muted";
+export type Tone = "planned" | "plannedMonthly" | "plannedManual" | "proxmox" | "success" | "failed" | "running" | "confirm" | "blocked" | "muted";
 
 export function itemTone(item: AgendaItem): Tone {
   switch (item.status) {
@@ -327,6 +329,8 @@ export function itemTone(item: AgendaItem): Tone {
       return "failed";
     case "to_confirm":
       return "confirm";
+    case "blocked":
+      return "blocked";
     case "cancelled":
       return "muted";
     default:

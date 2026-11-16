@@ -111,6 +111,10 @@ def planned_items(db: Session, start: datetime, end: datetime, now: datetime, di
     )
     by_key = {(run.event_id, run.scheduled_for): run for run in runs}
     linked = {run.backup_run_id for run in db.scalars(select(ScheduledBackupRun).where(ScheduledBackupRun.backup_run_id.is_not(None)))}
+    from app.services.datastore_health import read_health
+
+    health = read_health(db) or {}
+    blocked_events = set(health.get("blocked_events") or []) if health.get("checked") else set()
     items: list[dict] = []
     for event in events:
         kind = "monthly" if getattr(event.recurrence_type, "value", event.recurrence_type) == "monthly" else "external"
@@ -133,6 +137,8 @@ def planned_items(db: Session, start: datetime, end: datetime, now: datetime, di
                     status = "planned" if scheduled_for > now else ("missed" if scheduled_for + timedelta(minutes=event.window_duration_minutes) < now else "waiting_disk")
                 starts_at = scheduled_for
                 ends_at = scheduled_for + timedelta(minutes=PLANNED_DISPLAY_MINUTES)
+            if event.id in blocked_events and status in {"planned", "waiting_disk", "to_confirm", "waiting"}:
+                status = "blocked"  # its source datastore no longer exists (Phase 6c)
             serial = (run.disk_serial if run and run.disk_serial else recurrence.disk_serial_for(event, scheduled_for))
             items.append(
                 {

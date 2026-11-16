@@ -23,6 +23,8 @@ import {
   getProxmoxInventory,
   getProxmoxStatus,
   getSystemVersion,
+  getDatastoreHealth,
+  type DatastoreHealth,
   getUnplannedAssets,
   getVMs,
   getOverview,
@@ -72,6 +74,8 @@ export interface AppDataState {
   proxmoxStatus: ProxmoxStatus;
   proxmoxBackupJobs: ProxmoxBackupJob[];
   systemVersion: SystemVersion | null;
+  /** Phase 6c: verdict of the last datastore check (null: not available). */
+  datastoreHealth: DatastoreHealth | null;
 }
 
 async function fetchAppData(): Promise<AppDataState> {
@@ -93,6 +97,7 @@ async function fetchAppData(): Promise<AppDataState> {
     pbsStatus,
     pbsInventory,
     systemVersion,
+    datastoreHealth,
   ] = await Promise.all([
     getAgentStatus(),
     getOverview(),
@@ -111,6 +116,7 @@ async function fetchAppData(): Promise<AppDataState> {
     getPBSStatus(),
     getPBSInventory(),
     getSystemVersion().catch(() => null),
+    getDatastoreHealth().catch(() => null),
   ]);
 
   return {
@@ -130,6 +136,7 @@ async function fetchAppData(): Promise<AppDataState> {
     proxmoxStatus,
     proxmoxBackupJobs,
     systemVersion,
+    datastoreHealth,
   };
 }
 

@@ -135,6 +135,27 @@ Not available in API mode (explicit error, use `PBS_MODE=agent`): the
 coexistence / loop-image mode, `/prepare-disk` on the PBS side, PBS agent
 maintenance.
 
+### Deleted datastore configuration (Phase 6c)
+
+When PBO creates or reuses a rotation datastore it records, from
+`GET /config/datastore/<name>`, the filesystem UUID (`backing-device`) and the
+on-device `path` (`external_disks.pbs_backing_device` / `pbs_datastore_path`):
+the **PBO marker** of that disk. If the PBS configuration is later deleted
+(the data stays on the disk), the next backup finds no bound datastore:
+
+- the disk's partition UUID matches the marker → `POST /config/datastore`
+  `name`, `path`, `backing-device`, `reuse-datastore=true`,
+  `comment=pbo:serial=<serial>`, then mount — **no wipe, no format**, and the
+  run journal says so (`datastore_recreated`);
+- no matching marker and an ext4/xfs/btrfs filesystem on the disk → refused
+  (`pbs_config_missing_unrecoverable`), nothing is touched;
+- a datastore with the expected name but without the PBO comment → conflict,
+  refused (`datastore_name_taken` / `pbs_datastore_conflict`).
+
+The datastore health check (`services/datastore_health.py`) reports these
+states after each PBS sync. [U: `reuse-datastore` on a removable datastore to
+be confirmed on a test PBS.]
+
 ## TLS
 
 `PVE_FINGERPRINT` / `PBS_FINGERPRINT` (SHA-256, set by the setup wizard) are

@@ -2,7 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, HardDrive, Loader2, Play, RefreshCw, Search, Unplug } from "lucide-react";
 import { useLocation } from "react-router-dom";
 
-import { decideDisk, getExternalBackupReadiness, rescanDisks, type DiskDecision, type ExternalBackupReadiness } from "../../api";
+import {
+  decideDisk,
+  getExternalBackupReadiness,
+  rescanDisks,
+  type DatastoreHealth,
+  type DiskDatastoreState,
+  type DiskDecision,
+  type ExternalBackupReadiness,
+} from "../../api";
 import { cn } from "../../components/ui/utils";
 import type { Language, TranslationDictionary } from "../../i18n";
 import { focusedDiskId } from "../../liveDisks";
@@ -30,6 +38,8 @@ import {
   type DiskTab,
   type DiskUiStatus,
   type Tone,
+  pbsConfigNote,
+  type PbsConfigNote,
 } from "./diskModel";
 
 const TONE: Record<Tone, { pill: string; dot: string; icon: string; bar: string; note: string }> = {
@@ -53,6 +63,8 @@ export interface DisksViewProps {
   isStarting: (diskId: number) => boolean;
   isEjecting: (diskId: number) => boolean;
   onChanged: () => Promise<void> | void;
+  /** Phase 6c: verdict of the last datastore check. */
+  datastoreHealth?: DatastoreHealth | null;
 }
 
 export function StatusPill({ status, label }: { status: DiskUiStatus; label: string }) {
@@ -77,7 +89,7 @@ function errorText(error: unknown, t: TranslationDictionary): string {
   return error instanceof Error ? error.message : t.error;
 }
 
-export function DisksView({ disks, runs, language, t, onBackup, onEject, isStarting, isEjecting, onChanged }: DisksViewProps) {
+export function DisksView({ disks, runs, language, t, onBackup, onEject, isStarting, isEjecting, onChanged, datastoreHealth }: DisksViewProps) {
   const text = t.disksV2;
   const { toast } = useToast();
   const search = useLocation().search;
@@ -185,6 +197,7 @@ export function DisksView({ disks, runs, language, t, onBackup, onEject, isStart
             shown.map((row) => (
               <DiskCard
                 key={row.disk.id}
+                configNote={pbsConfigNote(datastoreHealth?.disks[String(row.disk.id)])}
                 row={row}
                 selected={selected?.disk.id === row.disk.id}
                 onSelect={() => setSelectedId(row.disk.id)}
@@ -197,6 +210,7 @@ export function DisksView({ disks, runs, language, t, onBackup, onEject, isStart
         {selected ? (
           <DiskDetail
             key={selected.disk.id}
+            configState={datastoreHealth?.disks[String(selected.disk.id)] ?? null}
             row={selected}
             runs={runs}
             language={language}
@@ -244,7 +258,9 @@ export function DiskCard({
   onSelect,
   language,
   t,
+  configNote,
 }: {
+  configNote?: PbsConfigNote | null;
   row: DiskRow<ExternalDisk>;
   selected: boolean;
   onSelect: () => void;
@@ -289,7 +305,13 @@ export function DiskCard({
           <div className={cn("h-full rounded-full", tone.bar)} style={{ width: `${usage ?? 0}%` }} />
         </div>
       </div>
-      <span className={cn("text-[13px]", tone.note)}>{noteText(row, t)}</span>
+      {configNote ? (
+        <span className={cn("text-[13px] font-medium", configNote === "missing_recoverable" ? "text-warning-text" : "text-danger-text")} data-config={configNote}>
+          {t.datastoresV2.disk[configNote]}
+        </span>
+      ) : (
+        <span className={cn("text-[13px]", tone.note)}>{noteText(row, t)}</span>
+      )}
       {tags.length ? (
         <div className="flex flex-wrap gap-1.5">
           {tags.map((tag) => (
@@ -325,6 +347,7 @@ const primary = "flex items-center justify-center gap-2 rounded-lg border-0 bg-a
 const secondary = "flex items-center justify-center gap-2 rounded-lg border border-solid border-border bg-subtle px-3 py-[9px] text-[13px] font-medium text-fg hover:brightness-110 disabled:cursor-not-allowed disabled:text-muted disabled:hover:brightness-100";
 
 export function DiskDetail({
+  configState,
   row,
   runs,
   language,
@@ -337,6 +360,7 @@ export function DiskDetail({
   rescanning,
   onChanged,
 }: {
+  configState?: DiskDatastoreState | null;
   row: DiskRow<ExternalDisk>;
   runs: ExternalBackupRun[];
   language: Language;
@@ -379,6 +403,20 @@ export function DiskDetail({
         <span className="text-[17px] font-semibold">{disk.display_name}</span>
         <span className="text-[13px] text-muted">{text.summary[status]}</span>
       </div>
+
+      {pbsConfigNote(configState) ? (
+        <div className="border-0 border-b border-solid border-border p-[18px]" data-config-detail={pbsConfigNote(configState)}>
+          <div
+            className={cn(
+              "flex flex-col gap-1 rounded-[10px] p-3 text-[13px] leading-[1.45]",
+              pbsConfigNote(configState) === "missing_recoverable" ? "bg-warning/15 text-warning-text" : "bg-danger/15 text-danger-text",
+            )}
+          >
+            <b>{t.datastoresV2.disk[pbsConfigNote(configState) as PbsConfigNote]}</b>
+            <span>{fill(t.datastoresV2.diskHelp[pbsConfigNote(configState) as PbsConfigNote], { name: configState?.datastore ?? "" })}</span>
+          </div>
+        </div>
+      ) : null}
 
       {status === "new" ? <ApprovalFlow disk={disk} t={t} language={language} onChanged={onChanged} /> : null}
 

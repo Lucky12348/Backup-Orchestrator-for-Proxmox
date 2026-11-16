@@ -224,3 +224,35 @@ def test_journal_json_fixtures_are_up_to_date(name):
     raw = _fixture(f"{name}.stdout.log")
     expected = {"entries": [entry.as_dict() for entry in run_log.build_entries(raw)], "summary": run_log.transfer_summary(raw)}
     assert json.loads(_fixture(f"{name}.journal.json")) == expected
+
+
+@pytest.mark.parametrize("name", ["backup-reuse.stdout.log", "eject.stdout.log", "first-backup-format.stdout.log"])
+def test_every_journal_line_is_timestamped_and_not_repeated(name):
+    """Phase 6c: the lines of the merged end-of-run blocks get the timestamp of
+    the entry they belong to, and a PBO message already journalled is not
+    shown again (leftover of B22: "Disk visible on PBS" twice)."""
+    entries = run_log.build_entries(_fixture(name))
+    assert all(entry.at for entry in entries), [entry.text for entry in entries if not entry.at]
+    pbo_texts = [entry.text for entry in entries if entry.source == "pbo"]
+    assert len(pbo_texts) == len(set(pbo_texts))
+
+
+def test_end_of_run_blocks_are_journalled_line_by_line(db):
+    from datetime import datetime
+
+    from app.models import BackupRunStatus, ExternalBackupMode, ExternalBackupRun, ExternalDisk
+    from app.services.external_backups import _journal_block, append_external_backup_run_log
+
+    disk = ExternalDisk(serial_number="D", display_name="D", capacity_gb=100, source="agent")
+    db.add(disk)
+    db.commit()
+    run = ExternalBackupRun(disk_id=disk.id, status=BackupRunStatus.RUNNING, started_at=datetime(2026, 11, 16), created_at=datetime(2026, 11, 16),
+                            target_path="/x", datastore_name="main", mode=ExternalBackupMode.DEDICATED)
+    db.add(run)
+    db.commit()
+    append_external_backup_run_log(db, run.id, step="handoff_disk", message="Disk is now visible on PBS as /dev/sdb.")
+    _journal_block(db, run, "prepare_datastore", "Disk is now visible on PBS as /dev/sdb.\nRequested target path: /mnt/x\n2026-11-16T10:00:00+01:00: TASK OK")
+    db.refresh(run)
+    lines = run.stdout_log.splitlines()
+    assert len(lines) == 2 and all(line.startswith("[") for line in lines)
+    assert "Requested target path: /mnt/x" in lines[1]

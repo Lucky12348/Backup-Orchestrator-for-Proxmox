@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 
 import { cancelScheduledBackupRun, confirmScheduledBackupRun } from "../../api";
 import { useToast } from "../../ui/toast";
+import { ChooseDatastoreDialog } from "../datastores/ChooseDatastoreDialog";
 
 import { cn } from "../../components/ui/utils";
 import type { Language, TranslationDictionary } from "../../i18n";
@@ -38,6 +39,8 @@ export interface DashboardViewProps {
   now?: Date;
   /** Reload the app data after confirming / cancelling a planned run. */
   onChanged?: () => Promise<void> | void;
+  /** Source datastore deleted on PBS (Phase 6c): "Choose another datastore". */
+  missingDatastore?: string | null;
 }
 
 const RING = 2 * Math.PI * 56;
@@ -122,7 +125,9 @@ export function DashboardView(props: DashboardViewProps) {
     agentConnected: props.agentStatus.status === "connected",
     agentConfigured: props.agentConfigured,
     now,
+    missingDatastore: props.missingDatastore,
   });
+  const [choosing, setChoosing] = useState(false);
   const rotationList = rotationDisks(disks, runs);
   const lastRuns = recentRuns(runs);
   const infrastructure = overview.infrastructure_ignored ?? 0;
@@ -272,7 +277,15 @@ export function DashboardView(props: DashboardViewProps) {
               <span className="px-[22px] pb-4 pt-1 text-[13px] text-faint">{text.todoEmpty}</span>
             ) : (
               todo.map((item, index) =>
-                item.kind === "to_confirm" && item.runId ? (
+                item.kind === "datastore_missing" ? (
+                  <div key="datastore" className="flex flex-wrap items-center gap-3 px-[22px] py-3" data-todo="datastore_missing">
+                    <span className="h-2 w-2 flex-none rounded-full bg-warning" />
+                    <span className="min-w-0 flex-1 text-sm">{fill(text.todoItem.datastore_missing, { name: item.label })}</span>
+                    <button type="button" onClick={() => setChoosing(true)} className="rounded-[7px] border-0 bg-accent px-2.5 py-1 text-xs font-medium text-white hover:brightness-110">
+                      {t.datastoresV2.chooseAction}
+                    </button>
+                  </div>
+                ) : item.kind === "to_confirm" && item.runId ? (
                   <ConfirmRow key={`${item.kind}-${item.runId}`} label={fill(text.todoItem.to_confirm, { name: item.label })} runId={item.runId} t={t} onChanged={props.onChanged} />
                 ) : (
                   <Link key={`${item.kind}-${index}`} to={item.href} className={cn(rowLink, "gap-3 px-[22px] py-3")} data-todo={item.kind}>
@@ -286,6 +299,15 @@ export function DashboardView(props: DashboardViewProps) {
           </section>
         </div>
       </div>
+
+      <ChooseDatastoreDialog
+        open={choosing}
+        missing={props.missingDatastore ?? null}
+        onClose={() => setChoosing(false)}
+        onChanged={() => props.onChanged?.()}
+        language={language}
+        t={t}
+      />
 
       <div className="flex flex-wrap gap-5">
         <section className={cn(card, "flex min-w-0 flex-[1_1_400px] flex-col pb-2")}>

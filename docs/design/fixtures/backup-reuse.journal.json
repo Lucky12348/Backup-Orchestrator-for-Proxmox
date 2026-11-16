@@ -190,19 +190,7 @@
       "count": 1
     },
     {
-      "at": null,
-      "step": "run_export",
-      "source": "pbo",
-      "level": "info",
-      "code": "disk_visible",
-      "params": {
-        "device": "/dev/sdc"
-      },
-      "text": "Disk is now visible on PBS as /dev/sdc.",
-      "count": 1
-    },
-    {
-      "at": null,
+      "at": "2026-11-16T01:40:00Z",
       "step": "run_export",
       "source": "pbo",
       "level": "info",
@@ -214,7 +202,7 @@
       "count": 1
     },
     {
-      "at": null,
+      "at": "2026-11-16T01:40:00Z",
       "step": "run_export",
       "source": "pbo",
       "level": "info",

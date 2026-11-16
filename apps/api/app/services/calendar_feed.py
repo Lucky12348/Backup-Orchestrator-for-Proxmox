@@ -122,6 +122,9 @@ def recurrence_rule(event: ScheduledBackupEvent) -> str | None:
     if kind == ScheduledBackupRecurrenceType.DAILY:
         return f"FREQ=DAILY{suffix}"
     if kind == ScheduledBackupRecurrenceType.WEEKLY:
+        days = recurrence.weekdays_of(event)
+        if days:
+            return f"FREQ=WEEKLY{suffix};BYDAY={','.join(['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'][day] for day in days)}"
         return f"FREQ=WEEKLY{suffix}"
     if kind == ScheduledBackupRecurrenceType.MONTHLY:
         day = _local_start(event).day

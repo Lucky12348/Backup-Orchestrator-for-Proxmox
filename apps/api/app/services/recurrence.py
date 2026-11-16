@@ -6,7 +6,9 @@ Europe/Paris" stays at 09:00 across daylight saving changes (it moves by one
 hour in UTC). Returned datetimes are naive UTC, like everything else stored.
 
 `recurrence_config`:
-* `interval` (1–52): every N days / weeks / months (default 1).
+* `interval` (1–52): every N days / weeks / months (default 1);
+* `weekdays` (weekly only, 0 = Monday … 6 = Sunday): several days a week
+  (Phase 6c). Without it, the weekday of the first occurrence.
 
 Weekly = the weekday of the first occurrence; monthly = its day of month,
 clamped to the last day of shorter months (31 → 30 → 28/29).
@@ -40,6 +42,28 @@ def interval_of(event: Any) -> int:
     except (TypeError, ValueError):
         value = 1
     return max(1, min(MAX_INTERVAL, value))
+
+
+def weekdays_of(event: Any) -> list[int]:
+    config = event.recurrence_config if isinstance(getattr(event, "recurrence_config", None), dict) else {}
+    days = sorted({int(day) for day in config.get("weekdays") or [] if str(day).isdigit() and 0 <= int(day) <= 6})
+    return days
+
+
+def _week_days(event: Any, first: datetime) -> list[int]:
+    return weekdays_of(event) or [first.weekday()]
+
+
+def _weekly_local(first: datetime, days: list[int], interval: int, n: int) -> datetime:
+    """n-th slot (from the first week's Monday) of a multi-day weekly rule."""
+    week, slot = divmod(n, len(days))
+    monday = first - timedelta(days=first.weekday())
+    return monday + timedelta(weeks=week * interval, days=days[slot])
+
+
+def _first_slot(first: datetime, days: list[int]) -> int:
+    """Slots of the first week before the first occurrence are skipped."""
+    return sum(1 for day in days if day < first.weekday())
 
 
 def _kind(event: Any) -> str:
@@ -95,6 +119,20 @@ def expand(event: Any, range_start: datetime, range_end: datetime) -> list[datet
     first_local = to_local(event.window_starts_at, tz)
     if kind == "once":
         return [event.window_starts_at] if range_start <= event.window_starts_at <= range_end else []
+    if kind == "weekly" and weekdays_of(event):
+        days = _week_days(event, first_local)
+        weeks = max(0, (to_local(range_start, tz).date() - first_local.date()).days // (7 * interval) - 1)
+        n = max(_first_slot(first_local, days), weeks * len(days))
+        found: list[datetime] = []
+        for _ in range(_MAX_STEPS):
+            local = _weekly_local(first_local, days, interval, n)
+            occurrence = to_utc(local, tz)
+            if occurrence > range_end:
+                break
+            if occurrence >= range_start and local >= first_local:
+                found.append(occurrence)
+            n += 1
+        return found
     k = _first_index(first_local, kind, interval, to_local(range_start, tz))
     occurrences: list[datetime] = []
     for _ in range(_MAX_STEPS):
@@ -115,6 +153,16 @@ def occurrence_index(event: Any, scheduled_for: datetime) -> int | None:
         return 0 if scheduled_for == event.window_starts_at else None
     interval = interval_of(event)
     first_local = to_local(event.window_starts_at, tz)
+    if kind == "weekly" and weekdays_of(event):
+        days = _week_days(event, first_local)
+        local = to_local(scheduled_for, tz)
+        week = (local.date() - (first_local.date() - timedelta(days=first_local.weekday()))).days // 7
+        if week % interval or local.weekday() not in days:
+            return None
+        n = (week // interval) * len(days) + days.index(local.weekday())
+        if to_utc(_weekly_local(first_local, days, interval, n), tz) != scheduled_for or local < first_local:
+            return None
+        return n - _first_slot(first_local, days)
     k = _first_index(first_local, kind, interval, to_local(scheduled_for, tz))
     for candidate in range(k, k + 4):
         if to_utc(_local_occurrence(first_local, kind, interval, candidate), tz) == scheduled_for:

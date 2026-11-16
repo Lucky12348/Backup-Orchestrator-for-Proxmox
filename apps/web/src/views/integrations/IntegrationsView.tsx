@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Bot, Database, Loader2, RefreshCw, Server, Settings2, Stethoscope, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -21,6 +21,7 @@ import { RECONFIGURE_PATH } from "../../setup/logic";
 import { useConfirm } from "../../ui/confirm";
 import { InfoTip } from "../../ui/InfoTip";
 import { useToast } from "../../ui/toast";
+import { ChooseDatastoreDialog } from "../datastores/ChooseDatastoreDialog";
 import { fill, formatWhen } from "../format";
 import { integrationState, splitAgents, type IntegrationState } from "./integrationsModel";
 
@@ -37,6 +38,9 @@ export interface IntegrationsViewProps {
   now?: Date;
   loadHealth?: typeof getIntegrationsHealth;
   loadAgents?: typeof getRegisteredAgents;
+  /** Phase 6c: source datastore deleted on PBS. */
+  missingDatastore?: string | null;
+  onDatastoreChanged?: () => Promise<void> | void;
 }
 
 export function IntegrationsView({
@@ -47,7 +51,10 @@ export function IntegrationsView({
   now = new Date(),
   loadHealth = getIntegrationsHealth,
   loadAgents = getRegisteredAgents,
+  missingDatastore = null,
+  onDatastoreChanged,
 }: IntegrationsViewProps) {
+  const [choosing, setChoosing] = useState(false);
   const text = t.integrationsV2;
   const { toast } = useToast();
   const confirm = useConfirm();
@@ -140,9 +147,28 @@ export function IntegrationsView({
             now={now}
             onTest={() => void test(key)}
             onSync={key === "agent" ? undefined : () => void onSync(key)}
+            warning={
+              key === "pbs" && missingDatastore ? (
+                <div className="mx-[22px] mb-3 flex flex-col gap-2 rounded-lg bg-warning/15 px-3 py-2 text-xs text-warning-text" data-datastore-missing={missingDatastore}>
+                  <span>{fill(t.datastoresV2.missing, { name: missingDatastore })}</span>
+                  <button type="button" onClick={() => setChoosing(true)} className="self-start rounded-[7px] border-0 bg-accent px-2.5 py-1 text-xs font-medium text-white hover:brightness-110">
+                    {t.datastoresV2.chooseAction}
+                  </button>
+                </div>
+              ) : null
+            }
           />
         ))}
       </div>
+
+      <ChooseDatastoreDialog
+        open={choosing}
+        missing={missingDatastore}
+        onClose={() => setChoosing(false)}
+        onChanged={() => onDatastoreChanged?.()}
+        language={language}
+        t={t}
+      />
 
       <section aria-label={text.agents} className="flex flex-col gap-4 rounded-2xl border border-solid border-border bg-surface p-[22px]">
         <div className="flex flex-wrap items-center gap-3">
@@ -223,7 +249,9 @@ export function IntegrationCard({
   now,
   onTest,
   onSync,
+  warning,
 }: {
+  warning?: ReactNode;
   integration: IntegrationKey;
   health: IntegrationHealth | undefined;
   checking: boolean;
@@ -285,6 +313,7 @@ export function IntegrationCard({
       {state === "down" && health?.message ? (
         <p className="m-0 mx-[22px] mb-3 rounded-lg bg-danger/10 px-3 py-2 text-xs text-danger-text [overflow-wrap:anywhere]">{health.message}</p>
       ) : null}
+      {warning}
       {health?.last_sync_error ? (
         <p className="m-0 mx-[22px] mb-3 text-xs text-warning-text [overflow-wrap:anywhere]">{fill(text.syncError, { reason: health.last_sync_error })}</p>
       ) : null}

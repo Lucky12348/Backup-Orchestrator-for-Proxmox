@@ -240,3 +240,21 @@ export function usagePercent(disk: DiskLike): number | null {
   if (!total || disk.filesystem_used_gb == null) return null;
   return Math.max(0, Math.min(100, Math.round((disk.filesystem_used_gb / total) * 100)));
 }
+
+
+// --- PBS configuration of the disk's datastore (Phase 6c) ----------------------------
+
+export type PbsConfigNote = "missing_recoverable" | "missing" | "conflict";
+
+export interface DiskDatastoreStateLike {
+  state: "ok" | "config_missing" | "conflict";
+  datastore: string;
+  recoverable?: boolean;
+}
+
+export function pbsConfigNote(state: DiskDatastoreStateLike | null | undefined): PbsConfigNote | null {
+  if (!state) return null;
+  if (state.state === "conflict") return "conflict";
+  if (state.state === "config_missing") return state.recoverable ? "missing_recoverable" : "missing";
+  return null;
+}

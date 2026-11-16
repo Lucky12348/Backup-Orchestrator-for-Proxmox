@@ -65,10 +65,11 @@ export const TONE_CLASS: Record<Tone, string> = {
   failed: "bg-danger/15 text-danger-text",
   running: "pbo-stripes text-white",
   confirm: "bg-warning/20 text-warning-text outline-dashed outline-1 outline-warning",
+  blocked: "bg-warning/10 text-warning-text line-through decoration-warning/60",
   muted: "bg-subtle text-faint line-through",
 };
 
-const TONE_MARK: Partial<Record<Tone, string>> = { success: "✓ ", failed: "✕ ", running: "● ", confirm: "? " };
+const TONE_MARK: Partial<Record<Tone, string>> = { success: "✓ ", failed: "✕ ", running: "● ", confirm: "? ", blocked: "⚠ " };
 
 export const KIND_COLOR: Record<ItemKind, string> = {
   external: "rgb(var(--pbo-accent))",

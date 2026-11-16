@@ -640,3 +640,45 @@ export function testIntegration(key: IntegrationKey) {
 export function deleteRevokedAgents() {
   return request<{ deleted: number }>("/agents/revoked", { method: "DELETE" });
 }
+
+// --- Datastores managed by the app (Phase 6c) --------------------------------------
+
+export interface SourceDatastore {
+  name: string;
+  total: number | null;
+  used: number | null;
+  removable: boolean;
+}
+
+export function getDatastores() {
+  return request<{ items: SourceDatastore[]; current: string; error: string | null }>("/datastores");
+}
+
+export interface DiskDatastoreState {
+  state: "ok" | "config_missing" | "conflict";
+  datastore: string;
+  recoverable?: boolean;
+  comment?: string | null;
+}
+
+export interface DatastoreHealth {
+  checked: boolean;
+  checked_at?: string;
+  error?: string | null;
+  datastores: string[];
+  source: { name: string; state: "ok" | "missing" | "unknown" } | null;
+  disks: Record<string, DiskDatastoreState>;
+  blocked_events: number[];
+}
+
+export function getDatastoreHealth() {
+  return request<DatastoreHealth>("/datastores/health");
+}
+
+export function checkDatastoreHealth() {
+  return request<DatastoreHealth>("/datastores/health/check", { method: "POST" });
+}
+
+export function chooseSourceDatastore(name: string) {
+  return request<DatastoreHealth>("/datastores/source", { method: "PUT", body: JSON.stringify({ name }) });
+}

@@ -10,6 +10,7 @@ from app.api.routes import (
     disks,
     external_backups,
     host_notifications,
+    datastores,
     integrations,
     integrations_pbs,
     integrations_proxmox,
@@ -50,6 +51,7 @@ protected_router.include_router(vms.router)
 protected_router.include_router(disks.router)
 protected_router.include_router(external_backups.router)
 protected_router.include_router(backup_runs.router)
+protected_router.include_router(datastores.router)
 protected_router.include_router(integrations.router)
 protected_router.include_router(integrations_proxmox.router)
 protected_router.include_router(integrations_pbs.router)

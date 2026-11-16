@@ -39,7 +39,7 @@ export function vmid(vm: VmLike): number | null {
 }
 
 /** Jobs that back this VM up (explicit selection, or a job for "all" guests). */
-export function jobsFor(vm: VmLike, jobs: readonly JobLike[]): JobLike[] {
+export function jobsFor<J extends JobLike>(vm: VmLike, jobs: readonly J[]): J[] {
   const id = vmid(vm);
   return jobs.filter((job) => job.selection_mode === "all" || (id !== null && job.selected_vmids.includes(id)));
 }
@@ -74,7 +74,7 @@ export function nodesOf(vms: readonly VmLike[]): string[] {
 }
 
 /** A job PBO can change (explicit VM selection, supported by the API). */
-export function editableJobs(jobs: readonly JobLike[]): JobLike[] {
+export function editableJobs<J extends JobLike>(jobs: readonly J[]): J[] {
   return jobs.filter((job) => job.supported && job.selection_mode !== "all");
 }
 

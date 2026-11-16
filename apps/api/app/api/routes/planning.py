@@ -194,6 +194,15 @@ def _normalize_planning(values: dict, current: ScheduledBackupEvent | None = Non
         if not 1 <= interval <= 52:
             raise _coded(422, "planning_interval_invalid", "The interval must be between 1 and 52.")
         config["interval"] = interval
+        weekdays = config.get("weekdays")
+        if weekdays is not None:
+            try:
+                days = sorted({int(day) for day in weekdays})
+            except (TypeError, ValueError):
+                days = [-1]
+            if not days or any(day < 0 or day > 6 for day in days):
+                raise _coded(422, "planning_weekdays_invalid", "Choose at least one day of the week.")
+            config["weekdays"] = days
         values["recurrence_config"] = config
     if not (values.get("disk_serial") or (current.disk_serial if current else "")):
         raise _coded(422, "planning_disk_required", "Choose at least one disk.")

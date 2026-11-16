@@ -39,11 +39,12 @@ class GuardViolation(RuntimeError):
 
 @dataclass(frozen=True)
 class PreparationPlan:
-    action: str  # "reuse" | "format"
+    action: str  # "reuse" | "recreate" | "format"
     datastore_name: str
     device: str  # PBS device name, e.g. "sdb"
     devpath: str | None = None
     backing_device: str | None = None
+    path: str | None = None  # "recreate": on-device path of the datastore
     reasons: list[str] = field(default_factory=list)
 
 
@@ -108,8 +109,15 @@ def plan_dedicated_preparation(
     target_name: str,
     confirmation: bool,
     running_tasks: list[dict[str, Any]],
+    recorded_name: str | None = None,
+    recorded_backing_device: str | None = None,
+    recorded_path: str | None = None,
 ) -> PreparationPlan:
-    """Decide between reusing a PBO datastore and formatting the disk — or refuse."""
+    """Decide between reusing a PBO datastore, re-creating its deleted PBS
+    configuration (reuse-datastore) and formatting the disk — or refuse.
+
+    `recorded_*`: what PBO stored when it created/reused the datastore on this
+    disk (Phase 6c). A disk PBO already prepared is NEVER formatted again."""
     assert_disk_approved(disk_record)
     device = str(pbs_disk.get("name") or "").strip()
     if not device:
@@ -136,6 +144,38 @@ def plan_dedicated_preparation(
             devpath=pbs_disk.get("devpath"),
             backing_device=str(config.get("backing-device")),
             reasons=["PBO-marked removable datastore found on this disk"],
+        )
+
+    # --- configuration deleted in PBS (case b): re-create, never format -------------
+    # Only a filesystem that could hold the datastore (ext4/xfs/btrfs) is
+    # protected here; anything else follows the normal path and its guards.
+    may_hold_datastore = any(
+        isinstance(part, dict) and str(part.get("filesystem") or "").strip().lower() in DATA_FILESYSTEMS
+        for part in pbs_disk.get("partitions") or []
+    )
+    if recorded_name and may_hold_datastore:
+        if recorded_backing_device and recorded_backing_device in uuids and recorded_path:
+            other = next((cfg for cfg in datastore_configs if cfg.get("name") == recorded_name), None)
+            if other is not None:
+                raise GuardViolation(
+                    "datastore_name_taken",
+                    f"A PBS datastore named `{recorded_name}` exists on another device; refusing to re-create it.",
+                )
+            assert_store_idle(recorded_name, running_tasks)
+            return PreparationPlan(
+                action="recreate",
+                datastore_name=recorded_name,
+                device=device,
+                devpath=pbs_disk.get("devpath"),
+                backing_device=recorded_backing_device,
+                path=recorded_path,
+                reasons=["PBO marker found on this disk (filesystem recorded by PBO)"],
+            )
+        raise GuardViolation(
+            "pbs_config_missing_unrecoverable",
+            f"The PBS configuration of `{recorded_name}` is missing and PBO cannot prove that the filesystem on "
+            f"`{device}` is the one it created (no PBO marker): nothing is formatted. Re-create the datastore in PBS "
+            "with `reuse-datastore`, or wipe the disk yourself after checking its content.",
         )
 
     taken = next((cfg for cfg in datastore_configs if cfg.get("name") == target_name), None)

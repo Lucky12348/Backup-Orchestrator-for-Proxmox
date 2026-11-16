@@ -95,6 +95,35 @@ def local_disk_reasons(db: Session, disk: ExternalDisk) -> list[dict[str, Any]]:
     )
     if active is not None:
         reasons.append(_reason("run_active", "An external backup is already running.", run_id=active))
+    # Phase 6c: verdict of the last datastore check (no PBS call here).
+    from app.services import datastore_health
+
+    health = datastore_health.read_health(db)
+    if datastore_health.source_missing(health):
+        reasons.append(
+            _reason(
+                "source_datastore_missing",
+                f"The source datastore `{health['source']['name']}` no longer exists on PBS: choose another one.",
+                datastore=health["source"]["name"],
+            )
+        )
+    state = datastore_health.disk_state(health, disk.id) or {}
+    if state.get("state") == "conflict":
+        reasons.append(
+            _reason(
+                "pbs_datastore_conflict",
+                f"A PBS datastore `{state.get('datastore')}` exists but was not created by PBO: nothing is done automatically.",
+                datastore=state.get("datastore"),
+            )
+        )
+    elif state.get("state") == "config_missing" and not state.get("recoverable"):
+        reasons.append(
+            _reason(
+                "pbs_config_missing",
+                f"The PBS configuration of `{state.get('datastore')}` is missing and PBO cannot re-create it safely.",
+                datastore=state.get("datastore"),
+            )
+        )
     return reasons
 
 

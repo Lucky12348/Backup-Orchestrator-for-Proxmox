@@ -47,6 +47,7 @@ class FakePBS:
     def __init__(self, *, disks: list[dict] | None = None, task_polls: int = 2) -> None:
         self.disks = disks if disks is not None else [usb_disk()]
         self.datastores: list[dict[str, Any]] = [{"name": "main", "path": "/mnt/datastore/main"}]
+        self.reused: list[dict[str, Any]] = []
         self.mount_status: dict[str, str] = {"main": "nonremovable"}
         self.sync_jobs: dict[str, dict] = {}
         self.tasks: dict[str, dict] = {}
@@ -143,6 +144,19 @@ class FakePBS:
         if parts[:2] == ["config", "datastore"]:
             if method == "GET" and len(parts) == 2:
                 return [dict(cfg) for cfg in self.datastores]
+            if method == "POST" and len(parts) == 2:
+                # Re-register (reuse-datastore): schema return type null.
+                if any(cfg["name"] == body["name"] for cfg in self.datastores):
+                    raise ValueError(f"datastore '{body['name']}' already exists")
+                self.datastores.append({key: value for key, value in body.items() if key != "reuse-datastore"})
+                self.reused.append(body)
+                self.mount_status[body["name"]] = "notmounted"
+                return None
+            if method == "DELETE" and len(parts) == 3:
+                # Configuration only (no destroy-data): the data stays on the disk.
+                self.datastores = [cfg for cfg in self.datastores if cfg["name"] != parts[2]]
+                self.mount_status.pop(parts[2], None)
+                return None
             cfg = next((c for c in self.datastores if c["name"] == parts[2]), None)
             if cfg is None:
                 raise LookupError(f"datastore '{parts[2]}' does not exist")

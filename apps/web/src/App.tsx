@@ -14,13 +14,13 @@ import { ActivityView } from "./views/activity/ActivityView";
 import { PlanningView } from "./views/planning/PlanningView";
 import { IntegrationsView } from "./views/integrations/IntegrationsView";
 import { ResourcesView } from "./views/resources/ResourcesView";
+import { ProxmoxJobsSection } from "./views/resources/ProxmoxJobsSection";
 import { expectRunModal, openRunModal } from "./runs/openRun";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { ErrorBanner } from "./components/ErrorBanner";
 import { LoadingBlock } from "./components/LoadingBlock";
 import { useAppData } from "./hooks/useAppData";
 import { translations, type Language } from "./i18n";
-import { AssetsPage } from "./pages/AssetsPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import type { ExternalDisk } from "./types";
@@ -73,6 +73,9 @@ function AuthenticatedApp() {
   } = useAppData();
 
   const t = translations[language];
+  // Phase 6c: the source datastore was deleted on PBS (last datastore check).
+  const missingDatastore =
+    data?.datastoreHealth?.checked && data.datastoreHealth.source?.state === "missing" ? data.datastoreHealth.source.name : null;
   const runsKey = data
     ? [
         ...data.externalBackupRuns.map((run) => `${run.id}:${run.status}`),
@@ -218,6 +221,7 @@ function AuthenticatedApp() {
                 language={language}
                 t={t}
                 onChanged={refresh}
+                missingDatastore={missingDatastore}
               />
             }
             path="/"
@@ -233,19 +237,8 @@ function AuthenticatedApp() {
                   onIgnore={(vm, ignored) => mutateAssetIgnore(vm, ignored)}
                   onJobSelection={(jobId, vmids) => mutateBackupJobSelection(jobId, vmids)}
                 />
-                {/* Proxmox backup jobs (create / edit / delete): the existing section, below the table. */}
                 <div className="mt-8">
-                  <LegacyPage>
-                    <AssetsPage
-                      jobsOnly
-                      data={data} language={language}
-                      onAssetIgnoreChange={(vm, ignored) => void mutateAssetIgnore(vm, ignored)}
-                      onBackupJobSelectionChange={(jobId, vmids) => void mutateBackupJobSelection(jobId, vmids)}
-                      onRefresh={refresh}
-                      pbsInventoryByVmId={pbsInventoryByVmId}
-                      isSaving={isSaving} t={t}
-                    />
-                  </LegacyPage>
+                  <ProxmoxJobsSection jobs={data.proxmoxBackupJobs} vms={data.vms} language={language} t={t} onChanged={refresh} />
                 </div>
               </>
             }
@@ -263,6 +256,7 @@ function AuthenticatedApp() {
                 isStarting={(diskId) => isSaving(`external-backup-${diskId}`)}
                 isEjecting={(diskId) => isSaving(`disk-eject-${diskId}`)}
                 onChanged={refresh}
+                datastoreHealth={data.datastoreHealth}
               />
             }
             path="/disks"
@@ -289,6 +283,8 @@ function AuthenticatedApp() {
                 t={t}
                 onSync={(key) => (key === "pve" ? runProxmoxSync(t.proxmoxSyncSummary) : runPBSSync(t.pbsSyncSummary))}
                 syncing={(key) => (key === "pve" ? proxmoxSyncing : pbsSyncing)}
+                missingDatastore={missingDatastore}
+                onDatastoreChanged={refresh}
               />
             }
             path="/integrations"

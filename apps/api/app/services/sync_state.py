@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -130,6 +134,13 @@ def _sync_pbs() -> PBSSyncSummary:
     with SessionLocal() as db:
         summary = sync_pbs_inventory(db)
         _notify_low_coverage_from_db(db)
+        # Phase 6c: consistency of the source and rotation datastores.
+        try:
+            from app.services.datastore_health import check as check_datastores
+
+            check_datastores(db)
+        except Exception as exc:  # noqa: BLE001 - never fails the sync itself
+            logger.warning("datastore health check failed: %s", exc)
         return summary
 
 

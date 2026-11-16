@@ -21,6 +21,7 @@ import {
   type Protection,
   type ResourceFilters,
 } from "./resourcesModel";
+import { jobLabel } from "./jobsModel";
 
 const BADGE: Record<Protection, string> = {
   protected: "bg-success/15 text-success-text",
@@ -49,6 +50,11 @@ export function ProtectionBadge({ protection, t }: { protection: Protection; t: 
       {t.resourcesV2.protection[protection]}
     </span>
   );
+}
+
+/** « Sauvegarde Proxmox → pbs-test · dim. 03:00 » (the raw id only in the job details). */
+function readableJob(job: ProxmoxBackupJob, t: TranslationDictionary, language: Language): string {
+  return jobLabel(job, t.jobsV2.name, language);
 }
 
 export function ResourcesView({ vms, jobs, language, t, onIgnore, onJobSelection, now = new Date() }: ResourcesViewProps) {
@@ -160,7 +166,7 @@ export function ResourcesView({ vms, jobs, language, t, onIgnore, onJobSelection
               <select aria-label={text.job} className={select} value={targetJob?.job_id ?? ""} onChange={(event) => setJobId(event.target.value)}>
                 {editable.map((job) => (
                   <option key={job.job_id} value={job.job_id}>
-                    {fill(text.jobName, { id: job.job_id, storage: job.storage ?? "" })}
+                    {readableJob(job, t, language)}
                   </option>
                 ))}
               </select>
@@ -210,8 +216,8 @@ export function ResourcesView({ vms, jobs, language, t, onIgnore, onJobSelection
             <tbody>
               {shown.map((vm) => {
                 const protection = protectionOf(vm);
-                const jobLabel = jobsFor(vm, jobs)
-                  .map((job) => job.job_id)
+                const jobText = jobsFor(vm, jobs)
+                  .map((job) => readableJob(job, t, language))
                   .join(", ");
                 return (
                   <tr key={vm.id} data-vm={vm.id} className={cn("hover:bg-subtle", (protection === "ignored" || protection === "infrastructure") && "text-muted")}>
@@ -242,7 +248,7 @@ export function ResourcesView({ vms, jobs, language, t, onIgnore, onJobSelection
                       {formatWhen(vm.last_external_copy_at ?? null, language, now, t.dashboardV2)}
                     </td>
                     <td className="border-0 border-b border-solid border-border px-3 py-2.5 text-muted">
-                      {jobLabel || <span className="text-faint">{text.noJob}</span>}
+                      {jobText || <span className="text-faint">{text.noJob}</span>}
                     </td>
                   </tr>
                 );

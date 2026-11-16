@@ -269,3 +269,23 @@ def test_run_kind_backup_vs_eject():
     assert run_kind(SimpleNamespace(datastore_name="pbo-a", target_path="/x", auto_eject_after_success=False), disk) == "eject"
     assert run_kind(SimpleNamespace(datastore_name="pbo-a", target_path="/x", auto_eject_after_success=True), disk) == "backup"
     _ = timedelta  # keep the import list stable
+
+
+def test_several_days_a_week_with_rotation_and_rrule():
+    # First occurrence Monday 16 Nov 2026 09:00 Paris; Monday + Thursday, every week.
+    event = _event(start=datetime(2026, 11, 16, 8, 0), recurrence_config={"interval": 1, "weekdays": [0, 3]},
+                   rotation_disk_serials=["WD-A", "TOSH-B"])
+    moments = recurrence.expand(event, datetime(2026, 11, 1), datetime(2026, 11, 30))
+    assert [moment.strftime("%a %d") for moment in moments] == ["Mon 16", "Thu 19", "Mon 23", "Thu 26"]
+    assert [recurrence.occurrence_index(event, moment) for moment in moments] == [0, 1, 2, 3]
+    assert [recurrence.disk_serial_for(event, moment) for moment in moments] == ["WD-A", "TOSH-B", "WD-A", "TOSH-B"]
+    assert recurrence_rule(event) == "FREQ=WEEKLY;BYDAY=MO,TH"
+
+
+def test_several_days_first_week_starts_at_the_first_occurrence():
+    # First occurrence Thursday: the Monday of that week is not an occurrence.
+    event = _event(start=datetime(2026, 11, 19, 8, 0), recurrence_config={"interval": 2, "weekdays": [0, 3]})
+    moments = recurrence.expand(event, datetime(2026, 11, 1), datetime(2026, 12, 15))
+    assert [moment.strftime("%d") for moment in moments] == ["19", "30", "03", "14"]
+    assert recurrence.occurrence_index(event, moments[0]) == 0
+    assert recurrence.occurrence_index(event, datetime(2026, 11, 23, 8, 0)) is None  # an off week

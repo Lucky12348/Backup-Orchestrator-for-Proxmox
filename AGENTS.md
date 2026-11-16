@@ -394,6 +394,38 @@ should reach them — and every call is additionally protected with an
   429 → `detail.code = login_locked` + `Retry-After`; `src/loginModel.ts`
   builds the messages.
 
+## Datastores managed by the app, planning form, Proxmox jobs (Phase 6c)
+
+- **Datastore health** (`services/datastore_health.py`, run after each PBS
+  sync, stored as `app_settings` `meta.datastore_health`, read without PBS
+  calls): a) source datastore missing → readiness `source_datastore_missing`
+  (backups refused, 409 no run), plannings `blocked` in the agenda, "To do"
+  alert, `PUT /datastores/source` switches the setting AND the plannings;
+  b) rotation disk config deleted → `config_missing` (+ `recoverable`);
+  c) expected name without `pbo:serial=` comment → `conflict` (nothing
+  automatic). `GET /datastores` lists source candidates (rotation datastores
+  excluded) for the planning form.
+- **PBO marker** (Alembic `0008`): `external_disks.pbs_backing_device` +
+  `pbs_datastore_path`, recorded from the PBS config at every create/reuse
+  (`PBSApiBackend._record_marker`). `plan_dedicated_preparation` action
+  `recreate` = `POST /config/datastore reuse-datastore=1` when the config is
+  gone and the disk's filesystem UUID matches the marker. A prepared disk with
+  an ext4/xfs/btrfs filesystem and no matching marker is refused
+  (`pbs_config_missing_unrecoverable`) — never wiped. Journal code
+  `datastore_recreated`.
+- **Recurrence**: `recurrence_config.weekdays` (several days a week, 0 =
+  Monday) in `services/recurrence.py`, RRULE `BYDAY`. The planning form
+  (`views/planning/planningForm.ts`) = When / Which disk(s) / What, presets,
+  first occurrence computed (kept on edit while the schedule is unchanged, so
+  the rotation order does not move), automatic name, live sentence.
+- **Proxmox jobs** (`views/resources/ProxmoxJobsSection.tsx`,
+  `jobsModel.ts`): readable name « Sauvegarde Proxmox → <storage> · dim.
+  03:00 » everywhere; the raw job id only in the job details. The legacy
+  `AssetsPage` is gone.
+- Journal: every line is timestamped (detail lines of merged blocks inherit
+  the previous entry's time; end-of-run blocks are journalled line by line,
+  `_journal_block`), and a PBO message is never shown twice.
+
 ## Disk ↔ USB port (Phase 4.4, read before touching the USB passthrough)
 
 - The host agent reports, for each USB disk, its physical USB location read

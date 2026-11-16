@@ -48,6 +48,11 @@ class ExternalDisk(Base):
     pbs_datastore_name: Mapped[str | None] = mapped_column(String(255))
     pbs_mount_path: Mapped[str | None] = mapped_column(String(512))
     pbs_filesystem_type: Mapped[str | None] = mapped_column(String(64))
+    # PBO marker (Phase 6c): filesystem UUID + on-device path of the datastore
+    # PBO created/reused on this disk; allows re-creating a deleted PBS config
+    # with reuse-datastore, never by formatting.
+    pbs_backing_device: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    pbs_datastore_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     prepared_as_pbs_datastore: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     presence_state: Mapped[str] = mapped_column(String(16), nullable=False, default="absent")
     # Physical USB port reported by the host agent (sysfs): {"port_id": "2-3",
