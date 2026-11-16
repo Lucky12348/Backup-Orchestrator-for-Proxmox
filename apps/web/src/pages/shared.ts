@@ -22,29 +22,6 @@ export interface DiskActionRequest {
   value: boolean;
 }
 
-export interface DisksPageProps extends PageCommonProps {
-  isSaving: (key: string) => boolean;
-  onDiskToggleRequest: (request: DiskActionRequest) => void;
-  onExternalBackupRequest: (disk: ExternalDisk) => void;
-  onDiskEjectRequest: (disk: ExternalDisk) => void;
-  onDiskFieldChange: (
-    diskId: number,
-    payload: Partial<
-      Pick<
-        ExternalDisk,
-        | "usable_capacity_gb"
-        | "reserved_capacity_gb"
-        | "planning_notes"
-        | "display_name"
-      >
-    >,
-  ) => void;
-}
-
-export interface DashboardPageProps extends PageCommonProps {
-  latestBackupLabel: string;
-}
-
 export interface DiskPreparationSubmitPayload {
   mode: DiskPreparationMode;
   mountBasePath?: string;

@@ -11,6 +11,7 @@ from app.schemas import (
     ExternalDiskRead,
     ExternalDiskUpdate,
 )
+from app.schemas.external_disk import ExternalDiskDecision
 from app.services.disk_handoff import (
     detach_disk_from_pbs,
     get_pbs_disk_visibility,
@@ -19,7 +20,7 @@ from app.services.disk_handoff import (
 from app.services.disk_eject import eject_dedicated_external_disk
 from app.services.activity_cleanup import cleanup_disk_preparation_runs
 from app.services.disk_preparations import get_disk_preparation_run, list_disk_preparation_runs, prepare_disk
-from app.services.disks import list_preferred_disks
+from app.services.disks import apply_disk_decision, list_preferred_disks, rescan_disks
 
 
 router = APIRouter(prefix="/disks", tags=["external-disks"])
@@ -33,6 +34,21 @@ def list_disks(db: DbSession) -> list[ExternalDisk]:
 @router.get("/preferred", response_model=list[ExternalDiskRead])
 def get_preferred_disks(db: DbSession) -> list[ExternalDisk]:
     return list_preferred_disks(db)
+
+
+@router.post("/rescan")
+def rescan_disks_route(db: DbSession) -> dict[str, str]:
+    """Disks page "Run detection again": the host agent sends a report now
+    (the disks then arrive over SSE like a hot-plug)."""
+    rescan_disks(db)
+    return {"status": "ok"}
+
+
+@router.post("/{disk_id}/decision", response_model=ExternalDiskRead)
+def disk_decision_route(disk_id: int, payload: ExternalDiskDecision, db: DbSession) -> ExternalDisk:
+    """Approval flow of a detected disk: approve (name typed back), ignore
+    (until plugged again), always reject, or clear the decision."""
+    return apply_disk_decision(db, disk_id, payload.decision, payload.confirm_name)
 
 
 @router.patch("/{disk_id}", response_model=ExternalDiskRead)

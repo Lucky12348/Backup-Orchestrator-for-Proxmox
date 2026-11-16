@@ -7,6 +7,8 @@ class OverviewRead(BaseModel):
     total_vms: int
     protected_vms: int
     ignored_vms: int = 0
+    # PBS VM / PBO container ignored as infrastructure (re-includable on Resources).
+    infrastructure_ignored: int = 0
     coverage_percent: float
     connected_disks: int
     latest_backup_status: str | None

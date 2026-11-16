@@ -71,6 +71,24 @@ export interface ExternalDisk {
   pbs_mount_path: string | null;
   pbs_filesystem_type: string | null;
   prepared_as_pbs_datastore: boolean;
+  /** Server-side status (services/disk_events.py), Phase 5b. */
+  status?: DiskServerStatus;
+  reject_reason?: "zero_size" | "too_small" | "operator" | null;
+  operator_decision?: "ignored" | "rejected" | null;
+  /** Partitions seen by the host agent (null: agent too old to report them). */
+  partitions?: DiskPartition[] | null;
+  /** Physical USB port reported by the host agent ({ port_id: "2-3", … }). */
+  usb_location?: { port_id?: string } & Record<string, unknown> | null;
+}
+
+export type DiskServerStatus = "new" | "known" | "ignored" | "ejected" | "unplugged" | "rejected";
+
+export interface DiskPartition {
+  name: string;
+  filesystem_type: string | null;
+  size_gb: number;
+  label: string | null;
+  mount_path?: string | null;
 }
 
 export interface DiskHandoffStatus {
@@ -97,6 +115,8 @@ export interface Overview {
   total_vms: number;
   protected_vms: number;
   ignored_vms: number;
+  /** PBS VM / PBO container ignored as infrastructure (Phase 5b). */
+  infrastructure_ignored?: number;
   coverage_percent: number;
   connected_disks: number;
   latest_backup_status: BackupRunStatus | null;

@@ -58,11 +58,16 @@ interface AppShellV2Props {
   vms: VirtualMachine[];
 }
 
+/** A page not redesigned yet: its own styles.css, without the new UI reset. */
+export function LegacyPage({ children }: { children: ReactNode }) {
+  return <div className="pbo-legacy">{children}</div>;
+}
+
 /**
  * Common layout (docs/design/mockups/dashboard.html): sidebar, top bar
  * (breadcrumb, ⌘K search, running-task pill, theme, bell), user block with
- * the language selector. Legacy pages render inside `.pbo-legacy` until
- * their own redesign.
+ * the language selector. Legacy pages render inside `<LegacyPage>`
+ * (`.pbo-legacy`) until their own redesign; redesigned ones (src/views) do not.
  */
 export function AppShellV2({ children, language, onLanguageChange, t, disks, vms }: AppShellV2Props) {
   const { theme, preference, cycle } = useTheme();
@@ -239,9 +244,7 @@ function ShellLayout({
             <Bell className="h-4 w-4" />
           </NavLink>
         </header>
-        <div className="w-full max-w-[1240px] p-4 sm:p-7">
-          <div className="pbo-legacy">{children}</div>
-        </div>
+        <div className="w-full max-w-[1280px] p-4 sm:p-7">{children}</div>
       </main>
     </div>
   );

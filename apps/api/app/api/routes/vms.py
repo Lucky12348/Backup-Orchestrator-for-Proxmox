@@ -5,6 +5,7 @@ from app.api.dependencies import DbSession
 from app.models import VirtualMachine
 from app.schemas import VirtualMachineRead, VirtualMachineUpdate
 from app.services.asset_ignores import get_asset_ignore_map, vm_read_payload
+from app.services.infrastructure import ensure_infrastructure_ignored
 
 
 router = APIRouter(prefix="/vms", tags=["virtual-machines"])
@@ -20,6 +21,7 @@ def list_vms(db: DbSession) -> list[dict]:
         statement = statement.where(VirtualMachine.source == "proxmox")
 
     vms = list(db.scalars(statement.order_by(VirtualMachine.name.asc())))
+    ensure_infrastructure_ignored(db, vms)
     ignore_map = get_asset_ignore_map(db, vms)
     return [vm_read_payload(vm, ignore_map) for vm in vms]
 

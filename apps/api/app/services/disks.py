@@ -2,13 +2,15 @@ import logging
 from datetime import datetime, timedelta
 
 from sqlalchemy import and_, exists, or_, select
+from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models import AgentHeartbeat, ExternalDisk, ScheduledBackupEvent
 from app.schemas.agent import AgentDiskReportCreate, AgentHeartbeatCreate
 from app.services import disk_events
-from app.services.host_agent import HostAgentError, get_pbs_agent_client
+from app.services.disk_events import is_ejected
+from app.services.host_agent import HostAgentError, get_host_agent_client, get_pbs_agent_client
 from app.services.disk_identity import canonical_serial_number, serial_aliases, serials_match
 from app.services.notifications import (
     get_disk_detection_notify_cooldown_seconds,
@@ -183,12 +185,24 @@ def ingest_agent_disk_report(db: Session, payload: AgentDiskReportCreate) -> lis
             disk.trusted = False
             disk.dedicated_backup_disk = False
             disk.allow_existing_data = False
-        disk.connected = True if _is_pbs_handoff_disk(disk) else item.connected
-        disk.presence_state = "present" if disk.connected else "absent"
+        if is_ejected(disk) and item.connected:
+            # B25: still plugged in after a safe eject. It stays "ejected" (not
+            # usable, no disk.added) until it is unplugged and plugged back.
+            disk.connected = False
+            disk.presence_state = "present"
+        else:
+            if is_ejected(disk):
+                disk.handoff_status = None  # reported but gone: the eject is over
+            disk.connected = True if _is_pbs_handoff_disk(disk) else item.connected
+            disk.presence_state = "present" if disk.connected else "absent"
         disk.last_seen_at = observed_at
         if item.usb_location is not None:
             disk.usb_location = item.usb_location.model_dump()
             disk.usb_location_seen_at = observed_at
+        if item.partitions is not None:
+            disk.partitions = [part.model_dump() for part in item.partitions]
+        if disk.connected and previous_presence == "absent" and disk.operator_decision == "ignored":
+            disk.operator_decision = None  # "Ignore" lasts until the disk is plugged again
         disk.source = "agent"
         disk.reported_by_hostname = payload.hostname
         disk.active = True
@@ -221,6 +235,8 @@ def ingest_agent_disk_report(db: Session, payload: AgentDiskReportCreate) -> lis
 
         if disk.connected or disk.presence_state == "present":
             removed_disks.append(disk)
+        if is_ejected(disk):
+            disk.handoff_status = None  # unplugged (or powered off) after its eject
         disk.connected = False
         disk.presence_state = "absent"
         disk.active = False
@@ -531,3 +547,54 @@ def get_agent_status(db: Session) -> dict[str, datetime | str | bool | int | Non
         "stale_after_minutes": stale_after,
         "last_seen_age_seconds": last_seen_age_seconds,
     }
+
+
+# --- Disks page: approval flow and "Run detection again" (Phase 5b) ----------
+
+DECISION_NAME_MISMATCH = "decision_name_mismatch"
+DECISION_DISK_UNUSABLE = "decision_disk_unusable"
+RESCAN_AGENT_MISSING = "rescan_agent_missing"
+RESCAN_AGENT_OUTDATED = "rescan_agent_outdated"
+RESCAN_FAILED = "rescan_failed"
+
+
+def _coded_error(status_code: int, code: str, message: str) -> HTTPException:
+    return HTTPException(status_code=status_code, detail={"code": code, "message": message})
+
+
+def apply_disk_decision(db: Session, disk_id: int, decision: str, confirm_name: str | None) -> ExternalDisk:
+    disk = db.get(ExternalDisk, disk_id)
+    if disk is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Disk not found")
+    if decision == "approve":
+        if disk_events.reject_reason(disk) in {"zero_size", "too_small"}:
+            raise _coded_error(400, DECISION_DISK_UNUSABLE, "This disk cannot be used for backups.")
+        if (confirm_name or "").strip() != (disk.display_name or "").strip():
+            raise _coded_error(400, DECISION_NAME_MISMATCH, "Type the disk name exactly to approve it.")
+        disk.trusted = True
+        disk.dedicated_backup_disk = True
+        disk.operator_decision = None
+    elif decision == "ignore":
+        disk.operator_decision = "ignored"
+    elif decision == "reject":
+        disk.trusted = False
+        disk.operator_decision = "rejected"
+    else:  # clear
+        disk.operator_decision = None
+    db.add(disk)
+    db.commit()
+    db.refresh(disk)
+    disk_events.publish_report_events([], [], [disk])
+    return disk
+
+
+def rescan_disks(db: Session) -> None:
+    settings = get_settings()
+    if not settings.host_agent_base_url:
+        raise _coded_error(409, RESCAN_AGENT_MISSING, "No host agent is installed.")
+    try:
+        get_host_agent_client().post("/disk/rescan", {})
+    except HostAgentError as exc:
+        if exc.status_code in {403, 404, 405}:
+            raise _coded_error(409, RESCAN_AGENT_OUTDATED, "Update the host agent to run detection from the UI.") from None
+        raise _coded_error(502, RESCAN_FAILED, str(exc)) from None

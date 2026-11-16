@@ -28,15 +28,28 @@ def reject_reason(disk: ExternalDisk) -> str | None:
         return "zero_size"
     if disk.capacity_gb < MIN_DISK_SIZE_GB:
         return "too_small"
+    if disk.operator_decision == "rejected":
+        return "operator"
     return None
 
 
+def is_ejected(disk: ExternalDisk) -> bool:
+    """Safely ejected and not unplugged since (B25)."""
+    return (disk.handoff_status or "").strip().casefold() == "ejected"
+
+
 def disk_status(disk: ExternalDisk) -> str:
+    """new | known | ignored | ejected | unplugged | rejected (B25: "ejected"
+    until the disk is unplugged, see services/disks.py)."""
     if reject_reason(disk):
         return "rejected"
+    if is_ejected(disk):
+        return "ejected"
     if not disk.connected:
         return "unplugged"
-    return "known" if disk.trusted else "new"
+    if disk.trusted:
+        return "known"
+    return "ignored" if disk.operator_decision == "ignored" else "new"
 
 
 def disk_event_payload(disk: ExternalDisk) -> dict[str, Any]:
@@ -53,6 +66,7 @@ def disk_event_payload(disk: ExternalDisk) -> dict[str, Any]:
         "reject_reason": reject_reason(disk),
         "min_size_gb": MIN_DISK_SIZE_GB,
         "hostname": disk.reported_by_hostname,
+        "handoff_status": disk.handoff_status,
     }
 
 
@@ -66,6 +80,8 @@ def snapshot(disk: ExternalDisk) -> tuple[Any, ...]:
         bool(disk.trusted),
         disk.filesystem_free_gb,
         disk.display_name,
+        disk.handoff_status,
+        disk.operator_decision,
     )
 
 

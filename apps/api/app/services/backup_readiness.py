@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 from app.models.backup_run import BackupRunStatus
 from app.models.external_backup_run import ExternalBackupRun
 from app.models.external_disk import ExternalDisk
-from app.services.disk_events import MIN_DISK_SIZE_GB, reject_reason
+from app.services.disk_events import MIN_DISK_SIZE_GB, is_ejected, reject_reason
 from app.services.external_backup_agent import (
     REQUIRED_HOST_CAPABILITIES,
     REQUIRED_PBS_CAPABILITIES,
@@ -67,6 +67,37 @@ def _reason(code: str, message: str, **params: Any) -> dict[str, Any]:
     return {"code": code, "message": message, **params}
 
 
+_REJECT_MESSAGES = {
+    "zero_size": "The disk reports a size of 0 (cable, port or enclosure problem).",
+    "too_small": f"The disk is too small for a PBS datastore (minimum {MIN_DISK_SIZE_GB} GB).",
+    "operator": "The disk was rejected by the operator.",
+}
+
+
+def local_disk_reasons(db: Session, disk: ExternalDisk) -> list[dict[str, Any]]:
+    """The checks that need no network call: the disk itself and the other
+    runs. `run_external_backup` refuses with them too (409, no run created)."""
+    reasons: list[dict[str, Any]] = []
+    rejected = reject_reason(disk)
+    if rejected:
+        reasons.append(_reason(f"disk_{rejected}", _REJECT_MESSAGES[rejected], min_size_gb=MIN_DISK_SIZE_GB))
+    if is_ejected(disk):
+        # B25: safely ejected, still plugged in: unplug and plug it back first.
+        reasons.append(_reason("disk_ejected", "The disk was ejected: unplug it, then plug it back in."))
+    elif not disk.connected:
+        reasons.append(_reason("disk_not_connected", "The disk is not plugged in."))
+    if not disk.trusted:
+        reasons.append(_reason("disk_not_approved", "The disk is not approved for backups yet."))
+    active = db.scalar(
+        select(ExternalBackupRun.id)
+        .where(ExternalBackupRun.status.in_([BackupRunStatus.PENDING, BackupRunStatus.RUNNING]))
+        .limit(1)
+    )
+    if active is not None:
+        reasons.append(_reason("run_active", "An external backup is already running.", run_id=active))
+    return reasons
+
+
 def external_backup_readiness(
     db: Session,
     disk: ExternalDisk,
@@ -78,31 +109,7 @@ def external_backup_readiness(
     mode = settings.pbs_mode
     reasons: list[dict[str, Any]] = []
 
-    # --- The disk ---------------------------------------------------------------
-    rejected = reject_reason(disk)
-    if rejected:
-        reasons.append(
-            _reason(
-                f"disk_{rejected}",
-                "The disk reports a size of 0 (cable, port or enclosure problem)."
-                if rejected == "zero_size"
-                else f"The disk is too small for a PBS datastore (minimum {MIN_DISK_SIZE_GB} GB).",
-                min_size_gb=MIN_DISK_SIZE_GB,
-            )
-        )
-    if not disk.connected:
-        reasons.append(_reason("disk_not_connected", "The disk is not plugged in."))
-    if not disk.trusted:
-        reasons.append(_reason("disk_not_approved", "The disk is not approved for backups yet."))
-
-    # --- Another run ----------------------------------------------------------------
-    active = db.scalar(
-        select(ExternalBackupRun.id)
-        .where(ExternalBackupRun.status.in_([BackupRunStatus.PENDING, BackupRunStatus.RUNNING]))
-        .limit(1)
-    )
-    if active is not None:
-        reasons.append(_reason("run_active", "An external backup is already running.", run_id=active))
+    reasons.extend(local_disk_reasons(db, disk))
 
     # --- Proxmox VE + host agent (USB passthrough) -----------------------------------------
     pve_secret = stored_secret(db, "PVE_API_TOKEN_SECRET") or settings.pve_api_token_secret

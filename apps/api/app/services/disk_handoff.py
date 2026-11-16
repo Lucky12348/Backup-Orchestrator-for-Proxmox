@@ -83,8 +83,10 @@ def handoff_disk_to_pbs(
         device = resolve_usb_device(client.list_usb_devices(settings.pve_node_name), disk, location)
         _report(progress, "handoff_disk", f"USB device chosen by {device.get('source', 'serial')}: {device['mapping']}.")
     except DiskHandoffError as exc:
-        # Clear message for the operator, technical detail (USB devices seen) in the run log.
-        _report(progress, "handoff_disk", exc.technical)
+        # Clear message for the operator (one ERR line, written by the run);
+        # the technical detail (USB devices seen) as an info line when useful.
+        if exc.code != DISK_NOT_PLUGGED:
+            _report(progress, "handoff_disk", exc.technical)
         raise
     vm_config = _get_qemu_config_usb_map(settings)
     slot = disk.pbs_handoff_slot if disk.pbs_handoff_slot and vm_config.get(disk.pbs_handoff_slot) else _find_free_usb_slot(vm_config)

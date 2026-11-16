@@ -19,7 +19,6 @@ from app.models import (
     ScheduledBackupRunStatus,
     ScheduledBackupStartMode,
 )
-from app.services.disk_eject import eject_dedicated_external_disk
 from app.services.disk_identity import (
     disk_matches_serial,
     serial_aliases,
@@ -340,9 +339,24 @@ def _start_run(
         db.add(run)
         return
     try:
-        backup_run = run_external_backup(db, disk.id, confirmation=True, datastore_name=event.datastore)
+        backup_run = run_external_backup(
+            db,
+            disk.id,
+            confirmation=True,
+            datastore_name=event.datastore,
+            # B24: the eject is the last step of the same run (one run, one modal).
+            auto_eject_after_success=bool(event.auto_eject_after_success),
+        )
     except Exception as exc:
-        if getattr(exc, "status_code", None) == 409:
+        detail = getattr(exc, "detail", None)
+        code = detail.get("code") if isinstance(detail, dict) else None
+        if getattr(exc, "status_code", None) == 409 and code in {"disk_ejected", "disk_not_connected"}:
+            # Ejected (B25) or unplugged: wait for the disk to be plugged (again).
+            run.status = ScheduledBackupRunStatus.WAITING_FOR_DISK
+            run.updated_at = now
+            db.add(run)
+            return
+        if getattr(exc, "status_code", None) == 409 and code in {None, "run_active"}:
             run.status = ScheduledBackupRunStatus.WAITING_FOR_EXTERNAL_BACKUP
             run.error = "Another external backup is already running."
             run.updated_at = now
@@ -388,13 +402,6 @@ def _sync_linked_backup_state(db: Session, event: ScheduledBackupEvent, run: Sch
     event.last_status = run.status.value
     event.last_completed_at = run.finished_at
     db.add_all([event, run])
-    if run.status == ScheduledBackupRunStatus.SUCCESS and event.auto_eject_after_success:
-        disk = _get_disk_by_serial_identity(db, event.disk_serial)
-        if disk is not None:
-            try:
-                eject_dedicated_external_disk(db, disk.id)
-            except Exception as exc:
-                logger.warning("planned auto-eject failed for event_id=%s: %s", event.id, exc)
 
 
 def _ensure_run(db: Session, event: ScheduledBackupEvent, occurrence: datetime) -> ScheduledBackupRun:

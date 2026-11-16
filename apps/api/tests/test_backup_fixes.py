@@ -156,7 +156,53 @@ def test_run_failure_keeps_code_and_technical_detail(session_factory, monkeypatc
     assert run.status == BackupRunStatus.FAILED
     assert run.current_step == USB_DEVICE_NOT_FOUND
     assert run.message == "Disk not found in the Proxmox USB device list."
-    assert "Available USB devices: kbd" in (run.stderr_log or "")
+    # Item 3 (5b): ONE coded ERR line (translated by the UI), no duplicate.
+    from app.services import run_log
+
+    errors = [entry for entry in run_log.build_entries(run.stdout_log, run.stderr_log) if entry.level == "err"]
+    assert [entry.code for entry in errors] == ["handoff_usb_not_found"]
+    assert (run.stderr_log or "").count("Disk not found in the Proxmox USB device list.") == 1
+
+
+def test_unplugged_disk_failure_is_a_single_translated_error_line(session_factory, monkeypatch):
+    """The real handoff path: the agent says the disk is gone → one ERR line
+    `handoff_disk_not_plugged`, never the agent's English text three times."""
+    from app.services import disk_handoff, external_backups, run_log
+
+    with session_factory() as setup_db:
+        disk = ExternalDisk(serial_number="PBOTESTA", display_name="Disk", capacity_gb=500, connected=True, trusted=True,
+                            dedicated_backup_disk=True, source="agent", active=True)
+        setup_db.add(disk)
+        setup_db.commit()
+        now = external_backups.datetime.utcnow()
+        run = ExternalBackupRun(disk_id=disk.id, status=BackupRunStatus.PENDING, started_at=now,
+                                target_path="/mnt", datastore_name="store", mode=ExternalBackupMode.DEDICATED,
+                                current_step="starting", created_at=now)
+        setup_db.add(run)
+        setup_db.commit()
+        run_id = run.id
+
+    class _Agent:
+        def post(self, path, payload):
+            return SimpleNamespace(payload={"found": False, "message": "Disk not found on the Proxmox host."})
+
+    monkeypatch.setattr(disk_handoff, "get_host_agent_client", lambda: _Agent())
+    monkeypatch.setattr(disk_handoff, "get_settings", lambda: SimpleNamespace(pve_node_name="pve", pbs_execution_vm_id=100,
+                                                                               pve_api_url="https://pve", host_agent_base_url="https://agent"))
+    monkeypatch.setattr(disk_handoff, "ProxmoxClient", lambda *a, **k: SimpleNamespace(list_usb_devices=lambda node: []))
+    monkeypatch.setattr(external_backups, "SessionLocal", session_factory)
+    monkeypatch.setattr(external_backups, "get_external_backup_execution_service", lambda: None)
+    for name in ("notify_backup_failure", "notify_backup_success"):
+        monkeypatch.setattr(external_backups, name, lambda *a, **k: None)
+    external_backups.execute_external_backup_run(run_id)
+    with session_factory() as db:
+        run = db.get(ExternalBackupRun, run_id)
+    assert run.status == BackupRunStatus.FAILED
+    assert run.current_step == "disk_not_plugged"
+    entries = run_log.build_entries(run.stdout_log, run.stderr_log)
+    errors = [entry for entry in entries if entry.level == "err"]
+    assert [entry.code for entry in errors] == ["handoff_disk_not_plugged"]
+    assert "Disk not found on the Proxmox host" not in (run.stdout_log or "") + (run.stderr_log or "")
 
 
 # --- 3. Readiness -------------------------------------------------------------------------------

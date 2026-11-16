@@ -9,7 +9,7 @@ PBO does not create or delete Proxmox backup jobs yet. Schedule, storage, retent
 
 ## Ignored Assets
 
-Ignored assets remain visible in the Assets page with an `Ignore` badge. They are muted visually, but last backup and runtime state stay visible.
+Ignored assets remain visible in the Resources page with an `Ignore` badge. They are muted visually, but last backup and runtime state stay visible.
 
 Ignored assets are excluded from backup coverage:
 
@@ -19,11 +19,19 @@ coverage = protected non-ignored assets / total non-ignored assets
 
 Ignored assets do not count as unprotected, and low-coverage ntfy notifications use the same non-ignored total.
 
+### Infrastructure (ignored by default)
+
+The PBS VM (the configured USB passthrough target, `PBS_EXECUTION_VM_ID`, once it
+is set) and the PBO container itself (the LXC named like the PBO host) are not
+workloads to protect: PBO ignores them once, with the reason `infrastructure`.
+The dashboard shows "N resources ignored" with a link to re-include them; a
+resource you re-include is never ignored again automatically.
+
 Use this for infrastructure VMs or containers that should be visible in inventory but should not affect backup coverage targets.
 
 ## Proxmox Backup Job Selection
 
-The Assets page shows existing Proxmox backup jobs from Datacenter -> Backup.
+The Resources page shows existing Proxmox backup jobs from Datacenter -> Backup.
 
 Supported for editing:
 
@@ -46,7 +54,7 @@ After a successful update, refresh Proxmox inventory and PBS inventory if protec
 
 ## Recommended Workflow
 
-1. Open Assets.
+1. Open Resources.
 2. Mark assets that should not affect coverage as ignored.
 3. In Jobs de sauvegarde Proxmox, choose the existing PBS backup job.
 4. Click Gerer la selection.

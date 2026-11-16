@@ -151,11 +151,12 @@ class AutoEjectAfterManualBackupTests(TestCase):
             patch("app.services.external_backups.SessionLocal", return_value=_SessionContext(self.session)),
             patch("app.services.external_backups.handoff_disk_to_pbs", return_value=SimpleNamespace(message="handoff ok")),
             patch("app.services.external_backups.get_external_backup_execution_service", return_value=_FakeBackupExecutionService()),
-            patch("app.services.disk_eject.eject_dedicated_external_disk") as eject_mock,
+            patch("app.services.disk_eject.eject_disk_within_run") as eject_mock,
         ):
             execute_external_backup_run(run.id)
 
-        eject_mock.assert_called_once_with(self.session, disk.id)
+        eject_mock.assert_called_once()
+        self.assertEqual(eject_mock.call_args.args[2].id, run.id)  # B24: the backup's own run
 
     def test_successful_manual_backup_does_not_eject_without_the_flag(self):
         disk = _disk(dedicated_backup_disk=True)
@@ -169,7 +170,7 @@ class AutoEjectAfterManualBackupTests(TestCase):
             patch("app.services.external_backups.SessionLocal", return_value=_SessionContext(self.session)),
             patch("app.services.external_backups.handoff_disk_to_pbs", return_value=SimpleNamespace(message="handoff ok")),
             patch("app.services.external_backups.get_external_backup_execution_service", return_value=_FakeBackupExecutionService()),
-            patch("app.services.disk_eject.eject_dedicated_external_disk") as eject_mock,
+            patch("app.services.disk_eject.eject_disk_within_run") as eject_mock,
         ):
             execute_external_backup_run(run.id)
 
@@ -187,7 +188,7 @@ class AutoEjectAfterManualBackupTests(TestCase):
             patch("app.services.external_backups.SessionLocal", return_value=_SessionContext(self.session)),
             patch("app.services.external_backups.handoff_disk_to_pbs", return_value=SimpleNamespace(message="handoff ok")),
             patch("app.services.external_backups.get_external_backup_execution_service", return_value=_FakeBackupExecutionService()),
-            patch("app.services.disk_eject.eject_dedicated_external_disk") as eject_mock,
+            patch("app.services.disk_eject.eject_disk_within_run") as eject_mock,
         ):
             execute_external_backup_run(run.id)
 
@@ -207,13 +208,58 @@ class AutoEjectAfterManualBackupTests(TestCase):
             patch("app.services.external_backups.SessionLocal", return_value=_SessionContext(self.session)),
             patch("app.services.external_backups.handoff_disk_to_pbs", return_value=SimpleNamespace(message="handoff ok")),
             patch("app.services.external_backups.get_external_backup_execution_service", return_value=_FakeBackupExecutionService()),
-            patch("app.services.disk_eject.eject_dedicated_external_disk", side_effect=RuntimeError("agent unreachable")),
+            patch("app.services.disk_eject.get_external_backup_agent_bridge", side_effect=RuntimeError("agent unreachable")),
         ):
             execute_external_backup_run(run.id)
 
         refreshed = self.session.get(ExternalBackupRun, run.id)
         self.assertEqual(refreshed.status, BackupRunStatus.SUCCESS)
-        self.assertIn("agent unreachable", refreshed.stderr_log or "")
+        self.assertIn("Automatic eject failed: agent unreachable", refreshed.stderr_log or "")
+        self.assertEqual(self.session.query(ExternalBackupRun).count(), 1)
+        self.assertNotEqual(self.session.get(ExternalDisk, disk.id).handoff_status, "ejected")
+
+    def test_backup_with_auto_eject_is_one_run_ending_with_the_eject_step(self):
+        """B24: same run_id, eject = step 6, no second "ejected" run; the run
+        only finishes (run.finished) once the disk is ejected."""
+        disk = _disk(dedicated_backup_disk=True, pbs_handoff_slot="usb3", pbs_visible=True, handoff_status="visible_on_pbs")
+        self.session.add(disk)
+        self.session.commit()
+        run = _run(disk.id, auto_eject_after_success=True)
+        self.session.add(run)
+        self.session.commit()
+        statuses_during_eject: list[BackupRunStatus] = []
+
+        class _Bridge:
+            def eject_dedicated_pbs_datastore(bridge_self, **kwargs):
+                statuses_during_eject.append(self.session.get(ExternalBackupRun, kwargs["run_id"]).status)
+                return SimpleNamespace(ok=True, message="ok", stdout_log="TASK OK", stderr_log=None, command_summary="eject", execution_cwd="/", return_code=0)
+
+        with (
+            patch("app.services.external_backups.SessionLocal", return_value=_SessionContext(self.session)),
+            patch("app.services.external_backups.handoff_disk_to_pbs", return_value=SimpleNamespace(message="handoff ok")),
+            patch("app.services.external_backups.get_external_backup_execution_service", return_value=_FakeBackupExecutionService()),
+            patch("app.services.disk_eject.get_external_backup_agent_bridge", return_value=_Bridge()),
+            patch("app.services.disk_eject._detach_usb_passthrough_from_pbs_vm", return_value="USB passthrough slot `usb3` removed from the PBS VM."),
+            patch("app.services.disk_eject._attempt_disk_spin_down", return_value="Disk spin-down/power-off attempted."),
+        ):
+            execute_external_backup_run(run.id)
+
+        runs = self.session.query(ExternalBackupRun).all()
+        self.assertEqual([r.id for r in runs], [run.id])
+        self.assertEqual(statuses_during_eject, [BackupRunStatus.RUNNING])
+        refreshed = runs[0]
+        self.assertEqual(refreshed.status, BackupRunStatus.SUCCESS)
+        self.assertIsNotNone(refreshed.finished_at)
+        self.assertEqual(refreshed.current_step, "ejected")
+        from app.services import run_log
+
+        codes = [entry.code for entry in run_log.build_entries(refreshed.stdout_log, refreshed.stderr_log)]
+        self.assertIn("eject_unmount", codes)
+        self.assertEqual(codes[-1], "auto_ejected")
+        ejected = self.session.get(ExternalDisk, disk.id)
+        self.assertEqual(ejected.handoff_status, "ejected")
+        self.assertFalse(ejected.connected)
+        self.assertEqual(ejected.status, "ejected")
 
 
 class DiskSpinDownBestEffortTests(TestCase):

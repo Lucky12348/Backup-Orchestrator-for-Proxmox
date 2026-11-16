@@ -8,6 +8,7 @@ from app.models import VirtualMachine
 from app.schemas import ProxmoxStatusRead, ProxmoxSyncRead, VirtualMachineRead
 from app.services.proxmox_client import ProxmoxClient
 from app.services.asset_ignores import get_asset_ignore_map, vm_read_payload
+from app.services.infrastructure import ensure_infrastructure_ignored
 from app.services.sync_state import get_proxmox_sync_state, run_proxmox_sync_guarded
 
 
@@ -90,5 +91,6 @@ def list_proxmox_inventory(db: DbSession) -> list[dict]:
             .order_by(VirtualMachine.name.asc())
         )
     )
+    ensure_infrastructure_ignored(db, vms)
     ignore_map = get_asset_ignore_map(db, vms)
     return [vm_read_payload(vm, ignore_map) for vm in vms]

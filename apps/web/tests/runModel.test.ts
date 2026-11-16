@@ -157,3 +157,33 @@ test("disk preparation events never hijack the external backup view", () => {
   const state = monitorReducer(initialMonitorState, { type: "event", eventType: "run.progress", data: { run_id: 3, kind: "disk_preparation", status: "running" } });
   assert.equal(state, initialMonitorState);
 });
+
+// --- B24: backup + auto-eject = ONE run, the eject is its step 6 ---------------------
+
+function entry(step: string, level: JournalEntry["level"] = "info", code: string | null = null): JournalEntry {
+  return { at: null, step, source: "pbo", level, code, params: {}, text: step, count: 1 };
+}
+
+test("B24: while the auto-eject runs, the backup run shows step 6 active (same run)", () => {
+  const entries = [entry("handoff_disk"), entry("prepare_datastore"), entry("sync_job"), entry("success", "ok"), entry("eject", "info", "eject_unmount")];
+  const ejecting = run({ status: "running", current_step: "eject", auto_eject_after_success: true });
+  assert.equal(isEjectRun(ejecting, entries), false);
+  assert.deepEqual(stepStates(ejecting, entries), ["done", "done", "done", "done", "done", "active"]);
+});
+
+test("B24: the run ends once ejected; a failed auto-eject fails step 6 only", () => {
+  const base = [entry("handoff_disk"), entry("prepare_datastore"), entry("sync_job"), entry("success", "ok"), entry("eject", "info", "eject_unmount")];
+  const ejected = run({ status: "success", current_step: "ejected", auto_eject_after_success: true });
+  assert.deepEqual(stepStates(ejected, [...base, entry("ejected", "ok", "auto_ejected")]), ["done", "done", "done", "done", "done", "done"]);
+  const failedEject = run({ status: "success", current_step: "eject", auto_eject_after_success: true });
+  assert.deepEqual(stepStates(failedEject, [...base, entry("eject", "err", "auto_eject_failed")]), [
+    "done", "done", "done", "done", "done", "failed",
+  ]);
+});
+
+test("a manual eject stays a run of its own (earlier steps are not part of it)", () => {
+  const manual = run({ status: "success", current_step: "ejected", source_datastore: null });
+  const entries = [entry("eject", "info", "eject_unmount"), entry("eject", "info", "eject_detach")];
+  assert.equal(isEjectRun(manual, entries), true);
+  assert.deepEqual(stepStates(manual, entries), ["skipped", "skipped", "skipped", "skipped", "skipped", "done"]);
+});

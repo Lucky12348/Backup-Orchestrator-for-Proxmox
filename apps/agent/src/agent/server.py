@@ -30,6 +30,7 @@ from agent.main import (
     qemu_usb_attach_result,
     qemu_usb_detach_result,
     run_external_export_result,
+    rescan_disks_result,
     spin_down_disk_result,
     version_payload,
 )
@@ -93,6 +94,8 @@ ROUTE_ROLES: dict[str, frozenset[str]] = {
     "/qemu/config": _HOST,
     "/disk/spin-down": _HOST,
     "/disk/usb-location": _HOST,
+    # Disks page "Run detection again": sends a disk report now.
+    "/disk/rescan": _HOST,
     # Setup wizard: pveum provisioning of pbo@pve!pbo, guest agent addresses.
     "/pve/provision-access": _HOST,
     "/pve/guest-addresses": _HOST,
@@ -428,6 +431,14 @@ def spin_down_disk(
         "disk-spin-down",
         lambda: spin_down_disk_result(payload.disk),
     )
+
+
+@app.post("/disk/rescan", response_model=None)
+def rescan_disks(
+    _: None = Depends(require_agent_token),
+    settings: AgentSettings = Depends(get_settings),
+) -> Response:
+    return _run_endpoint("disk-rescan", lambda: rescan_disks_result(settings))
 
 
 @app.post("/qemu/config", response_model=None)

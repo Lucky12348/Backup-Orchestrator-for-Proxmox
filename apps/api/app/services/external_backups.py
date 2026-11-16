@@ -185,16 +185,15 @@ def run_external_backup(
         assert_no_active_external_backup(db)
 
         disk = _get_disk_or_404(db, disk_id)
-        if not disk.trusted:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Only trusted disks can be used for external backups.",
-            )
+        # B25: what readiness refuses (ejected, unplugged, not approved,
+        # rejected, another run) creates no run: 409 with the coded reasons.
+        from app.services.backup_readiness import local_disk_reasons
 
-        if not disk.connected:
+        reasons = local_disk_reasons(db, disk)
+        if reasons:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Disk must be connected before an external backup can run.",
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"message": reasons[0]["message"], "code": reasons[0]["code"], "reasons": reasons},
             )
 
         plan = build_external_backup_plan(disk)
@@ -324,8 +323,8 @@ def execute_external_backup_run(run_id: int) -> None:
                 from app.services.disks import refresh_disk_filesystem_usage_from_pbs
                 refresh_disk_filesystem_usage_from_pbs(db, disk)
 
-            run.status = BackupRunStatus.SUCCESS
-            run.finished_at = datetime.utcnow()
+            # B24: the run stays RUNNING until the optional eject (step 6) is
+            # done, so the backup and its eject are one run and one modal.
             run.message = f"{handoff_status.message} {export_result.message}".strip()
             run.stdout_log = _merge_logs(
                 run.stdout_log,
@@ -341,40 +340,30 @@ def execute_external_backup_run(run_id: int) -> None:
             run.current_step = "success"
             run.progress_message = run.message
             run.last_log_at = datetime.utcnow()
+            backup_message = run.message
             append_external_backup_run_log(db, run.id, step="success", message=run.message)
 
             if run.auto_eject_after_success:
-                from app.services.disk_eject import eject_dedicated_external_disk, is_disk_auto_eject_eligible
+                from app.services import disk_eject
 
-                if is_disk_auto_eject_eligible(disk):
-                    try:
-                        eject_dedicated_external_disk(db, disk.id)
-                        append_external_backup_run_log(
-                            db,
-                            run.id,
-                            step="auto_eject",
-                            message="Disk ejected automatically after a successful backup.",
-                        )
-                    except Exception as exc:
-                        logger.warning("Auto-eject after manual backup failed for disk_id=%s: %s", disk.id, exc)
-                        append_external_backup_run_log(
-                            db,
-                            run.id,
-                            step="auto_eject",
-                            message=f"Automatic eject was requested but failed: {exc}",
-                            stream="stderr",
-                            line=str(exc),
-                        )
+                if disk_eject.is_disk_auto_eject_eligible(disk):
+                    disk_eject.eject_disk_within_run(db, disk, run)
+                    db.refresh(run)
+                    db.refresh(disk)
                 else:
                     append_external_backup_run_log(
                         db,
                         run.id,
-                        step="auto_eject",
+                        step="success",
                         message=(
                             "Automatic eject was requested, but this disk mode does not support it yet "
                             "(only dedicated PBS datastore disks can be auto-ejected today)."
                         ),
                     )
+            run.status = BackupRunStatus.SUCCESS
+            run.finished_at = datetime.utcnow()
+            run.message = backup_message
+            run.progress_message = backup_message
         except AgentCommandError as exc:
             run.status = BackupRunStatus.FAILED
             run.finished_at = datetime.utcnow()
@@ -417,13 +406,19 @@ def execute_external_backup_run(run_id: int) -> None:
             run.status = BackupRunStatus.FAILED
             run.finished_at = datetime.utcnow()
             run.message = str(exc.detail)
-            run.stderr_log = _merge_logs(run.stderr_log, str(exc.detail), technical)
             run.return_code = None
             run.current_step = code or "failure"
             run.progress_message = str(exc.detail)
             run.last_log_at = datetime.utcnow()
+            # One ERR line, coded (translated by the UI). A coded handoff error
+            # already reported its useful technical detail as an info line.
             append_external_backup_run_log(
-                db, run.id, step=code or "failure", message=str(exc.detail), stream="stderr", line=technical or str(exc.detail)
+                db,
+                run.id,
+                step=code or "failure",
+                message=str(exc.detail),
+                stream="stderr",
+                line=None if code else technical,
             )
         except RuntimeError as exc:
             run.status = BackupRunStatus.FAILED

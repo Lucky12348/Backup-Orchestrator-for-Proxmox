@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.models import BackupRunStatus, ExternalBackupMode, ExternalBackupRun, ExternalDisk
 from app.services.disk_handoff import _detach_usb_slot_via_host_agent, _get_qemu_config_usb_map
+from app.services import disk_events
 from app.services.external_backup_agent import AgentCommandError, get_external_backup_agent_bridge
 from app.services.external_backup_execution import build_dedicated_datastore_name
 from app.services.external_backups import append_external_backup_run_log
@@ -20,6 +21,9 @@ logger = logging.getLogger(__name__)
 
 RUNNING_EJECT_REFUSAL = "Impossible d’éjecter le disque: une tâche PBS est en cours."
 EJECT_SUCCESS_MESSAGE = "Le disque est pr\u00eat. Vous pouvez le retirer."
+AUTO_EJECTED_MESSAGE = "Disk ejected automatically after a successful backup."
+# Kept until the disk is physically unplugged (agent report without it), B25.
+EJECTED_HANDOFF_STATUS = "ejected"
 PARTIAL_DETACH_FAILURE_MESSAGE = (
     "Datastore d\u00e9mont\u00e9, mais USB encore attach\u00e9 \u00e0 la VM PBS. "
     "Ne retirez pas encore le disque."
@@ -59,55 +63,11 @@ def eject_dedicated_external_disk(db: Session, disk_id: int) -> ExternalDisk:
     if active_run is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=RUNNING_EJECT_REFUSAL)
 
-    datastore_name = disk.pbs_datastore_name or build_dedicated_datastore_name(disk.serial_number)
-    mount_path = disk.pbs_mount_path or str(PurePosixPath("/mnt/pbo") / disk.serial_number / "pbs-datastore")
+    datastore_name, mount_path = _eject_target(disk)
     run = _create_eject_activity(db, disk, datastore_name, mount_path)
 
     try:
-        append_external_backup_run_log(
-            db,
-            run.id,
-            step="eject",
-            message="Unmounting dedicated PBS datastore on PBS.",
-        )
-        result = get_external_backup_agent_bridge().eject_dedicated_pbs_datastore(
-            serial=disk.serial_number,
-            datastore_name=datastore_name,
-            mount_path=mount_path,
-            run_id=run.id,
-        )
-        # The agent appended flush progress to this run through its callback
-        # (another DB session); reload so those lines are not overwritten.
-        db.refresh(run)
-        if not result.ok:
-            raise AgentCommandError(
-                result.message,
-                stdout_log=result.stdout_log,
-                stderr_log=result.stderr_log,
-                command_summary=result.command_summary,
-                execution_cwd=result.execution_cwd,
-                return_code=result.return_code,
-            )
-
-        append_external_backup_run_log(
-            db,
-            run.id,
-            step="eject",
-            message="Detaching USB disk from PBS VM.",
-            line=result.stdout_log,
-        )
-        detach_message = _detach_usb_passthrough_from_pbs_vm(disk)
-        spin_down_message = _attempt_disk_spin_down(disk)
-        if spin_down_message:
-            append_external_backup_run_log(db, run.id, step="eject", message=spin_down_message)
-        disk.connected = False
-        disk.pbs_visible = False
-        disk.pbs_device_path = None
-        disk.pbs_handoff_slot = None
-        disk.proxmox_usb_mapping = None
-        disk.handoff_status = "ejected"
-        db.add(disk)
-
+        result, detach_message = _eject_steps(db, disk, run, datastore_name, mount_path)
         run.status = BackupRunStatus.SUCCESS
         run.finished_at = datetime.utcnow()
         run.message = EJECT_SUCCESS_MESSAGE
@@ -159,6 +119,94 @@ def eject_dedicated_external_disk(db: Session, disk_id: int) -> ExternalDisk:
         if getattr(exc, "status_code", None) == status.HTTP_502_BAD_GATEWAY:
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=PARTIAL_DETACH_FAILURE_MESSAGE) from exc
         raise
+
+
+def eject_disk_within_run(db: Session, disk: ExternalDisk, run: ExternalBackupRun) -> bool:
+    """B24: eject as the last step of a backup run (same run_id, same SSE
+    events, one modal). Never finalizes the run and never raises: a failed
+    eject is logged as an error line of the run, the backup stays a success.
+    """
+    datastore_name, mount_path = _eject_target(disk)
+    try:
+        _eject_steps(db, disk, run, datastore_name, mount_path)
+    except AgentCommandError as exc:
+        db.refresh(run)
+        if exc.payload.get("error_code") == EJECT_NOT_FINISHED_ERROR_CODE:
+            notify_disk_eject_not_finished(disk.serial_number, str(exc))
+            _log_auto_eject_failure(db, run, EJECT_NOT_FINISHED_MESSAGE)
+        else:
+            _log_auto_eject_failure(db, run, str(exc))
+        return False
+    except HTTPException as exc:
+        detail = PARTIAL_DETACH_FAILURE_MESSAGE if exc.status_code == status.HTTP_502_BAD_GATEWAY else str(exc.detail)
+        _log_auto_eject_failure(db, run, detail)
+        return False
+    except Exception as exc:  # the backup itself succeeded: never turn it into a failure
+        logger.warning("Auto-eject failed for disk_id=%s: %s", disk.id, exc)
+        _log_auto_eject_failure(db, run, str(exc))
+        return False
+    append_external_backup_run_log(db, run.id, step="ejected", message=AUTO_EJECTED_MESSAGE)
+    notify_disk_eject_ready(disk.serial_number)
+    return True
+
+
+def _log_auto_eject_failure(db: Session, run: ExternalBackupRun, detail: str) -> None:
+    append_external_backup_run_log(
+        db, run.id, step="eject", message=f"Automatic eject failed: {detail}", stream="stderr"
+    )
+
+
+def _eject_target(disk: ExternalDisk) -> tuple[str, str]:
+    datastore_name = disk.pbs_datastore_name or build_dedicated_datastore_name(disk.serial_number)
+    mount_path = disk.pbs_mount_path or str(PurePosixPath("/mnt/pbo") / disk.serial_number / "pbs-datastore")
+    return datastore_name, mount_path
+
+
+def _eject_steps(db: Session, disk: ExternalDisk, run: ExternalBackupRun, datastore_name: str, mount_path: str):
+    """Unmount on PBS, detach the USB passthrough, try to power the disk down,
+    and mark it "ejected" (B25: it stays ejected until unplugged and replugged).
+    Logs into `run`; raises AgentCommandError / HTTPException on failure."""
+    append_external_backup_run_log(db, run.id, step="eject", message="Unmounting dedicated PBS datastore on PBS.")
+    result = get_external_backup_agent_bridge().eject_dedicated_pbs_datastore(
+        serial=disk.serial_number,
+        datastore_name=datastore_name,
+        mount_path=mount_path,
+        run_id=run.id,
+    )
+    # The agent appended flush progress to this run through its callback
+    # (another DB session); reload so those lines are not overwritten.
+    db.refresh(run)
+    if not result.ok:
+        raise AgentCommandError(
+            result.message,
+            stdout_log=result.stdout_log,
+            stderr_log=result.stderr_log,
+            command_summary=result.command_summary,
+            execution_cwd=result.execution_cwd,
+            return_code=result.return_code,
+        )
+    append_external_backup_run_log(
+        db, run.id, step="eject", message="Detaching USB disk from PBS VM.", line=result.stdout_log
+    )
+    detach_message = _detach_usb_passthrough_from_pbs_vm(disk)
+    spin_down_message = _attempt_disk_spin_down(disk)
+    if spin_down_message:
+        append_external_backup_run_log(db, run.id, step="eject", message=spin_down_message)
+    mark_disk_ejected(disk)
+    db.add(disk)
+    db.commit()
+    db.refresh(disk)
+    disk_events.publish_report_events([], [], [disk])  # the card turns "Ejected" live
+    return result, detach_message
+
+
+def mark_disk_ejected(disk: ExternalDisk) -> None:
+    disk.connected = False
+    disk.pbs_visible = False
+    disk.pbs_device_path = None
+    disk.pbs_handoff_slot = None
+    disk.proxmox_usb_mapping = None
+    disk.handoff_status = EJECTED_HANDOFF_STATUS
 
 
 def _detach_usb_passthrough_from_pbs_vm(disk: ExternalDisk) -> str:

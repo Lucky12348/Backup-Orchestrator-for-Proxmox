@@ -41,6 +41,8 @@ import type {
   VirtualMachine,
 } from "./types";
 
+import { ApiError } from "./notices";
+
 const API_BASE_PATH = "/api/v1";
 
 // Custom event to signal 401 to the app (triggers logout)
@@ -68,10 +70,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     const body = await response.text();
     let parsedDetail: string | undefined;
+    let code: string | undefined;
     try {
       const parsed = JSON.parse(body) as {
-        detail?: string | { message?: string } | { loc?: (string | number)[]; msg?: string }[];
+        detail?: string | { message?: string; code?: string } | { loc?: (string | number)[]; msg?: string }[];
       };
+      if (parsed.detail && typeof parsed.detail === "object" && !Array.isArray(parsed.detail)) code = parsed.detail.code;
       if (Array.isArray(parsed.detail)) {
         // FastAPI request-validation errors: render "field.path: message" lines.
         parsedDetail = parsed.detail
@@ -83,7 +87,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       parsedDetail = undefined;
     }
-    throw new Error(parsedDetail || body || `Request failed with status ${response.status}`);
+    throw new ApiError(parsedDetail || body || `Request failed with status ${response.status}`, response.status, code);
   }
 
   if (response.status === 204) {
@@ -537,4 +541,19 @@ export function getRegisteredAgents() {
 
 export function revokeRegisteredAgent(agentId: number) {
   return request<RegisteredAgent>(`/agents/${agentId}`, { method: "DELETE" });
+}
+
+// --- Disks page (Phase 5b) -------------------------------------------------------
+
+export type DiskDecision = "approve" | "ignore" | "reject" | "clear";
+
+export function decideDisk(diskId: number, decision: DiskDecision, confirmName?: string) {
+  return request<ExternalDisk>(`/disks/${diskId}/decision`, {
+    method: "POST",
+    body: JSON.stringify({ decision, confirm_name: confirmName ?? null }),
+  });
+}
+
+export function rescanDisks() {
+  return request<{ status: string }>("/disks/rescan", { method: "POST" });
 }

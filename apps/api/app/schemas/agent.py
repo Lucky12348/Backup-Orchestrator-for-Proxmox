@@ -26,6 +26,14 @@ class AgentUsbLocation(BaseModel):
     id_path: str | None = Field(default=None, max_length=255)
 
 
+class AgentPartition(BaseModel):
+    name: str = Field(default="", max_length=255)
+    filesystem_type: str | None = Field(default=None, max_length=64)
+    size_gb: int = Field(default=0, ge=0)
+    label: str | None = Field(default=None, max_length=255)
+    mount_path: str | None = Field(default=None, max_length=512)
+
+
 class AgentDiskReportItem(BaseModel):
     serial_number: str = Field(max_length=255)
     display_name: str = Field(max_length=255)
@@ -41,6 +49,8 @@ class AgentDiskReportItem(BaseModel):
     trusted: bool = False
     connected: bool
     usb_location: AgentUsbLocation | None = None
+    # None from agents older than Phase 5b (unknown, not "no partition").
+    partitions: list[AgentPartition] | None = Field(default=None, max_length=64)
 
 
 class AgentHotplugEvent(BaseModel):

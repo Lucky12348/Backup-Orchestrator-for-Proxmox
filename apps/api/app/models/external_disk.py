@@ -56,5 +56,23 @@ class ExternalDisk(Base):
     usb_location: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     usb_location_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
     last_detection_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False))
+    # Operator decision on a detected disk: None, "ignored" (until it is
+    # plugged again) or "rejected" (always). Approval is `trusted`.
+    operator_decision: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # Partitions seen by the host agent: [{"name", "filesystem_type",
+    # "size_gb", "label", "mount_path"}], shown before approval.
+    partitions: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     assignments = relationship("DiskAssignment", back_populates="disk", cascade="all, delete-orphan")
+
+    @property
+    def status(self) -> str:
+        from app.services.disk_events import disk_status
+
+        return disk_status(self)
+
+    @property
+    def reject_reason(self) -> str | None:
+        from app.services.disk_events import reject_reason
+
+        return reject_reason(self)

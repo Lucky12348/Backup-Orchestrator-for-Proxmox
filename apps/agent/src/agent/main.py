@@ -75,6 +75,7 @@ AGENT_CAPABILITIES = {
     "pve-vm-addresses",
     "disk-usb-location",
     "usb-hotplug-report",
+    "disk-rescan",
 }
 
 
@@ -235,6 +236,13 @@ def post_real_disk_report(settings: AgentSettings, *, track_hotplug: bool = Fals
         payload["trigger"] = "udev" if events else "timer"
     post_json(settings, "/agent/disks/report", payload, token=settings.reporting_token)
     logger.info("Real disk report sent for host %s with %s disks", settings.hostname, len(disks))
+
+
+def rescan_disks_result(settings: AgentSettings) -> dict[str, Any]:
+    """Look at the disks now and send the report to the app (same report as
+    the udev rule and the timer), instead of waiting for the next one."""
+    post_real_disk_report(settings, track_hotplug=True)
+    return {"ok": True, "success": True, "message": "Disk report sent."}
 
 
 def post_mock_disk_report(settings: AgentSettings) -> None:
@@ -1367,7 +1375,7 @@ def discover_real_disks(settings: AgentSettings) -> list[dict[str, Any]]:
             "-J",
             "-b",
             "-o",
-            "NAME,KNAME,PATH,TYPE,MODEL,SERIAL,SIZE,RM,ROTA,TRAN,MOUNTPOINT,FSTYPE,HOTPLUG,PKNAME",
+            "NAME,KNAME,PATH,TYPE,MODEL,SERIAL,SIZE,RM,ROTA,TRAN,MOUNTPOINT,FSTYPE,HOTPLUG,PKNAME,LABEL",
         ]
     )
     payload = json.loads(lsblk_output)
@@ -2065,7 +2073,24 @@ def build_disk_report(
         "trusted": False,
         "connected": True,
         "usb_location": usb_location,
+        # What is already on the disk, shown before the operator approves
+        # (and formats) it.
+        "partitions": partition_summary(device),
     }
+
+
+def partition_summary(device: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {
+            "name": str(node.get("name") or ""),
+            "filesystem_type": node.get("fstype") or None,
+            "size_gb": bytes_to_gb(node.get("size")),
+            "label": node.get("label") or None,
+            "mount_path": node.get("mountpoint") or None,
+        }
+        for node in list_partition_nodes(device)
+        if node.get("type") in {"part", "crypt", "lvm", None}
+    ][:32]
 
 
 def disk_usb_location_result(serial: str | None, device: str | None) -> dict[str, Any]:

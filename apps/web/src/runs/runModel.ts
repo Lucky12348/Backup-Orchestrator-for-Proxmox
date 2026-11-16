@@ -95,8 +95,11 @@ export function stepStates(run: RunLike, entries: JournalEntry[]): StepState[] {
   }
   return RUN_STEPS.map((_, index) => {
     if (run.status === "success") {
-      if (index === eject) return reached >= eject ? "done" : "upcoming"; // eject later, by hand
-      return "done";
+      if (index !== eject) return "done";
+      if (reached < eject) return "upcoming"; // eject later, by hand
+      // B24: the auto-eject is step 6 of the same run; a failed eject leaves
+      // the backup a success but the step failed.
+      return entries.some((entry) => stepIndex(entry.step) === eject && entry.level === "err") ? "failed" : "done";
     }
     if (index < reached) return "done";
     if (index === reached) return run.status === "failed" ? "failed" : "active";

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
@@ -6,7 +6,10 @@ import { getExternalBackupPreview, AUTH_EXPIRED_EVENT } from "./api";
 import { AuthProvider, useAuth } from "./AuthContext";
 import { LoginPage } from "./pages/LoginPage";
 import { SETUP_PATH, setupRedirect } from "./setup/logic";
-import { AppShellV2 } from "./shell/AppShellV2";
+import { AppShellV2, LegacyPage } from "./shell/AppShellV2";
+import { NoticeToasts } from "./shell/NoticeToasts";
+import { DashboardView } from "./views/dashboard/DashboardView";
+import { DisksView } from "./views/disks/DisksView";
 import { expectRunModal, openRunModal } from "./runs/openRun";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { ErrorBanner } from "./components/ErrorBanner";
@@ -15,15 +18,11 @@ import { useAppData } from "./hooks/useAppData";
 import { translations, type Language } from "./i18n";
 import { ActivityPage } from "./pages/ActivityPage";
 import { AssetsPage } from "./pages/AssetsPage";
-import { DashboardPage } from "./pages/DashboardPage";
-import { DisksPage } from "./pages/DisksPage";
 import { IntegrationsPage } from "./pages/IntegrationsPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { PlanningPage } from "./pages/PlanningPage";
 import { SettingsPage } from "./pages/SettingsPage";
-import type { DiskActionRequest } from "./pages/shared";
 import type { ExternalDisk } from "./types";
-import { getLatestStatusLabel } from "./utils";
 
 interface ConfirmState {
   title: string;
@@ -55,19 +54,16 @@ function AuthenticatedApp() {
     data,
     loading,
     error,
-    bannerError,
-    syncMessage,
+    notices,
     isSaving,
     proxmoxSyncing,
     pbsSyncing,
     pbsInventoryByVmId,
     load,
     refresh,
-    clearBannerError,
-    clearSyncMessage,
+    dismissNotice,
     mutateAssetIgnore,
     mutateBackupJobSelection,
-    mutateDisk,
     runProxmoxSync,
     runPBSSync,
     startExternalBackup,
@@ -81,38 +77,9 @@ function AuthenticatedApp() {
     setLanguage(nextLanguage);
   }
 
-  const latestBackupLabel = useMemo(() => {
-    return data ? getLatestStatusLabel(data.overview.latest_backup_status, t) : t.status.unknown;
-  }, [data, t]);
 
   function openConfirm(nextState: ConfirmState) { setConfirmState(nextState); }
   function closeConfirm() { setConfirmState(null); }
-
-  function handleDiskToggleRequest(request: DiskActionRequest) {
-    const descriptors = {
-      trusted: {
-        title: t.confirmTrustedTitle,
-        description: request.value ? t.confirmTrustedEnable : t.confirmTrustedDisable,
-      },
-      dedicated_backup_disk: {
-        title: t.confirmDedicatedTitle,
-        description: request.value ? t.confirmDedicatedEnable : t.confirmDedicatedDisable,
-      },
-    } as const;
-    const descriptor = descriptors[request.field];
-    openConfirm({
-      title: descriptor.title,
-      description: `${request.disk.display_name}: ${descriptor.description}`,
-      confirmLabel: t.confirm,
-      cancelLabel: t.cancel,
-      tone: "warning",
-      onConfirm: () => {
-        if (request.field === "trusted") void mutateDisk(request.disk.id, { trusted: request.value });
-        else if (request.field === "dedicated_backup_disk") void mutateDisk(request.disk.id, { dedicated_backup_disk: request.value });
-        closeConfirm();
-      },
-    });
-  }
 
   function handleProxmoxSyncRequest() {
     openConfirm({
@@ -257,56 +224,72 @@ function AuthenticatedApp() {
   return (
     <>
       <AppShellV2 language={language} onLanguageChange={handleLanguageChange} t={t} disks={data.disks} vms={data.vms}>
-        {bannerError ? (
-          <ErrorBanner dismissLabel={t.dismiss} message={bannerError} onDismiss={clearBannerError} />
-        ) : null}
-        {syncMessage ? (
-          <ErrorBanner dismissLabel={t.dismiss} message={syncMessage} onDismiss={clearSyncMessage} tone="info" />
-        ) : null}
+        {/* B26: no global banner, every notice is a toast. */}
+        <NoticeToasts notices={notices} onShown={dismissNotice} t={t} />
 
         <Routes>
-          <Route element={<DashboardPage data={data} latestBackupLabel={latestBackupLabel} t={t} language={language} />} path="/" />
           <Route
             element={
-              <AssetsPage
+              <DashboardView
+                overview={data.overview}
+                disks={data.disks}
+                runs={data.externalBackupRuns}
+                events={data.scheduledBackupEvents}
+                scheduledRuns={data.scheduledBackupRuns}
+                agentStatus={data.agentStatus}
+                agentConfigured={data.agentStatus.last_heartbeat_at !== null}
+                pveConnected={data.proxmoxStatus.connected}
+                pbsConnected={data.pbsStatus.connected}
+                language={language}
+                t={t}
+              />
+            }
+            path="/"
+          />
+          <Route
+            element={
+              <LegacyPage><AssetsPage
                 data={data} language={language}
                 onAssetIgnoreChange={(vm, ignored) => void mutateAssetIgnore(vm, ignored)}
                 onBackupJobSelectionChange={(jobId, vmids) => void mutateBackupJobSelection(jobId, vmids)}
                 onRefresh={refresh}
                 pbsInventoryByVmId={pbsInventoryByVmId}
                 isSaving={isSaving} t={t}
-              />
+              /></LegacyPage>
             }
             path="/assets"
           />
           <Route
             element={
-              <DisksPage
-                data={data} language={language}
-                onDiskFieldChange={(diskId, payload) => void mutateDisk(diskId, payload)}
-                onDiskEjectRequest={handleDiskEjectRequest}
-                onExternalBackupRequest={(disk) => void handleExternalBackupRequest(disk)}
-                onDiskToggleRequest={handleDiskToggleRequest}
-                isSaving={isSaving} t={t}
+              <DisksView
+                disks={data.disks}
+                runs={data.externalBackupRuns}
+                language={language}
+                t={t}
+                onBackup={(disk) => void handleExternalBackupRequest(disk)}
+                onEject={handleDiskEjectRequest}
+                isStarting={(diskId) => isSaving(`external-backup-${diskId}`)}
+                isEjecting={(diskId) => isSaving(`disk-eject-${diskId}`)}
+                onChanged={refresh}
               />
             }
             path="/disks"
           />
-          <Route element={<PlanningPage data={data} language={language} t={t} />} path="/planning" />
+          <Route element={<LegacyPage><PlanningPage data={data} language={language} t={t} /></LegacyPage>} path="/planning" />
           <Route
             element={
-              <IntegrationsPage
+              <LegacyPage><IntegrationsPage
                 data={data} language={language}
                 onPBSSyncRequest={handlePBSSyncRequest}
                 onProxmoxSyncRequest={handleProxmoxSyncRequest}
                 pbsSyncing={pbsSyncing} proxmoxSyncing={proxmoxSyncing} t={t}
-              />
+              /></LegacyPage>
             }
             path="/integrations"
           />
           <Route
             element={
-              <ActivityPage
+              <LegacyPage><ActivityPage
                 data={data}
                 cleanupSaving={isSaving("activity-cleanup")}
                 externalBackupRuns={data.externalBackupRuns}
@@ -318,12 +301,12 @@ function AuthenticatedApp() {
                   void ejectDisk(diskId, t.ejectDiskSuccess);
                 }}
                 t={t}
-              />
+              /></LegacyPage>
             }
             path="/activity"
           />
-          <Route element={<NotificationsPage language={language} t={t} />} path="/notifications" />
-          <Route element={<SettingsPage t={t} />} path="/settings" />
+          <Route element={<LegacyPage><NotificationsPage language={language} t={t} /></LegacyPage>} path="/notifications" />
+          <Route element={<LegacyPage><SettingsPage t={t} /></LegacyPage>} path="/settings" />
         </Routes>
 
       <ConfirmModal

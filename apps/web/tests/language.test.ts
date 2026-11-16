@@ -101,6 +101,7 @@ test("no hard-coded text in the new UI (wizard, shell, live run modal, UI kit) a
     ...tsxFiles(join(SRC, "shell")),
     ...tsxFiles(join(SRC, "runs")),
     ...tsxFiles(join(SRC, "ui")),
+    ...tsxFiles(join(SRC, "views")),
     join(SRC, "pages", "LoginPage.tsx"),
   ];
   const offenders = files.flatMap((file) => textOffenders(readFileSync(file, "utf8")).map((item) => `${file}: ${item}`));

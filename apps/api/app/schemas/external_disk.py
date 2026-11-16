@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -47,6 +48,19 @@ class ExternalDiskRead(UTCDateTimeModel):
     pbs_mount_path: str | None
     pbs_filesystem_type: str | None
     prepared_as_pbs_datastore: bool
+    operator_decision: str | None = None
+    usb_location: dict | None = None
+    partitions: list[dict] | None = None
+    # Derived (app/services/disk_events.py): new | known | ejected | unplugged | rejected.
+    status: str = "new"
+    reject_reason: str | None = None
+
+
+class ExternalDiskDecision(BaseModel):
+    """Disks page approval flow. `approve` needs the disk name typed back."""
+
+    decision: Literal["approve", "ignore", "reject", "clear"]
+    confirm_name: str | None = Field(default=None, max_length=255)
 
 
 class ExternalDiskUpdate(BaseModel):

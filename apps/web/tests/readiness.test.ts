@@ -33,7 +33,7 @@ test("the tooltip gives the real reasons, translated", () => {
 
 test("API mode never asks to update a PBS agent", () => {
   // The old front-end check required a PBS agent even with PBS_MODE=api.
-  const disks = readFileSync(join(import.meta.dirname, "..", "src", "pages", "DisksPage.tsx"), "utf8");
+  const disks = readFileSync(join(import.meta.dirname, "..", "src", "views", "disks", "DisksView.tsx"), "utf8");
   assert.ok(!disks.includes("Mettre a jour l'agent PBS"));
   assert.ok(!disks.includes("agentsReadyForExternalBackup"));
   assert.ok(disks.includes("getExternalBackupReadiness"));

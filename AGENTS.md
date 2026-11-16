@@ -287,6 +287,50 @@ should reach them — and every call is additionally protected with an
 - Web tests: pure modules with `node:test`; components are compiled with
   esbuild and rendered with `react-dom/server` (`tests/components.test.ts`).
 
+## One run per backup, disk states, dashboard & disks pages (Phase 5b)
+
+- **B24 — one run**: a backup with `auto_eject_after_success` ejects inside
+  the SAME run (`disk_eject.eject_disk_within_run`): the run stays RUNNING
+  through the eject (step 6, same run_id and SSE events), then becomes
+  SUCCESS. A failed auto-eject is an ERR line (`auto_eject_failed`) and never
+  fails the backup. The manual eject (`eject_dedicated_external_disk`) keeps
+  its own run. Planning passes the flag to `run_external_backup` (no second
+  eject in `planning_scheduler`).
+- **B25 — "ejected" until unplugged**: `handoff_status="ejected"` survives
+  agent reports while the disk is still there (`connected=False`, no
+  `disk.added`); a report without it (udev remove, or the power-off of the
+  eject) publishes `disk.removed` and clears it; the next add makes it usable.
+  `disk_events.disk_status` = new | known | ignored | ejected | unplugged |
+  rejected (also on `ExternalDiskRead.status`). Readiness reason
+  `disk_ejected`. `run_external_backup` refuses with the local readiness
+  reasons (`backup_readiness.local_disk_reasons`): **409 with
+  `detail.code`, no run created**; the front guards double clicks
+  (`src/requestGuard.ts`) and shows a toast.
+- Handoff failures: ONE coded ERR line (`handoff_disk_not_plugged`,
+  `handoff_usb_*` in `PBO_MESSAGES`), no duplicate stderr merge.
+- **B26**: no global banner. `useAppData` queues `notices`
+  (`src/notices.ts`, `ApiError` carries `detail.code`), `NoticeToasts` shows
+  them as toasts (codes translated via `t.readiness` / `t.disksV2.errors`).
+- Approval flow: `POST /disks/{id}/decision` (`approve` needs the disk name
+  typed back, `ignore` = until plugged again, `reject` = always,
+  `clear`); `external_disks.operator_decision` + `partitions` (Alembic
+  `0006`, idempotent). The host agent reports partitions in each disk report
+  (`partition_summary`). Guards are unchanged: PBO still refuses to format a
+  data filesystem.
+- "Run detection again": `POST /disks/rescan` → host agent `/disk/rescan`
+  (capability `disk-rescan`, in `ROUTE_ROLES`); codes `rescan_agent_missing`
+  / `rescan_agent_outdated` / `rescan_failed`.
+- Coverage: the PBS VM (only when `PBS_EXECUTION_VM_ID` is STORED, never the
+  default 100) and the CT named like this machine are ignored once as
+  `infrastructure` (`services/infrastructure.py`); an existing
+  `asset_ignores` row is never overwritten, so a re-include sticks.
+  `/overview` returns `infrastructure_ignored`.
+- Redesigned pages live in `src/views/` (Tailwind content + language test
+  include it) and render OUTSIDE `.pbo-legacy`; legacy pages are wrapped in
+  `<LegacyPage>` in `App.tsx`. Pure models: `views/disks/diskModel.ts`,
+  `views/dashboard/dashboardModel.ts`, `views/format.ts` (`.ts` imports are
+  allowed: `allowImportingTsExtensions`).
+
 ## Disk ↔ USB port (Phase 4.4, read before touching the USB passthrough)
 
 - The host agent reports, for each USB disk, its physical USB location read

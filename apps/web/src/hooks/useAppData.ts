@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { RunProgressData } from "../events";
 import { useEvents } from "../useEvents";
+import { makeNotice, noticeFromError, type Notice } from "../notices";
+import { createRequestGuard } from "../requestGuard";
 
 import {
   getAgentStatus,
@@ -135,8 +137,8 @@ export function useAppData() {
   const [data, setData] = useState<AppDataState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [bannerError, setBannerError] = useState<string | null>(null);
-  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  // B26: no global banner any more, the shell shows these as toasts.
+  const [notices, setNotices] = useState<Notice[]>([]);
   // A Set (not a single string) so that two independent mutations in flight at
   // once (e.g. ejecting disk A while toggling "trusted" on disk B) each keep
   // their own button disabled instead of the second one clearing the first's
@@ -168,6 +170,14 @@ export function useAppData() {
     return savingKeys.has(key);
   }
 
+  function notify(message: string, code?: string) {
+    setNotices((current) => [...current, makeNotice("success", message, code)]);
+  }
+
+  function notifyError(failure: unknown) {
+    setNotices((current) => [...current, noticeFromError(failure)]);
+  }
+
   async function load() {
     setLoading(true);
     setError(null);
@@ -187,7 +197,7 @@ export function useAppData() {
       const nextData = await fetchAppData();
       setData(nextData);
     } catch (refreshError) {
-      setBannerError(refreshError instanceof Error ? refreshError.message : "Unknown error");
+      notifyError(refreshError);
     }
   }
 
@@ -209,10 +219,8 @@ export function useAppData() {
           }, 2500);
         }
       })
-      .catch((syncError) => {
-        if (!cancelled) {
-          setBannerError(syncError instanceof Error ? syncError.message : "Unknown error");
-        }
+      .catch(() => {
+        // Background auto-sync: no toast, the integrations page shows the state.
       });
 
     return () => {
@@ -251,7 +259,7 @@ export function useAppData() {
           );
         })
         .catch((refreshError) => {
-          setBannerError(refreshError instanceof Error ? refreshError.message : "Unknown error");
+          notifyError(refreshError);
         });
     }, 300);
   }
@@ -295,8 +303,8 @@ export function useAppData() {
         .then((externalBackupRuns) => {
           setData((current) => (current ? { ...current, externalBackupRuns } : current));
         })
-        .catch((pollError) => {
-          setBannerError(pollError instanceof Error ? pollError.message : "Unknown error");
+        .catch(() => {
+          // Background fallback poll: the next tick (or the live stream) retries.
         });
     }, 2000);
 
@@ -306,7 +314,6 @@ export function useAppData() {
   async function mutateVmCritical(vmId: number, critical: boolean) {
     const key = `vm-${vmId}`;
     startSaving(key);
-    setBannerError(null);
 
     try {
       const updated = await updateVM(vmId, { critical });
@@ -319,7 +326,7 @@ export function useAppData() {
           : current,
       );
     } catch (mutationError) {
-      setBannerError(mutationError instanceof Error ? mutationError.message : "Unknown error");
+      notifyError(mutationError);
     } finally {
       stopSaving(key);
     }
@@ -343,13 +350,12 @@ export function useAppData() {
   ) {
     const key = `disk-${diskId}`;
     startSaving(key);
-    setBannerError(null);
 
     try {
       await updateDisk(diskId, payload);
       await refresh();
     } catch (mutationError) {
-      setBannerError(mutationError instanceof Error ? mutationError.message : "Unknown error");
+      notifyError(mutationError);
     } finally {
       stopSaving(key);
     }
@@ -357,17 +363,15 @@ export function useAppData() {
 
   async function runProxmoxSync(successMessage: string) {
     setProxmoxSyncing(true);
-    setBannerError(null);
-    setSyncMessage(null);
 
     try {
       const summary = await syncProxmoxInventory();
       await refresh();
-      setSyncMessage(summary.already_running
+      notify(summary.already_running
         ? "Proxmox sync is already running."
         : `${successMessage}: ${summary.total_seen} (${summary.synced_vms_count} VM, ${summary.synced_cts_count} CT)`);
     } catch (syncError) {
-      setBannerError(syncError instanceof Error ? syncError.message : "Unknown error");
+      notifyError(syncError);
     } finally {
       setProxmoxSyncing(false);
     }
@@ -375,48 +379,48 @@ export function useAppData() {
 
   async function runPBSSync(successMessage: string) {
     setPbsSyncing(true);
-    setBannerError(null);
-    setSyncMessage(null);
 
     try {
       const summary = await syncPBSInventory();
       await refresh();
-      setSyncMessage(summary.already_running
+      notify(summary.already_running
         ? "PBS sync is already running."
         : `${successMessage}: ${summary.total_snapshots_seen} (${summary.matched_vms} VM, ${summary.matched_cts} CT)`);
     } catch (syncError) {
-      setBannerError(syncError instanceof Error ? syncError.message : "Unknown error");
+      notifyError(syncError);
     } finally {
       setPbsSyncing(false);
     }
   }
 
+  // Requests in flight, read synchronously: a double click must not send a
+  // second request before React re-renders the disabled button (B25).
+  const guard = useRef(createRequestGuard());
+
   async function startExternalBackup(diskId: number, successMessage: string, autoEjectAfterSuccess = false) {
     const key = `external-backup-${diskId}`;
-    startSaving(key);
-    setBannerError(null);
-    setSyncMessage(null);
-
-    try {
-      setSyncMessage("External backup run started. Live progress is available on the Activity page.");
-      const run = await runExternalBackup(diskId, autoEjectAfterSuccess);
-      setData((current) =>
-        current
-          ? {
-              ...current,
-              externalBackupRuns: [run, ...current.externalBackupRuns.filter((item) => item.id !== run.id)],
-            }
-          : current,
-      );
-      setSyncMessage(`${successMessage}: ${run.disk_name}`);
-      return run;
-    } catch (runError) {
-      setBannerError(runError instanceof Error ? runError.message : "Unknown error");
-    } finally {
-      stopSaving(key);
-    }
-
-    return null;
+    return guard.current.run(key, async () => {
+      startSaving(key);
+      try {
+        const run = await runExternalBackup(diskId, autoEjectAfterSuccess);
+        setData((current) =>
+          current
+            ? {
+                ...current,
+                externalBackupRuns: [run, ...current.externalBackupRuns.filter((item) => item.id !== run.id)],
+              }
+            : current,
+        );
+        notify(`${successMessage}: ${run.disk_name}`);
+        return run;
+      } catch (runError) {
+        // 409 (run already active, disk ejected, not approved…): no run, a toast.
+        notifyError(runError);
+        return null;
+      } finally {
+        stopSaving(key);
+      }
+    });
   }
 
   async function startDiskPreparation(
@@ -430,16 +434,14 @@ export function useAppData() {
   ) {
     const key = `disk-prep-${diskId}`;
     startSaving(key);
-    setBannerError(null);
-    setSyncMessage(null);
 
     try {
       const run = await prepareDisk(diskId, payload);
       await refresh();
-      setSyncMessage(`${successMessage}: ${run.mount_path ?? `disk ${diskId}`}`);
+      notify(`${successMessage}: ${run.mount_path ?? `disk ${diskId}`}`);
       return run;
     } catch (runError) {
-      setBannerError(runError instanceof Error ? runError.message : "Unknown error");
+      notifyError(runError);
     } finally {
       stopSaving(key);
     }
@@ -451,13 +453,12 @@ export function useAppData() {
     const vmid = vm.external_id ?? String(vm.id);
     const key = `vm-ignore-${vm.id}`;
     startSaving(key);
-    setBannerError(null);
 
     try {
       await updateAssetIgnore(vm.source, vm.node_name ?? "-", vmid, { ignored, reason });
       await refresh();
     } catch (mutationError) {
-      setBannerError(mutationError instanceof Error ? mutationError.message : "Unknown error");
+      notifyError(mutationError);
     } finally {
       stopSaving(key);
     }
@@ -466,15 +467,13 @@ export function useAppData() {
   async function mutateBackupJobSelection(jobId: string, selectedVmids: number[]) {
     const key = `backup-job-${jobId}`;
     startSaving(key);
-    setBannerError(null);
-    setSyncMessage(null);
 
     try {
       await updateProxmoxBackupJobSelection(jobId, selectedVmids);
       await refresh();
-      setSyncMessage("Sélection du job Proxmox mise à jour.");
+      notify("Sélection du job Proxmox mise à jour.");
     } catch (mutationError) {
-      setBannerError(mutationError instanceof Error ? mutationError.message : "Unknown error");
+      notifyError(mutationError);
     } finally {
       stopSaving(key);
     }
@@ -483,16 +482,14 @@ export function useAppData() {
   async function ejectDisk(diskId: number, successMessage: string) {
     const key = `disk-eject-${diskId}`;
     startSaving(key);
-    setBannerError(null);
-    setSyncMessage(null);
 
     try {
       await ejectExternalDisk(diskId);
       await refresh();
-      setSyncMessage(successMessage);
+      notify(successMessage);
       return true;
     } catch (ejectError) {
-      setBannerError(ejectError instanceof Error ? ejectError.message : "Unknown error");
+      notifyError(ejectError);
     } finally {
       stopSaving(key);
     }
@@ -503,8 +500,6 @@ export function useAppData() {
   async function cleanupActivityRuns(keepLast: number, successMessage: string) {
     const key = "activity-cleanup";
     startSaving(key);
-    setBannerError(null);
-    setSyncMessage(null);
 
     try {
       const [externalResult, backupResult] = await Promise.all([
@@ -512,11 +507,11 @@ export function useAppData() {
         cleanupBackupRuns(keepLast),
       ]);
       await refresh();
-      setSyncMessage(
+      notify(
         `${successMessage}: ${externalResult.deleted + backupResult.deleted}`,
       );
     } catch (cleanupError) {
-      setBannerError(cleanupError instanceof Error ? cleanupError.message : "Unknown error");
+      notifyError(cleanupError);
     } finally {
       stopSaving(key);
     }
@@ -531,16 +526,16 @@ export function useAppData() {
     data,
     loading,
     error,
-    bannerError,
-    syncMessage,
+    notices,
     isSaving,
     proxmoxSyncing,
     pbsSyncing,
     pbsInventoryByVmId,
     load,
     refresh,
-    clearBannerError: () => setBannerError(null),
-    clearSyncMessage: () => setSyncMessage(null),
+    dismissNotice: (id: number) => setNotices((current) => current.filter((notice) => notice.id !== id)),
+    notify,
+    notifyError,
     mutateVmCritical,
     mutateAssetIgnore,
     mutateBackupJobSelection,
