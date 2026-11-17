@@ -43,7 +43,7 @@ export function vmGroup(vm: Pick<VirtualMachine, "vm_type" | "external_id">): st
 function Question({ n, title, children }: { n: number; title: string; children: ReactNode }) {
   return (
     <section className="flex flex-col gap-3">
-      <h3 className="m-0 flex items-center gap-2.5 text-[15px] font-semibold">
+      <h3 className="m-0 flex items-center gap-2.5 text-sm font-semibold">
         <span className="flex h-6 w-6 items-center justify-center rounded-full bg-accent/15 text-xs font-bold text-accent-text">{n}</span>
         {title}
       </h3>
@@ -410,7 +410,7 @@ export function PlanningDialog({
         </div>
 
         <div className="flex flex-col gap-3 border-0 border-t border-solid border-border px-5 py-3.5">
-          <DialogDescription id="planning-dialog-preview" className="m-0 rounded-[10px] bg-accent/10 px-3 py-2 text-sm text-fg" data-preview="">
+          <DialogDescription id="planning-dialog-preview" className="m-0 rounded-md bg-accent/10 px-3 py-2 text-sm text-fg" data-preview="">
             {sentence}
           </DialogDescription>
           <div className="flex items-center gap-2">

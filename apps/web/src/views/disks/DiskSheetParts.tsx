@@ -8,12 +8,19 @@ import { openRunModal } from "../../runs/openRun";
 import type { ExternalBackupRun, ExternalDisk } from "../../types";
 import { formatGib, formatPercent, usageParts } from "../../units";
 import { useNow } from "../../ui/useNow";
+import { StatusIcon, type StatusKind } from "../../ui/StatusIcon";
 import { fill, formatWhen } from "../format";
 import { diskHistory, type Tone } from "./diskModel";
 import { capacitySummary, chartWorthShowing, historyPage, usageLevel, usageSeries, type HistoryKindFilter } from "./diskProfile";
 import { UsageChart } from "./UsageChart";
 
-const DOT: Record<Tone, string> = { ok: "bg-success", run: "bg-accent", warn: "bg-warning", err: "bg-danger", off: "bg-faint" };
+const GLYPH: Record<Tone, { kind: StatusKind; className?: string }> = {
+  ok: { kind: "success" },
+  run: { kind: "running" },
+  warn: { kind: "failed", className: "text-warning" },
+  err: { kind: "failed" },
+  off: { kind: "skipped" },
+};
 const KINDS: HistoryKindFilter[] = ["all", "backup", "verify", "repair"];
 
 /**
@@ -56,8 +63,8 @@ export function DiskHistoryList({
                 setShown(pageSize);
               }}
               className={cn(
-                "rounded-full border border-solid px-2.5 py-0.5 text-xs",
-                kind === key ? "border-accent/50 bg-accent/15 text-accent-text" : "border-border text-muted hover:text-fg",
+                "rounded-md border border-solid px-2 py-0.5 text-xs",
+                kind === key ? "border-border-strong bg-hover text-fg" : "border-border bg-transparent text-muted hover:text-fg",
               )}
             >
               {key === "all" ? text.historyAll : text.historyKind[key]}
@@ -74,7 +81,7 @@ export function DiskHistoryList({
           className="flex items-center gap-2.5 rounded-md border-0 bg-transparent px-1 py-1.5 text-left text-[13px] text-fg outline-none hover:bg-hover focus-visible:bg-hover focus-visible:ring-2 focus-visible:ring-accent"
           data-history-run={item.id}
         >
-          <span className={cn("h-[7px] w-[7px] flex-none rounded-full", DOT[item.tone])} />
+          <StatusIcon kind={GLYPH[item.tone].kind} className={GLYPH[item.tone].className} />
           <span className="flex-1 text-muted">
             {text.historyKind[item.kind]} · {(text.historyStatus as Record<string, string>)[item.status] ?? item.status}
           </span>
@@ -112,7 +119,7 @@ export function CapacityCard({ disk, runs, language, t, className }: { disk: Ext
   return (
     <section className={className} aria-labelledby="capacity-title" data-capacity>
       <div className="flex flex-wrap items-baseline gap-2">
-        <h2 id="capacity-title" className="m-0 text-[15px] font-semibold">{text.capacity}</h2>
+        <h2 id="capacity-title" className="m-0 text-sm font-semibold">{text.capacity}</h2>
       </div>
       {summary ? (
         <>

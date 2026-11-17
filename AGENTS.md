@@ -251,8 +251,8 @@ should reach them — and every call is additionally protected with an
 
 ## New UI layer and live run modal (Phase 5a, read before touching the web UI)
 
-- Visual reference: `docs/design/mockups/*.html` (validated mockups: tokens,
-  spacing, radii, Geist). Reproduce them; do not invent a style.
+- Visual reference: `docs/DESIGN.md` (tokens, contrasts, rules) and
+  `docs/design/mockups/*.html`. Reproduce them; do not invent a style.
 - Tailwind + shadcn/ui (Radix) + lucide-react + Geist, scoped to `.pbo-ui`
   (`important: ".pbo-ui"` in `tailwind.config.js`, tokens + scoped reset in
   `src/ui/ui.css`, reset wrapped in `:where()` so utilities always win;
@@ -267,8 +267,9 @@ should reach them — and every call is additionally protected with an
   the tokens and utilities.
 - Global UI kit: `useToast()` (`src/ui/toast.tsx`), `useConfirm()`
   (`src/ui/confirm.tsx`, shadcn AlertDialog — **never `window.confirm`**),
-  `InfoTip` (page titles have no subtitle: an "i" tooltip), `EmptyState`,
-  `LoadingBlock`, `PageHeader`.
+  `PageTitle` (5i: help = tooltip on the title, no "i"), `EmptyState`,
+  `LoadingBlock`, `PageHeader`, `StatusIcon`, `StatusDot`, `CloseButton`,
+  `Logo`.
 - Live run modal (`src/runs/`, d'après live-run-modal.html):
   `RunMonitorProvider` follows runs over SSE (`monitorReducer`, pure), the
   modal reads `GET /external-backups/runs/{id}` + `/log`; "Minimize" turns it
@@ -701,6 +702,31 @@ should reach them — and every call is additionally protected with an
   `PBO_PRIVILEGES`, `docs/PERMISSIONS.md`); a 403 → `pve_permission_missing`.
   Existing installs: Reconfigure Proxmox, or `pveum role modify PBO --privs
   "<PVE_PRIVILEGES>"` on the host. The UI polls the task every 5 s.
+
+## Visual identity (Phase 5i, UI only — read docs/DESIGN.md first)
+
+- Tokens in `src/ui/ui.css` (+ `focus`): neutral greys and ONE steel-blue
+  accent (`#2F5D8A` light / `#3A6A9E` dark), reserved for the primary button,
+  focus, progress and links; desaturated status colours; every pair AA
+  (table in docs/DESIGN.md). Base 14 px, tabular figures, page titles 20 px;
+  monospace only for journal, serials, UPIDs, paths, commands, technical ids.
+  lucide stroke 1.5 globally; no icon tiles; 4 px grid (radii 6/8/12).
+- One status glyph (`ui/StatusIcon.tsx`: running ring that fills, success,
+  failed, skipped, pending) used by the modal, dashboard, Activity, disk
+  history, toasts and the run pill; states elsewhere are « ● text »
+  (`ui/StatusDot.tsx`, `StatusPill` renders it). `InfoTip` is gone.
+- Legacy `styles.css` styles every `th`/`td`: `ui.css` neutralises them in
+  `.pbo-ui`; new tables set a `bg-subtle` normal-case header.
+- Logo: `ui/Logo.tsx` (two arcs + "PBO"), `docs/design/logo*.svg`, favicon
+  set in `apps/web/public/favicon` (SVG follows the browser theme).
+- Run modal: `StepBar` (one segment per step, hover = name + duration from
+  `runModel.stepTimings`), one line `focusStep` (« Étape n sur N · … »),
+  route + run id in "Details", journal on theme tokens, the dialog itself
+  takes the focus (no stray ring on the X, `ui/CloseButton.tsx`).
+- Disk sheet identity panel: page state. The menu navigates with router
+  state `{ editIdentity: true }` (replace when already on the sheet); a
+  legacy `#identity` is consumed and removed (`wantsIdentityPanel`), so F5
+  never reopens it.
 
 ## Disk ↔ USB port (Phase 4.4, read before touching the USB passthrough)
 

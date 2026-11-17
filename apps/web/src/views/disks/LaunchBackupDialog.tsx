@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, Loader2, Play, X } from "lucide-react";
+import { AlertTriangle, Loader2, Play } from "lucide-react";
 
 import {
   getExternalBackupPreview,
@@ -9,6 +9,7 @@ import {
 } from "../../api";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../../components/ui/dialog";
 import { cn } from "../../components/ui/utils";
+import { CloseButton } from "../../ui/CloseButton";
 import type { Language, TranslationDictionary } from "../../i18n";
 import { reasonText } from "../../readiness";
 import type { ExternalBackupPreview, ExternalDisk } from "../../types";
@@ -90,16 +91,7 @@ export function LaunchBackupDialog({
             <span className="truncate text-[14px] font-medium text-fg" data-launch-disk={disk.id}>{disk.display_name}</span>
             {diskSecondary(disk) ? <span className="truncate text-xs text-faint">{diskSecondary(disk)}</span> : null}
           </div>
-          <button
-            type="button"
-            aria-label={t.shell.close}
-            title={t.shell.close}
-            onClick={onClose}
-            className="flex h-8 w-8 flex-none items-center justify-center rounded-lg border-0 bg-transparent p-0 text-faint outline-none hover:bg-subtle hover:text-fg focus-visible:bg-subtle focus-visible:text-fg"
-            data-close
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <CloseButton label={t.shell.close} onClick={onClose} />
         </div>
         <div className="flex flex-col gap-3 px-5 py-4 text-[13px] leading-[1.45]">
           <DialogDescription id="launch-text" className="m-0 text-sm text-muted">
@@ -116,7 +108,7 @@ export function LaunchBackupDialog({
 
           {estimate ? (
             <div
-              className={cn("rounded-[10px] p-3", estimate.sufficient === false ? "bg-danger/15 text-danger-text" : "bg-subtle text-fg")}
+              className={cn("rounded-md p-3", estimate.sufficient === false ? "bg-danger/15 text-danger-text" : "bg-subtle text-fg")}
               data-estimate={estimateKind(estimate)}
             >
               {estimateKind(estimate) === "impossible"
@@ -134,7 +126,7 @@ export function LaunchBackupDialog({
           ) : null}
 
           {warnings.map((warning) => (
-            <div key={warning.code} className="flex gap-2 rounded-[10px] bg-warning/15 p-3 text-warning-text" data-warning={warning.code}>
+            <div key={warning.code} className="flex gap-2 rounded-md bg-warning/15 p-3 text-warning-text" data-warning={warning.code}>
               <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" />
               <span className="flex min-w-0 flex-col gap-1">
                 <span>{fill((text.warning as Record<string, string>)[warning.code], { vmid: String(warning.vmid ?? "") })}</span>
@@ -153,7 +145,7 @@ export function LaunchBackupDialog({
           ))}
 
           {state.blocking.length ? (
-            <ul className="m-0 flex list-none flex-col gap-1 rounded-[10px] bg-danger/15 p-3 text-danger-text" data-blocking={state.blocking.map((r) => r.code).join(",")}>
+            <ul className="m-0 flex list-none flex-col gap-1 rounded-md bg-danger/15 p-3 text-danger-text" data-blocking={state.blocking.map((r) => r.code).join(",")}>
               {state.blocking.map((reason) => (
                 <li key={reason.code}>{reasonText(reason as { code: string; message: string }, reasons, language)}</li>
               ))}
@@ -161,7 +153,7 @@ export function LaunchBackupDialog({
           ) : null}
 
           {state.smartFailed ? (
-            <label className="flex items-start gap-2.5 rounded-[10px] border border-solid border-danger/40 p-3 text-danger-text">
+            <label className="flex items-start gap-2.5 rounded-md border border-solid border-danger/40 p-3 text-danger-text">
               <input type="checkbox" className="m-0 mt-0.5" checked={smartOverride} onChange={(event) => setSmartOverride(event.target.checked)} />
               <span>{text.smartConfirm}</span>
             </label>

@@ -7,12 +7,13 @@ import { DiskTag } from "../disks/DiskTag";
 import { Link } from "react-router-dom";
 
 import { useNow } from "../../ui/useNow";
-import { Search, Server, ShieldCheck } from "lucide-react";
+import { Search } from "lucide-react";
 
 import { cn } from "../../components/ui/utils";
+import { DOT_COLOR, StatusDot, type DotTone } from "../../ui/StatusDot";
 import type { Language, TranslationDictionary } from "../../i18n";
 import type { ExternalCopy, ProxmoxBackupJob, VirtualMachine } from "../../types";
-import { InfoTip } from "../../ui/InfoTip";
+import { PageTitle } from "../../ui/PageTitle";
 import { useToast } from "../../ui/toast";
 import { formatGib } from "../../units";
 import { fill, formatWhen } from "../format";
@@ -32,12 +33,7 @@ import {
 } from "./resourcesModel";
 import { jobLabel } from "./jobsModel";
 
-const BADGE: Record<Protection, string> = {
-  protected: "bg-success/15 text-success-text",
-  unprotected: "bg-danger/15 text-danger-text",
-  ignored: "bg-subtle text-muted",
-  infrastructure: "bg-accent/15 text-accent-text",
-};
+const PROTECTION_TONE: Record<Protection, DotTone> = { protected: "ok", unprotected: "err", ignored: "off", infrastructure: "off" };
 
 const select = "h-8 rounded-lg border border-solid border-border bg-subtle px-2 text-[13px] text-fg outline-none focus:border-accent";
 const ghost = "rounded-lg border border-solid border-border bg-subtle px-3 py-1.5 text-[13px] font-medium text-fg hover:brightness-110 disabled:opacity-50";
@@ -54,10 +50,9 @@ export interface ResourcesViewProps {
 
 export function ProtectionBadge({ protection, t }: { protection: Protection; t: TranslationDictionary }) {
   return (
-    <span className={cn("inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium", BADGE[protection])} data-protection={protection}>
-      {protection === "infrastructure" ? <Server className="h-3 w-3" /> : protection === "protected" ? <ShieldCheck className="h-3 w-3" /> : null}
+    <StatusDot tone={PROTECTION_TONE[protection]} data-protection={protection}>
       {t.resourcesV2.protection[protection]}
-    </span>
+    </StatusDot>
   );
 }
 
@@ -172,10 +167,9 @@ export function ResourcesView({ vms, jobs, language, t, onIgnore, onJobSelection
   }
 
   return (
-    <div className="flex flex-col gap-[18px]">
+    <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="m-0 text-[26px] font-semibold tracking-[-0.02em]">{text.title}</h1>
-        <InfoTip text={text.info} label={t.shell.about} />
+        <PageTitle tip={text.info}>{text.title}</PageTitle>
         <span className="flex-1" />
         <span className="flex flex-wrap gap-1.5">
           {PROTECTIONS.map((protection) => (
@@ -184,8 +178,12 @@ export function ResourcesView({ vms, jobs, language, t, onIgnore, onJobSelection
               type="button"
               onClick={() => set({ protection: filters.protection === protection ? "" : protection })}
               aria-pressed={filters.protection === protection}
-              className={cn("rounded-full border-0 px-2.5 py-1 text-xs font-medium", BADGE[protection], filters.protection === protection && "ring-2 ring-accent")}
+              className={cn(
+                "flex items-center gap-1.5 rounded-md border border-solid px-2.5 py-1 text-[13px]",
+                filters.protection === protection ? "border-border-strong bg-hover text-fg" : "border-border bg-transparent text-muted hover:text-fg",
+              )}
             >
+              <span aria-hidden className={cn("h-[7px] w-[7px] rounded-full", DOT_COLOR[PROTECTION_TONE[protection]])} />
               {t.resourcesV2.protection[protection]} · {counts[protection]}
             </button>
           ))}
@@ -261,14 +259,14 @@ export function ResourcesView({ vms, jobs, language, t, onIgnore, onJobSelection
         </div>
       ) : null}
 
-      <section className="overflow-x-auto rounded-2xl border border-solid border-border bg-surface">
+      <section className="overflow-x-auto rounded-lg border border-solid border-border bg-surface">
         {shown.length === 0 ? (
           <p className="m-0 px-5 py-8 text-center text-[13px] text-faint">{vms.length ? text.noMatch : text.empty}</p>
         ) : (
           <table className="w-full min-w-[900px] border-collapse text-[13px]">
             <thead>
-              <tr className="text-left text-xs text-faint">
-                <th className="w-10 border-0 border-b border-solid border-border px-4 py-2.5">
+              <tr className="bg-subtle text-left text-[13px] text-muted">
+                <th className="w-10 border-0 border-b border-solid border-border px-4 py-2">
                   <input
                     type="checkbox"
                     aria-label={text.selectAll}
@@ -278,11 +276,11 @@ export function ResourcesView({ vms, jobs, language, t, onIgnore, onJobSelection
                   />
                 </th>
                 {[text.col.name, text.col.type, text.col.node, text.col.state, text.col.protection, text.col.size, text.col.lastCopy, text.col.onDisks, text.col.job].map((label) => (
-                  <th key={label} className="border-0 border-b border-solid border-border px-3 py-2.5 font-medium">
+                  <th key={label} className="whitespace-nowrap border-0 border-b border-solid border-border px-3 py-2 font-medium">
                     {label}
                   </th>
                 ))}
-                <th className="w-10 border-0 border-b border-solid border-border px-2 py-2.5">
+                <th className="w-10 border-0 border-b border-solid border-border px-2 py-2">
                   <span className="sr-only">{t.menu.actions}</span>
                 </th>
               </tr>
@@ -309,7 +307,7 @@ export function ResourcesView({ vms, jobs, language, t, onIgnore, onJobSelection
                     </td>
                     <td className="border-0 border-b border-solid border-border px-3 py-2.5">
                       <span className="flex items-center gap-2">
-                        <span className="font-mono text-xs text-faint">{vm.external_id ?? "—"}</span>
+                        <span className="text-xs text-faint">{vm.external_id ?? "—"}</span>
                         <span className="font-medium text-fg">{vm.name}</span>
                       </span>
                     </td>
@@ -326,7 +324,7 @@ export function ResourcesView({ vms, jobs, language, t, onIgnore, onJobSelection
                     <td className="border-0 border-b border-solid border-border px-3 py-2.5">
                       <ProtectionBadge protection={protection} t={t} />
                     </td>
-                    <td className="whitespace-nowrap border-0 border-b border-solid border-border px-3 py-2.5 font-mono text-xs text-muted">{formatGib(vm.size_gb, language)}</td>
+                    <td className="whitespace-nowrap border-0 border-b border-solid border-border px-3 py-2.5 text-xs text-muted">{formatGib(vm.size_gb, language)}</td>
                     <td className="whitespace-nowrap border-0 border-b border-solid border-border px-3 py-2.5 text-muted">
                       {formatWhen(vm.last_external_copy_at ?? null, language, now, t.dashboardV2)}
                     </td>

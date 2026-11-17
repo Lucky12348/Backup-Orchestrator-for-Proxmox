@@ -1,6 +1,6 @@
 {
-  "name": "MyWebSite",
-  "short_name": "MySite",
+  "name": "PBO — Proxmox Backup Orchestrator",
+  "short_name": "PBO",
   "icons": [
     {
       "src": "/favicon/web-app-manifest-192x192.png",
@@ -15,7 +15,7 @@
       "purpose": "maskable"
     }
   ],
-  "theme_color": "#ffffff",
-  "background_color": "#ffffff",
+  "theme_color": "#17181C",
+  "background_color": "#17181C",
   "display": "standalone"
 }

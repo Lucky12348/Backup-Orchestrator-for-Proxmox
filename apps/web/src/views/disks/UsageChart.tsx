@@ -106,7 +106,7 @@ export function UsageChart({ points, name, language, t }: { points: UsagePoint[]
             {points.map((point) => (
               <tr key={point.at} className="border-0 border-t border-solid border-border">
                 <td className="py-1 text-muted">{day(point.at, language)}</td>
-                <td className="py-1 text-right font-mono">{formatUsage(point.usedGb, point.totalGb, language)}</td>
+                <td className="py-1 text-right">{formatUsage(point.usedGb, point.totalGb, language)}</td>
               </tr>
             ))}
           </tbody>

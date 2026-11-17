@@ -63,9 +63,9 @@ export function ConfirmProvider({ children, defaultCancelLabel }: { children: Re
 }
 
 const TONE = {
-  danger: { icon: Trash2, badge: "bg-danger/15 text-danger-text", button: "bg-danger text-white hover:bg-danger/90" },
-  warning: { icon: AlertTriangle, badge: "bg-warning/15 text-warning-text", button: "bg-warning text-black hover:bg-warning/90" },
-  info: { icon: Info, badge: "bg-accent/15 text-accent-text", button: "" },
+  danger: { icon: Trash2, badge: "text-danger-text", button: "bg-danger text-white hover:bg-danger/90" },
+  warning: { icon: AlertTriangle, badge: "text-warning-text", button: "bg-warning text-black hover:bg-warning/90" },
+  info: { icon: Info, badge: "text-accent-text", button: "" },
 } as const;
 
 /** Controlled confirmation dialog (also used by the legacy ConfirmModal API). */
@@ -88,9 +88,7 @@ export function ConfirmDialog({
     <AlertDialog open={open} onOpenChange={(next) => (!next ? onCancel() : undefined)}>
       <AlertDialogContent>
         <div className="flex items-start gap-3">
-          <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg", tone.badge)}>
-            <Icon className="h-4 w-4" />
-          </span>
+          <Icon className={cn("mt-[3px] h-4 w-4 shrink-0", tone.badge)} />
           <div className="flex min-w-0 flex-col gap-1.5">
             <AlertDialogTitle className="text-base font-semibold">{options.title}</AlertDialogTitle>
             {options.description ? (

@@ -6,7 +6,7 @@ import type { TranslationDictionary } from "../../i18n";
 import { useToast } from "../../ui/toast";
 import { parseMinSize } from "./settingsModel";
 
-const input = "w-24 rounded-lg border border-solid border-border-strong bg-bg px-3 py-[7px] text-right text-sm text-fg outline-none focus:border-accent";
+const input = "w-24 rounded-lg border border-solid border-border-strong bg-bg px-3 py-1.5 text-right text-sm text-fg outline-none focus:border-accent";
 const primary = "flex w-fit items-center justify-center gap-2 rounded-lg border-0 bg-accent px-3.5 py-2 text-sm font-medium text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50";
 
 /**
@@ -44,8 +44,8 @@ export function AgentDiskSettings({ t }: { t: TranslationDictionary }) {
   }
 
   return (
-    <section aria-labelledby="agent-disk-settings" className="flex flex-col gap-3.5 rounded-2xl border border-solid border-border bg-surface p-[22px]" data-settings="agents-disks">
-      <h2 id="agent-disk-settings" className="m-0 text-[15px] font-semibold">{text.title}</h2>
+    <section aria-labelledby="agent-disk-settings" className="flex flex-col gap-3.5 rounded-lg border border-solid border-border bg-surface p-5" data-settings="agents-disks">
+      <h2 id="agent-disk-settings" className="m-0 text-sm font-semibold">{text.title}</h2>
       <label className="flex items-start gap-2.5 text-[13px]">
         <input type="checkbox" className="m-0 mt-0.5" checked={autoUpdate} onChange={(event) => setAutoUpdate(event.target.checked)} />
         <span className="flex flex-col gap-0.5">

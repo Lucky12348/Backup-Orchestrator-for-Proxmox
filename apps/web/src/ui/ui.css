@@ -10,52 +10,58 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Design tokens (docs/DESIGN.md): neutral greys + ONE steel-blue accent,
+   reserved for the primary button, focus, progress and links; desaturated
+   status colours. Every text pair is WCAG AA (≥ 4.5:1), dots/rings ≥ 3:1. */
 .pbo-ui,
 .pbo-ui[data-theme="dark"] {
-  --pbo-bg: 9 9 11; /* #09090B */
-  --pbo-surface: 17 17 20; /* #111114 */
-  --pbo-subtle: 24 24 28; /* #18181C */
-  --pbo-hover: 32 32 38; /* #202026 */
-  --pbo-border: 38 38 44; /* #26262C */
-  --pbo-border-strong: 58 58 66; /* #3A3A42 */
-  --pbo-fg: 250 250 250; /* #FAFAFA */
-  --pbo-muted: 161 161 170; /* #A1A1AA */
-  --pbo-faint: 139 139 148; /* #8B8B94 */
-  --pbo-accent: 124 108 255; /* #7C6CFF */
+  --pbo-bg: 13 14 16; /* #0D0E10 */
+  --pbo-surface: 20 21 24; /* #141518 */
+  --pbo-subtle: 26 27 31; /* #1A1B1F */
+  --pbo-hover: 33 34 39; /* #212227 */
+  --pbo-border: 39 40 45; /* #27282D */
+  --pbo-border-strong: 54 56 62; /* #36383E */
+  --pbo-fg: 236 237 239; /* #ECEDEF  15.6:1 on surface */
+  --pbo-muted: 163 166 174; /* #A3A6AE  7.5:1 */
+  --pbo-faint: 135 138 147; /* #878A93  5.3:1 */
+  --pbo-accent: 58 106 158; /* #3A6A9E  white text 5.6:1 */
   --pbo-accent-fg: 255 255 255;
-  --pbo-accent-text: 176 167 255; /* #B0A7FF */
-  --pbo-success: 34 197 94; /* #22C55E */
-  --pbo-success-text: 74 222 128; /* #4ADE80 */
-  --pbo-warning: 245 158 11; /* #F59E0B */
-  --pbo-warning-text: 251 191 36; /* #FBBF24 */
-  --pbo-danger: 239 68 68; /* #EF4444 */
-  --pbo-danger-text: 248 113 113; /* #F87171 */
-  --pbo-console: 5 5 6; /* #050506 */
-  --pbo-console-fg: 212 212 216; /* #D4D4D8 */
+  --pbo-accent-text: 141 179 219; /* #8DB3DB  8.4:1 */
+  --pbo-focus: 92 140 194; /* #5C8CC2  5.2:1 */
+  --pbo-success: 95 163 122; /* #5FA37A */
+  --pbo-success-text: 125 187 149; /* #7DBB95  8.2:1 */
+  --pbo-warning: 201 161 90; /* #C9A15A */
+  --pbo-warning-text: 210 174 106; /* #D2AE6A  8.7:1 */
+  --pbo-danger: 180 80 75; /* #B4504B  white text 5.0:1 */
+  --pbo-danger-text: 227 142 138; /* #E38E8A  7.4:1 */
+  --pbo-console: 10 11 13; /* #0A0B0D */
+  --pbo-console-fg: 212 214 219; /* #D4D6DB  13.5:1 */
   color-scheme: dark;
 }
 
 .pbo-ui[data-theme="light"] {
-  --pbo-bg: 250 250 250;
+  --pbo-bg: 247 247 248; /* #F7F7F8 */
   --pbo-surface: 255 255 255;
-  --pbo-subtle: 244 244 245;
+  --pbo-subtle: 243 243 245; /* #F3F3F5 */
   --pbo-hover: 236 236 239; /* #ECECEF */
-  --pbo-border: 228 228 231;
-  --pbo-border-strong: 212 212 216; /* #D4D4D8 */
-  --pbo-fg: 9 9 11;
-  --pbo-muted: 82 82 91;
-  --pbo-faint: 107 107 116;
-  --pbo-accent: 91 75 235;
+  --pbo-border: 228 228 232; /* #E4E4E8 */
+  --pbo-border-strong: 210 211 216; /* #D2D3D8 */
+  --pbo-fg: 23 24 28; /* #17181C  17.7:1 */
+  --pbo-muted: 88 91 99; /* #585B63  6.8:1 */
+  --pbo-faint: 107 110 119; /* #6B6E77  5.1:1 */
+  --pbo-accent: 47 93 138; /* #2F5D8A  white text 6.9:1 */
   --pbo-accent-fg: 255 255 255;
-  --pbo-accent-text: 75 59 216; /* #4B3BD8 */
-  --pbo-success: 22 163 74;
-  --pbo-success-text: 21 128 61; /* #15803D */
-  --pbo-warning: 217 119 6;
-  --pbo-warning-text: 180 83 9; /* #B45309 */
-  --pbo-danger: 220 38 38;
-  --pbo-danger-text: 185 28 28; /* #B91C1C */
-  --pbo-console: 24 24 27; /* #18181B */
-  --pbo-console-fg: 228 228 231;
+  --pbo-accent-text: 43 87 130; /* #2B5782  7.5:1 */
+  --pbo-focus: 47 93 138; /* #2F5D8A */
+  --pbo-success: 63 138 95; /* #3F8A5F */
+  --pbo-success-text: 46 107 72; /* #2E6B48  6.3:1 */
+  --pbo-warning: 181 134 46; /* #B5862E */
+  --pbo-warning-text: 135 96 26; /* #87601A  5.7:1 */
+  --pbo-danger: 180 69 63; /* #B4453F  white text 5.4:1 */
+  --pbo-danger-text: 162 61 58; /* #A23D3A  6.4:1 */
+  /* The journal follows the theme: a lightly tinted panel in light mode. */
+  --pbo-console: 244 246 249; /* #F4F6F9 */
+  --pbo-console-fg: 42 44 50; /* #2A2C32  12.9:1 */
   color-scheme: light;
 }
 
@@ -63,9 +69,16 @@
   background: rgb(var(--pbo-bg));
   color: rgb(var(--pbo-fg));
   font-family: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
-  font-size: 15px;
-  line-height: 1.55;
+  font-size: 14px;
+  line-height: 1.5;
+  /* Figures line up in tables, timers and percentages (no monospace for numbers). */
+  font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
+}
+
+/* lucide icons: one stroke everywhere (1.5). */
+.pbo-ui svg.lucide {
+  stroke-width: 1.5;
 }
 
 /* Scoped reset (Tailwind preflight equivalent), never inside .pbo-legacy.
@@ -111,6 +124,23 @@
   cursor: not-allowed;
 }
 
+/* Tables: the legacy styles.css styles every th/td (dark uppercase header,
+   padding, colours). Neutralised here; the new UI sets its own (DESIGN.md:
+   normal-case header on a neutral background, rows separated by hairlines). */
+.pbo-ui :where(th, td):where(:not(.pbo-legacy *)) {
+  position: static;
+  padding: 0;
+  border-bottom: 0;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: normal;
+  text-transform: none;
+  text-align: left;
+  vertical-align: middle;
+}
+
 .pbo-ui :where(code, pre, kbd, .font-mono) {
   font-family: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
@@ -121,12 +151,12 @@
 }
 
 .pbo-ui :focus-visible {
-  outline: 2px solid rgb(var(--pbo-accent));
+  outline: 2px solid rgb(var(--pbo-focus));
   outline-offset: 2px;
 }
 
 .pbo-ui ::selection {
-  background: rgb(var(--pbo-accent) / 0.3);
+  background: rgb(var(--pbo-accent) / 0.28);
 }
 
 /* The legacy pages keep their dark styles.css look inside the shell. */
@@ -146,7 +176,7 @@
 
 /* Planning: a running event is striped and the stripes move (planning.html). */
 .pbo-ui .pbo-stripes {
-  background-image: repeating-linear-gradient(135deg, rgb(var(--pbo-accent)) 0 8px, #6a5af0 8px 16px);
+  background-image: repeating-linear-gradient(135deg, rgb(var(--pbo-accent)) 0 8px, rgb(var(--pbo-accent) / 0.82) 8px 16px);
   background-size: 22.63px 22.63px;
   animation: pbo-stripes 1s linear infinite;
 }
@@ -171,5 +201,24 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* Run step bar: the segment in progress breathes; a skipped one is hatched. */
+.pbo-ui .pbo-hatch {
+  background-image: repeating-linear-gradient(135deg, rgb(var(--pbo-border-strong)) 0 2px, transparent 2px 5px);
+}
+.pbo-ui .pbo-indeterminate {
+  background-image: linear-gradient(90deg, transparent, rgb(var(--pbo-accent) / 0.55), transparent);
+  background-size: 50% 100%;
+  background-repeat: no-repeat;
+  animation: pbo-indeterminate 1.4s ease-in-out infinite;
+}
+@keyframes pbo-indeterminate {
+  from {
+    background-position: -50% 0;
+  }
+  to {
+    background-position: 150% 0;
   }
 }

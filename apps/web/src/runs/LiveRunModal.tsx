@@ -1,7 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { RepairButton } from "../views/disks/DiskBits";
-import { AlertTriangle, ArrowDown, Check, Download, Loader2, Minimize2, X } from "lucide-react";
+import { ArrowDown, Download, Loader2, Minimize2 } from "lucide-react";
 import { DiskTag } from "../views/disks/DiskTag";
+import { CloseButton } from "../ui/CloseButton";
+import { StatusIcon, type StatusKind } from "../ui/StatusIcon";
 
 import { cancelExternalBackupRun } from "../api";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../components/ui/dialog";
@@ -17,6 +19,7 @@ import {
   runPercent,
   entryText,
   filterEntries,
+  focusStep,
   formatBytes,
   formatDuration,
   formatRate,
@@ -31,6 +34,7 @@ import {
   runStats,
   stepIndex,
   stepStates,
+  stepTimings,
   type JournalEntry,
   type LogFilter,
   type ResourceRow,
@@ -47,10 +51,25 @@ export function LiveRunModal({ t, language }: { t: TranslationDictionary; langua
   const monitor = useRunMonitor();
   const run = monitor.activeRun;
   const open = monitor.state.open && run !== null;
+  const content = useRef<HTMLDivElement | null>(null);
+  const running = isRunning(run);
+  // When the run ends, the "Minimize" button that held the focus disappears:
+  // the focus goes to the dialog itself, not to the X (5i: stray "|x" mark).
+  useEffect(() => {
+    if (open && !running) content.current?.focus({ preventScroll: true });
+  }, [open, running]);
   return (
     <Dialog open={open} onOpenChange={(next) => (!next ? (run && isRunning(run) ? monitor.minimize() : monitor.close()) : undefined)}>
       {run ? (
-        <DialogContent className="max-w-[1040px]" aria-describedby="run-subtitle">
+        <DialogContent
+          ref={content}
+          className="max-w-[1040px] outline-none"
+          aria-describedby="run-subtitle"
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            content.current?.focus({ preventScroll: true });
+          }}
+        >
           <RunView run={run} t={t} language={language} />
         </DialogContent>
       ) : null}
@@ -80,6 +99,7 @@ export function RunView({ run, t, language }: { run: RunLike; t: TranslationDict
   const states = stepStates(run, entries);
   const stats = runStats(run, now);
   const steps = runSteps(run);
+  const timings = stepTimings(run, entries, steps, states, now);
   // B35: the whole run, weighted by step (the copy's own % inside its step).
   const percent = runPercent(run, entries);
   const resources = resourceRows(run, entries);
@@ -124,9 +144,7 @@ export function RunView({ run, t, language }: { run: RunLike; t: TranslationDict
                 ? text.title.cleanup
                 : text.title.running;
 
-  const headerTone =
-    run.status === "failed" ? "bg-danger/15 text-danger-text" : run.status === "success" ? "bg-success/15 text-success-text" : "bg-accent text-accent-fg";
-  const barColor = run.status === "failed" ? "bg-danger" : run.status === "success" ? "bg-success" : "bg-accent";
+  const headerKind: StatusKind = running ? "running" : run.status === "success" ? "success" : "failed";
 
   const statsLine = [
     summary
@@ -136,12 +154,27 @@ export function RunView({ run, t, language }: { run: RunLike; t: TranslationDict
         : null,
     formatRate(stats.rate, lang),
     running && stats.remainingSeconds !== null ? fill(text.remaining, { duration: formatDuration(stats.remainingSeconds, lang) ?? "" }) : null,
-    !running ? formatDuration(stats.elapsedSeconds, lang) : null,
   ]
     .filter(Boolean)
     .join(" · ");
 
   const visible = filterEntries(entries, filter);
+
+  // One line under the bar: "Step 5 of 7 · Cleanup · retention and GC · 42 s".
+  const focus = focusStep(states);
+  const focusKey = steps[focus];
+  const focusDuration = formatDuration(timings[focus], lang);
+  const stepLine =
+    run.status === "success"
+      ? fill(text.finishedIn, { duration: formatDuration(stats.elapsedSeconds, lang) ?? "—" })
+      : [
+          fill(text.stepOf, { n: focus + 1, total: steps.length }),
+          text.steps[focusKey],
+          run.status === "failed" ? text.stepFailed : (text.stepSub as Record<string, string>)[focusKey],
+          run.status === "failed" ? null : focusDuration,
+        ]
+          .filter(Boolean)
+          .join(" · ");
 
   function download() {
     const blob = new Blob([journalText(entries, t.runLog as Record<string, string>, monitor.journal?.timezone, lang)], { type: "text/plain;charset=utf-8" });
@@ -169,67 +202,67 @@ export function RunView({ run, t, language }: { run: RunLike; t: TranslationDict
 
   return (
     <>
-      <div className="flex flex-wrap items-start gap-3.5 px-[22px] pb-4 pt-5">
-        <div className={cn("flex h-10 w-10 items-center justify-center rounded-[10px]", headerTone)}>
-          {running ? <Loader2 className="h-5 w-5 animate-spin" /> : run.status === "success" ? <Check className="h-5 w-5" strokeWidth={2.4} /> : <AlertTriangle className="h-5 w-5" />}
-        </div>
-        <div className="flex min-w-[240px] flex-1 flex-col gap-1">
-          <DialogTitle className="m-0 text-lg font-semibold tracking-[-0.01em]">{title}</DialogTitle>
-          <DialogDescription id="run-subtitle" className="m-0 text-[13px] text-muted">
-            {eject ? text.kind.eject : run.repair ? text.kind.repair : run.verify_only ? text.kind.verify : text.kind.backup} · {fill(text.subtitle, { time: clockTime(run.started_at.endsWith("Z") ? run.started_at : `${run.started_at}Z`) })} ·{" "}
-            <DiskTag id={run.disk_id} fallback={diskName} t={t} size="sm" secondary nameClassName="font-medium text-fg" />
-            {target ? (
-              <>
-                {" "}
-                <span className="font-mono text-faint">
-                  {source ? `${source} → ` : ""}
-                  {target}
-                </span>
-              </>
-            ) : null}
+      <div className="flex items-start gap-3 px-6 pb-3 pt-5">
+        <StatusIcon kind={headerKind} progress={running ? percent : undefined} size={20} className="mt-[3px]" />
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <DialogTitle className="m-0 text-[17px] font-semibold tracking-[-0.01em]">{title}</DialogTitle>
+          <DialogDescription id="run-subtitle" className="m-0 flex flex-wrap items-center gap-x-1.5 text-[13px] text-muted">
+            <span>{eject ? text.kind.eject : run.repair ? text.kind.repair : run.verify_only ? text.kind.verify : text.kind.backup}</span>
+            <span aria-hidden>·</span>
+            <span>{fill(text.subtitle, { time: clockTime(run.started_at.endsWith("Z") ? run.started_at : `${run.started_at}Z`) })}</span>
+            <span aria-hidden>·</span>
+            <DiskTag id={run.disk_id} fallback={diskName} t={t} size="xs" nameClassName="text-fg" />
           </DialogDescription>
         </div>
         {running ? (
           <button
             type="button"
             onClick={monitor.minimize}
-            className="flex items-center gap-2 rounded-lg border border-border px-3 py-[7px] text-[13px] font-medium text-muted hover:bg-subtle"
+            aria-label={text.minimize}
+            title={text.minimize}
+            className="flex items-center gap-1.5 rounded-md border border-solid border-border bg-transparent px-2.5 py-1.5 text-[13px] font-medium text-muted outline-none hover:bg-hover hover:text-fg focus-visible:ring-2 focus-visible:ring-focus"
           >
-            <Minimize2 className="h-[15px] w-[15px]" />
-            {text.minimize}
+            <Minimize2 className="h-4 w-4" />
+            <span className="hidden sm:inline">{text.minimize}</span>
           </button>
         ) : null}
-        <button
-          type="button"
-          aria-label={text.close}
-          onClick={running ? monitor.minimize : monitor.close}
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-faint hover:bg-subtle hover:text-fg"
-        >
-          <X className="h-4 w-4" />
-        </button>
+        <CloseButton label={text.close} onClick={running ? monitor.minimize : monitor.close} />
       </div>
 
-      <div className="flex flex-col gap-2.5 px-[22px] pb-[18px]">
-        <div className="flex flex-wrap items-baseline gap-3.5">
-          <span className="text-[40px] font-semibold tracking-[-0.03em] tabular-nums" data-percent={Math.floor(percent)}>{Math.floor(percent)} %</span>
-          <span className="font-mono text-[13px] text-muted">{statsLine}</span>
+      <div className="flex flex-col gap-2.5 px-6 pb-4">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <span className="text-[36px] font-semibold leading-none tracking-[-0.03em]" data-percent={Math.floor(percent)}>{Math.floor(percent)} %</span>
+          {statsLine ? <span className="text-[13px] text-muted" data-stats>{statsLine}</span> : null}
         </div>
-        <div className="h-2 overflow-hidden rounded-full bg-subtle">
-          <div className={cn("h-full rounded-full transition-[width] duration-500 motion-reduce:transition-none", barColor)} style={{ width: `${percent.toFixed(1)}%` }} />
-        </div>
+        <StepBar run={run} steps={steps} states={states} timings={timings} t={t} lang={lang} />
+        <p className="m-0 text-[13px] text-muted" data-step-line>{stepLine}</p>
+        <details className="text-[13px] text-muted" data-run-details>
+          <summary className="w-fit cursor-pointer select-none text-faint hover:text-fg">{text.details}</summary>
+          <dl className="m-0 mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1">
+            {target ? (
+              <>
+                <dt className="text-faint">{text.route}</dt>
+                <dd className="m-0 font-mono text-xs text-fg [overflow-wrap:anywhere]" data-route>
+                  {source ? `${source} → ` : ""}
+                  {target}
+                </dd>
+              </>
+            ) : null}
+            <dt className="text-faint">{text.runId}</dt>
+            <dd className="m-0 text-fg">#{run.id}</dd>
+          </dl>
+        </details>
       </div>
 
-      <StepList states={states} steps={steps} t={t} />
-
-      <div className="flex min-h-0 flex-1 flex-wrap overflow-auto">
+      <div className="flex min-h-0 flex-1 flex-wrap overflow-auto border-0 border-t border-solid border-border">
         {resources.rows.length ? (
           <ResourceList rows={resources.rows} pending={resources.pending} t={t} lang={lang} groupName={monitor.groupName} />
         ) : (
           <ActivityPanel activity={activity} running={running} t={t} lang={lang} summary={summary ? copySummary(summary, text, lang) : null} />
         )}
         <div className="flex min-w-0 flex-[1.6_1_420px] flex-col bg-console">
-          <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-3.5 py-2.5">
-            <span className="flex flex-1 items-center gap-2 text-[13px] font-semibold text-console-fg">
+          <div className="flex flex-wrap items-center gap-1.5 border-0 border-b border-solid border-border px-3.5 py-2">
+            <span className="flex flex-1 items-center gap-2 text-[13px] font-medium text-console-fg">
               <span className={cn("h-[7px] w-[7px] rounded-full", running ? "animate-soft-pulse bg-success" : "bg-faint")} />
               {text.log}
             </span>
@@ -238,17 +271,18 @@ export function RunView({ run, t, language }: { run: RunLike; t: TranslationDict
                 key={key}
                 type="button"
                 onClick={() => setFilter(key)}
+                aria-pressed={filter === key}
                 className={cn(
-                  "rounded-full border px-2.5 py-1 text-xs",
-                  // The console stays dark in both themes: fixed colours, as in the mockup.
-                  filter === key ? "border-[#7C6CFF73] bg-[#7C6CFF2E] text-[#B0A7FF]" : "border-[#3A3A42] text-[#A1A1AA] hover:text-console-fg",
+                  "rounded-md border border-solid px-2 py-0.5 text-xs",
+                  // 5i: the journal follows the theme (tokens only).
+                  filter === key ? "border-border-strong bg-hover text-console-fg" : "border-transparent bg-transparent text-faint hover:text-console-fg",
                 )}
               >
                 {text.filters[key]}
               </button>
             ))}
-            <button type="button" onClick={download} aria-label={text.download} title={text.download} className="p-1 text-faint hover:text-console-fg">
-              <Download className="h-[15px] w-[15px]" />
+            <button type="button" onClick={download} aria-label={text.download} title={text.download} className="rounded-md border-0 bg-transparent p-1 text-faint hover:text-console-fg">
+              <Download className="h-4 w-4" />
             </button>
           </div>
           <LogLines entries={visible} templates={t.runLog as Record<string, string>} empty={text.emptyLog} lang={lang} follow={running} resumeLabel={text.resumeFollow} />
@@ -256,16 +290,16 @@ export function RunView({ run, t, language }: { run: RunLike; t: TranslationDict
       </div>
 
       {confirmCancel ? (
-        <div className="flex flex-wrap items-center gap-3 border-t border-border bg-danger/15 px-[22px] py-3">
+        <div className="flex flex-wrap items-center gap-3 border-0 border-t border-solid border-border bg-danger/10 px-6 py-3">
           <span className="flex-1 text-[13px] text-danger-text">{text.cancelConfirm}</span>
-          <button type="button" onClick={() => setConfirmCancel(false)} className="rounded-lg border border-border bg-surface px-3 py-[7px] text-[13px] font-medium hover:bg-subtle">
+          <button type="button" onClick={() => setConfirmCancel(false)} className="rounded-lg border border-border bg-surface px-3 py-1.5 text-[13px] font-medium hover:bg-subtle">
             {text.keepGoing}
           </button>
           <button
             type="button"
             disabled={cancelling}
             onClick={() => void doCancel()}
-            className="flex items-center gap-2 rounded-lg bg-danger px-3 py-[7px] text-[13px] font-medium text-white hover:bg-danger/90"
+            className="flex items-center gap-2 rounded-lg bg-danger px-3 py-1.5 text-[13px] font-medium text-white hover:bg-danger/90"
           >
             {cancelling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
             {text.confirmCancel}
@@ -273,10 +307,10 @@ export function RunView({ run, t, language }: { run: RunLike; t: TranslationDict
         </div>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-4 border-t border-border px-[22px] py-3.5">
+      <div className="flex flex-wrap items-center gap-4 border-0 border-t border-solid border-border px-6 py-3">
         {!eject ? (
           <label className="flex items-center gap-2 text-[13px] text-muted">
-            <input type="checkbox" checked={Boolean(run.auto_eject_after_success)} disabled readOnly className="h-4 w-4 accent-[rgb(var(--pbo-accent))]" />
+            <input type="checkbox" checked={Boolean(run.auto_eject_after_success)} disabled readOnly className="h-4 w-4 accent-accent" />
             {text.ejectAtEnd}
           </label>
         ) : null}
@@ -290,17 +324,17 @@ export function RunView({ run, t, language }: { run: RunLike; t: TranslationDict
               <button
                 type="button"
                 onClick={() => setConfirmCancel(true)}
-                className="rounded-lg bg-danger/15 px-3.5 py-[9px] text-sm font-medium text-danger-text hover:bg-danger/25"
+                className="rounded-md border border-solid border-border bg-transparent px-3 py-1.5 text-[13px] font-medium text-danger-text hover:bg-hover"
               >
                 {text.cancel}
               </button>
             ) : null}
-            <button type="button" onClick={monitor.minimize} className="rounded-lg bg-accent px-3.5 py-[9px] text-sm font-medium text-accent-fg hover:bg-accent/90">
+            <button type="button" onClick={monitor.minimize} className="rounded-md border-0 bg-accent px-3 py-1.5 text-[13px] font-medium text-accent-fg hover:bg-accent/90">
               {text.minimizeContinue}
             </button>
           </>
         ) : (
-          <button type="button" onClick={monitor.close} className="rounded-lg bg-accent px-3.5 py-[9px] text-sm font-medium text-accent-fg hover:bg-accent/90">
+          <button type="button" onClick={monitor.close} className="rounded-md border-0 bg-accent px-3 py-1.5 text-[13px] font-medium text-accent-fg hover:bg-accent/90">
             {text.close}
           </button>
         )}
@@ -309,29 +343,72 @@ export function RunView({ run, t, language }: { run: RunLike; t: TranslationDict
   );
 }
 
-const STEP_STYLE: Record<StepState, { circle: string; label: string }> = {
-  done: { circle: "border-transparent bg-success/15 text-success-text", label: "text-fg" },
-  active: { circle: "border-accent bg-accent text-accent-fg", label: "text-fg" },
-  upcoming: { circle: "border-border-strong text-faint", label: "text-faint" },
-  failed: { circle: "border-transparent bg-danger/15 text-danger-text", label: "text-fg" },
-  skipped: { circle: "border-dashed border-border-strong text-faint", label: "text-faint" },
-  not_run: { circle: "border-dashed border-border-strong text-faint", label: "text-faint line-through" },
-};
+/** Segment colour per step state ("done" turns green once the whole run succeeded). */
+function segmentClass(state: StepState, runSucceeded: boolean): string {
+  switch (state) {
+    case "done":
+      return runSucceeded ? "bg-success" : "bg-accent";
+    case "active":
+      return "bg-accent/20";
+    case "failed":
+      return "bg-danger";
+    case "skipped":
+      return "pbo-hatch";
+    case "not_run":
+      return "bg-border opacity-60";
+    default:
+      return "bg-border";
+  }
+}
 
-export function StepList({ states, steps = RUN_STEPS, t }: { states: StepState[]; steps?: readonly RunStepKey[]; t: TranslationDictionary }) {
+/**
+ * 5i: the steps as ONE segmented bar (docs/design/mockups/live-run-modal.html):
+ * filled = done, animated = in progress, hatched = skipped, red = failed.
+ * Hovering a segment shows its name and duration.
+ */
+export function StepBar({
+  run,
+  steps = RUN_STEPS,
+  states,
+  timings = [],
+  t,
+  lang = "en",
+}: {
+  run?: Pick<RunLike, "status" | "progress_percent">;
+  steps?: readonly RunStepKey[];
+  states: StepState[];
+  timings?: (number | null)[];
+  t: TranslationDictionary;
+  lang?: "fr" | "en";
+}) {
   const text = t.runModal;
+  const succeeded = run?.status === "success";
   return (
-    <ol aria-label={text.stepsLabel} className="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-2 border-y border-border bg-bg px-[22px] py-3.5">
+    <ol aria-label={text.stepsLabel} className="m-0 flex list-none gap-[3px] p-0" data-step-bar>
       {steps.map((key, index) => {
         const state = states[index];
+        const seconds = timings[index] ?? null;
+        const word =
+          state === "skipped" ? text.stepSub.skipped : state === "not_run" ? text.stepSub.notRun : state === "upcoming" ? text.waiting : state === "failed" ? text.stepFailed : null;
+        const label = [text.steps[key], seconds !== null ? formatDuration(seconds, lang) : null, word].filter(Boolean).join(" · ");
+        const copy = key === "sync" && typeof run?.progress_percent === "number" ? Math.max(2, Math.min(100, run.progress_percent)) : null;
         return (
-          <li key={key} className="flex items-center gap-2.5" data-state={state}>
-            <span className={cn("flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full border text-xs font-semibold", STEP_STYLE[state].circle)}>
-              {state === "done" ? "✓" : state === "failed" ? "!" : state === "skipped" || state === "not_run" ? "–" : index + 1}
+          <li key={key} className="group relative min-w-0 flex-1 py-1.5" data-state={state} data-step={key}>
+            <span className={cn("relative block h-1.5 overflow-hidden rounded-full", segmentClass(state, succeeded))}>
+              {state === "active" ? (
+                copy !== null ? (
+                  <span className="absolute inset-y-0 left-0 rounded-full bg-accent transition-[width] duration-500 motion-reduce:transition-none" style={{ width: `${copy}%` }} />
+                ) : (
+                  <span className="pbo-indeterminate absolute inset-0" />
+                )
+              ) : null}
             </span>
-            <span className="flex min-w-0 flex-col">
-              <span className={cn("text-[13px] font-medium", STEP_STYLE[state].label)}>{text.steps[key]}</span>
-              <span className="text-[11px] text-faint">{state === "skipped" ? text.stepSub.skipped : state === "not_run" ? text.stepSub.notRun : text.stepSub[key]}</span>
+            <span className="sr-only">{label}</span>
+            <span
+              aria-hidden
+              className="pointer-events-none invisible absolute bottom-full left-1/2 z-20 mb-1 -translate-x-1/2 whitespace-nowrap rounded-md border border-solid border-border bg-surface px-2 py-1 text-xs text-fg opacity-0 shadow-md transition-opacity group-hover:visible group-hover:opacity-100"
+            >
+              {label}
             </span>
           </li>
         );
@@ -339,6 +416,8 @@ export function StepList({ states, steps = RUN_STEPS, t }: { states: StepState[]
     </ol>
   );
 }
+
+const ROW_KIND: Record<ResourceRow["state"], StatusKind> = { done: "success", running: "running", failed: "failed", pending: "pending" };
 
 function ResourceList({
   rows,
@@ -357,28 +436,18 @@ function ResourceList({
   const done = rows.filter((row) => row.state === "done").length;
   return (
     <div className="flex min-w-0 flex-[1_1_320px] flex-col border-r border-border">
-      <div className="flex items-center px-[18px] py-3 text-[13px] font-semibold">
+      <div className="flex items-center px-4 py-3 text-[13px] font-semibold">
         <span className="flex-1">{text.resources}</span>
         {rows.length ? <span className="font-normal text-faint">{fill(text.resourcesDone, { done, total: rows.length + pending })}</span> : null}
       </div>
       <div className="flex max-h-[360px] flex-col overflow-auto">
-        {rows.length === 0 ? <p className="px-[18px] pb-4 text-[13px] text-faint">{text.noResources}</p> : null}
+        {rows.length === 0 ? <p className="px-4 pb-4 text-[13px] text-faint">{text.noResources}</p> : null}
         {rows.map((row) => (
-          <div key={row.group} className={cn("flex items-center gap-2.5 px-[18px] py-2", row.state === "running" && "bg-accent/10")}>
-            <span
-              className={cn(
-                "flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full text-[10px]",
-                row.state === "done" && "bg-success/15 text-success-text",
-                row.state === "running" && "bg-accent text-accent-fg",
-                row.state === "failed" && "bg-danger/15 text-danger-text",
-                row.state === "pending" && "bg-subtle",
-              )}
-            >
-              {row.state === "done" ? "✓" : row.state === "running" ? "•" : row.state === "failed" ? "!" : ""}
-            </span>
+          <div key={row.group} className={cn("flex items-center gap-2.5 px-4 py-2", row.state === "running" && "bg-hover")} data-resource={row.state}>
+            <StatusIcon kind={ROW_KIND[row.state]} />
             <span className="w-11 font-mono text-[11px] text-faint">{row.group}</span>
             <span className={cn("min-w-0 flex-1 truncate text-[13px]", row.state === "pending" ? "text-faint" : "text-fg")}>{groupName(row.group) ?? row.group}</span>
-            <span className="font-mono text-xs text-faint">
+            <span className="text-xs text-faint">
               {row.state === "pending"
                 ? text.waiting
                 : row.state === "running" && !row.bytes
@@ -389,13 +458,13 @@ function ResourceList({
             </span>
           </div>
         ))}
-        {pending > 0 ? <p className="px-[18px] py-2 text-[13px] text-faint">{fill(text.pendingMore, { n: pending })}</p> : null}
+        {pending > 0 ? <p className="px-4 py-2 text-[13px] text-faint">{fill(text.pendingMore, { n: pending })}</p> : null}
       </div>
     </div>
   );
 }
 
-const LEVEL_COLOR = { info: "text-[#7DD3FC]", ok: "text-[#4ADE80]", warn: "text-[#FBBF24]", err: "text-[#F87171]" } as const;
+const LEVEL_COLOR = { info: "text-accent-text", ok: "text-success-text", warn: "text-warning-text", err: "text-danger-text" } as const;
 
 /**
  * B36: while the run goes on and the reader is at the bottom, the journal
@@ -445,12 +514,12 @@ export function LogLines({
       {entries.length === 0 ? <p className="text-faint">{empty}</p> : null}
       {shown.map((entry, index) => (
         <div key={index} className="flex gap-2.5" data-level={entry.level} data-source={entry.source}>
-          <span className="shrink-0 text-[#71717A]">{clockTime(entry.at)}</span>
+          <span className="shrink-0 text-faint">{clockTime(entry.at)}</span>
           <span className={cn("w-[38px] shrink-0", LEVEL_COLOR[entry.level])}>{LEVEL_LABEL[entry.level]}</span>
-          {entry.source === "pbs" ? <span className="mt-px h-[17px] shrink-0 self-start rounded bg-white/10 px-1 text-[10px] leading-[17px] text-[#A1A1AA]">PBS</span> : null}
+          {entry.source === "pbs" ? <span className="mt-px h-[17px] shrink-0 self-start rounded bg-fg/10 px-1 text-[10px] leading-[17px] text-muted">PBS</span> : null}
           <span className="min-w-0 break-words text-console-fg">
             {entryText(entry, templates, lang)}
-            {entry.count > 1 ? <span className="text-[#71717A]"> ×{entry.count}</span> : null}
+            {entry.count > 1 ? <span className="text-faint"> ×{entry.count}</span> : null}
           </span>
         </div>
       ))}
@@ -493,13 +562,13 @@ function ActivityPanel({
   const step = activity.step;
   return (
     <div className="flex min-w-0 flex-[1_1_320px] flex-col border-r border-border" data-activity-panel={step ?? ""}>
-      <div className="flex items-center px-[18px] py-3 text-[13px] font-semibold">
+      <div className="flex items-center px-4 py-3 text-[13px] font-semibold">
         <span className="flex-1">{running ? text.nowDoing : text.whatHappened}</span>
       </div>
-      <div className="flex flex-col gap-2 px-[18px] pb-4">
+      <div className="flex flex-col gap-2 px-4 pb-4">
         {step ? (
           <span className="flex items-center gap-2 text-[13px] font-medium text-fg">
-            {running ? <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-text motion-reduce:animate-none" /> : <Check className="h-3.5 w-3.5 text-success-text" />}
+            <StatusIcon kind={running ? "running" : "success"} />
             {(text.steps as Record<string, string>)[step] ?? step}
             <span className="font-normal text-faint">· {(text.stepSub as Record<string, string>)[step] ?? ""}</span>
           </span>

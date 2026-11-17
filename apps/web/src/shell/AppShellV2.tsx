@@ -14,7 +14,6 @@ import {
   Plug,
   Search,
   Server,
-  ShieldCheck,
   SlidersHorizontal,
   Sun,
   X,
@@ -30,7 +29,9 @@ import { RunPill } from "../runs/RunPill";
 import type { ExternalDisk, VirtualMachine } from "../types";
 import { ConfirmProvider } from "../ui/confirm";
 import { Popover } from "../ui/Popover";
+import { Logo } from "../ui/Logo";
 import { PortalContainerContext } from "../ui/portal";
+import { StatusDot } from "../ui/StatusDot";
 import { useTheme } from "../ui/theme";
 import { ToastProvider, useToast } from "../ui/toast";
 import { DiskAvatar } from "../views/disks/DiskBits";
@@ -164,26 +165,20 @@ function ShellLayout({
   const sidebar = (
     // No text caret / selection in the menu (a caret showed under "Settings").
     <aside className="flex h-full w-[248px] select-none flex-col gap-0.5 border-r border-border bg-surface px-4 pb-4 pt-5 [caret-color:transparent]">
-      <div className="flex items-center gap-2.5 px-1.5 pb-5">
-        <div className="flex h-8 w-8 items-center justify-center rounded-[9px] bg-accent text-white">
-          <ShieldCheck className="h-[18px] w-[18px]" />
-        </div>
-        <div className="flex flex-col">
-          <span className="text-[15px] font-semibold">PBO</span>
-          <span className="text-xs text-faint">Backup Orchestrator</span>
-        </div>
+      <div className="flex items-center gap-2 px-1.5 pb-5">
+        <Logo />
       </div>
       <SectionLabel>{t.shell.overview}</SectionLabel>
       {OVERVIEW.map((item) => (
         <NavItem key={item.to} to={item.to} icon={item.icon} label={label(item.key)}>
           {item.key === "disks" && newDisks > 0 ? (
-            <span className="rounded-full bg-warning/15 px-[7px] py-px text-[11px] font-medium text-warning-text">
+            <StatusDot tone="warn" className="text-xs">
               {t.shell.newDisks.replace("{n}", String(newDisks))}
-            </span>
+            </StatusDot>
           ) : null}
         </NavItem>
       ))}
-      <SectionLabel className="pt-[18px]">{t.shell.configuration}</SectionLabel>
+      <SectionLabel className="pt-4">{t.shell.configuration}</SectionLabel>
       {CONFIGURATION.map((item) => (
         <NavItem key={item.to} to={item.to} icon={item.icon} label={label(item.key)} />
       ))}

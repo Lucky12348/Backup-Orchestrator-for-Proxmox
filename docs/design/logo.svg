@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 76 24" width="152" height="48" fill="none">
+  <!-- PBO logo: the mark + the word "PBO" (Geist 600). Monochrome; use logo-mark.svg alone for icons. -->
+  <path d="M4.2 13.6A8 8 0 0 1 17.6 6.3" stroke="#17181C" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M19.8 10.4A8 8 0 0 1 6.4 17.7" stroke="#17181C" stroke-width="2.2" stroke-linecap="round"/>
+  <circle cx="12" cy="12" r="2.1" fill="#17181C"/>
+  <text x="30" y="17.2" fill="#17181C" font-family="Geist, 'Geist Variable', ui-sans-serif, system-ui, sans-serif" font-size="15" font-weight="600" letter-spacing="-0.15">PBO</text>
+</svg>

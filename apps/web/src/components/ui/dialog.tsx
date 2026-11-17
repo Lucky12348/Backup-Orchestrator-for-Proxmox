@@ -27,7 +27,8 @@ const DialogContent = React.forwardRef<
       <DialogPrimitive.Content
         ref={ref}
         className={cn(
-          "fixed left-1/2 top-12 z-50 flex max-h-[calc(100vh-96px)] w-[calc(100%-40px)] -translate-x-1/2 flex-col overflow-hidden rounded-xl border border-border bg-surface text-fg shadow-2xl animate-fade-in",
+          // The dialog itself takes the focus on open (never a stray ring around it).
+          "fixed left-1/2 top-12 z-50 flex max-h-[calc(100vh-96px)] w-[calc(100%-40px)] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-border bg-surface text-fg shadow-2xl animate-fade-in focus-visible:outline-none",
           className,
         )}
         {...props}

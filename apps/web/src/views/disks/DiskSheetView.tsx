@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Camera, Loader2, Pencil, Play, RefreshCw, ShieldCheck, Trash2, Unplug, X } from "lucide-react";
-import { Link, useParams } from "react-router-dom";
+import { ArrowLeft, Camera, Loader2, Pencil, Play, RefreshCw, ShieldCheck, Trash2, Unplug } from "lucide-react";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import {
   deleteDiskPhoto,
@@ -17,6 +17,8 @@ import {
   type DiskContents,
 } from "../../api";
 import { cn } from "../../components/ui/utils";
+import { CloseButton } from "../../ui/CloseButton";
+import { StatusDot, type DotTone } from "../../ui/StatusDot";
 import type { Language, TranslationDictionary } from "../../i18n";
 import { ApiError } from "../../notices";
 import { openRunModal } from "../../runs/openRun";
@@ -46,17 +48,12 @@ import {
 } from "./diskProfile";
 import { StatusPill } from "./DisksView";
 
-const card = "flex flex-col gap-3 rounded-[14px] border border-solid border-border bg-surface p-[18px]";
-const input = "rounded-lg border border-solid border-border-strong bg-bg px-3 py-[9px] text-sm text-fg outline-none focus:border-accent";
+const card = "flex flex-col gap-3 rounded-lg border border-solid border-border bg-surface p-4";
+const input = "rounded-lg border border-solid border-border-strong bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent";
 const secondary =
-  "flex items-center justify-center gap-2 rounded-lg border border-solid border-border bg-subtle px-3 py-[9px] text-[13px] font-medium text-fg hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50";
-const primary = "flex items-center justify-center gap-2 rounded-lg border-0 bg-accent px-3.5 py-[9px] text-[13px] font-medium text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50";
-const SMART_TONE: Record<string, string> = {
-  ok: "bg-success/15 text-success-text",
-  warning: "bg-warning/15 text-warning-text",
-  danger: "bg-danger/15 text-danger-text",
-  unknown: "bg-subtle text-muted",
-};
+  "flex items-center justify-center gap-2 rounded-lg border border-solid border-border bg-subtle px-3 py-2 text-[13px] font-medium text-fg hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50";
+const primary = "flex items-center justify-center gap-2 rounded-lg border-0 bg-accent px-3.5 py-2 text-[13px] font-medium text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50";
+const SMART_TONE: Record<string, DotTone> = { ok: "ok", warning: "warn", danger: "err", unknown: "off" };
 
 export interface DiskSheetViewProps {
   disks: ExternalDisk[];
@@ -75,24 +72,40 @@ export function errorMessage(error: unknown, t: TranslationDictionary): string {
   return error instanceof Error ? error.message : t.error;
 }
 
+/** Whether a navigation asks for the identity panel: router state `{ editIdentity: true }`
+ *  (disk menu), or a legacy #identity link. */
+export function wantsIdentityPanel(state: unknown, hash: string): boolean {
+  return hash === "#identity" || Boolean(state && typeof state === "object" && (state as { editIdentity?: unknown }).editIdentity === true);
+}
+
 export function DiskSheetView({ disks, runs, alerts, events = [], language, t, onChanged }: DiskSheetViewProps) {
   const { id } = useParams();
   const disk = disks.find((item) => String(item.id) === id);
   const text = t.diskSheet;
   // "Rename / colour…" from a disk menu lands on /disks/:id#identity: the panel opens.
-  const [editing, setEditing] = useState(() => typeof window !== "undefined" && window.location.hash === "#identity");
+  // The identity panel is page state. A request to open it (disk menu
+  // "Rename / colour…": router state; old links: #identity) is consumed once
+  // and removed from the history entry, so F5 never reopens it.
+  const [editing, setEditing] = useState(false);
+  const location = useLocation();
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (!wantsIdentityPanel(location.state, location.hash)) return;
+    setEditing(true);
+    navigate({ pathname: location.pathname, search: location.search }, { replace: true, state: null });
+  }, [location.key]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!disk) {
     return (
       <div className="flex flex-col gap-4">
         <BackLink t={t} />
-        <p className="m-0 text-[15px] text-muted">{text.notFound}</p>
+        <p className="m-0 text-sm text-muted">{text.notFound}</p>
       </div>
     );
   }
   const row = diskRows([disk], runs)[0];
   const diskAlerts = alertsFor(alerts, disk.id);
   return (
-    <div className="flex flex-col gap-[18px]" data-disk-sheet={disk.id}>
+    <div className="flex flex-col gap-4" data-disk-sheet={disk.id}>
       <BackLink t={t} />
       {/* Phase 5h.1: a compact header on the whole width, the identity edited in a side panel. */}
       <SheetHeader disk={disk} row={row} alerts={diskAlerts} runs={runs} events={events} language={language} t={t} onEdit={() => setEditing(true)} onChanged={onChanged} />
@@ -116,16 +129,16 @@ export function DiskSheetView({ disks, runs, alerts, events = [], language, t, o
       ) : null}
 
       {/* 2/3 – 1/3; one column on mobile. */}
-      <div className="grid items-start gap-[18px] lg:grid-cols-3">
-        <div className="flex min-w-0 flex-col gap-[18px] lg:col-span-2">
+      <div className="grid items-start gap-4 lg:grid-cols-3">
+        <div className="flex min-w-0 flex-col gap-4 lg:col-span-2">
           <ContentsCard disk={disk} t={t} language={language} />
           <CapacityCard disk={disk} runs={runs} language={language} t={t} className={card} />
           <section className={card} aria-labelledby="history-title">
-            <h2 id="history-title" className="m-0 text-[15px] font-semibold">{text.history}</h2>
+            <h2 id="history-title" className="m-0 text-sm font-semibold">{text.history}</h2>
             <DiskHistoryList disk={disk} runs={runs} language={language} t={t} pageSize={10} filterable />
           </section>
         </div>
-        <div className="flex min-w-0 flex-col gap-[18px]">
+        <div className="flex min-w-0 flex-col gap-4">
           <HealthCard disk={disk} t={t} language={language} />
           <RetentionCard disk={disk} t={t} onChanged={onChanged} />
           <ReminderCard t={t} />
@@ -309,7 +322,7 @@ function VerifyBanner({
     }
   }
   return (
-    <div role="alert" className="flex flex-wrap items-center gap-3 rounded-[14px] bg-warning/15 p-4 text-[13px] leading-[1.45] text-warning-text" data-verify-banner>
+    <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg bg-warning/15 p-4 text-[13px] leading-[1.45] text-warning-text" data-verify-banner>
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <b>{failed ? text.failedTitle : disk.verify_required ? text.requiredTitle : text.title}</b>
         <span>{failed ? text.failedText : disk.verify_required ? text.requiredText : fill(text.text, { when: when(disk.unsafe_removal_at, language, t) })}</span>
@@ -357,7 +370,7 @@ export function ContentsCard({ disk, t, language, initial }: { disk: ExternalDis
   return (
     <section className={card} aria-labelledby="contents-title">
       <div className="flex flex-wrap items-center gap-2">
-        <h2 id="contents-title" className="m-0 text-[15px] font-semibold">{text.contents}</h2>
+        <h2 id="contents-title" className="m-0 text-sm font-semibold">{text.contents}</h2>
         {contents?.cached_at ? <span className="text-xs text-faint" data-read-at>{formatReadAt(contents.cached_at, language, new Date(), text)}</span> : null}
         <span className="flex-1" />
         {disk.pbs_datastore_name ? (
@@ -373,7 +386,7 @@ export function ContentsCard({ disk, t, language, initial }: { disk: ExternalDis
         <div className="overflow-x-auto">
           <table className="w-full min-w-[520px] border-collapse text-[13px]" data-contents={items.length}>
             <thead>
-              <tr className="text-left text-xs text-faint">
+              <tr className="border-0 border-b border-solid border-border text-left text-[13px] text-muted">
                 <th className="py-1.5 font-medium">{text.col.guest}</th>
                 <th className="py-1.5 text-right font-medium">{text.col.versions}</th>
                 <th className="py-1.5 font-medium">{text.col.oldest}</th>
@@ -388,10 +401,10 @@ export function ContentsCard({ disk, t, language, initial }: { disk: ExternalDis
                     <span className="font-medium">{item.name ?? item.group}</span>
                     {item.name ? <span className="ml-2 rounded bg-subtle px-1.5 py-px font-mono text-[11px] text-muted">{item.group}</span> : null}
                   </td>
-                  <td className="py-2 text-right font-mono">{item.versions}</td>
+                  <td className="py-2 text-right">{item.versions}</td>
                   <td className="py-2 text-muted">{date(item.oldest)}</td>
                   <td className="py-2">{date(item.newest)}</td>
-                  <td className="py-2 text-right font-mono text-muted">{formatBytes(item.size_bytes, language)}</td>
+                  <td className="py-2 text-right text-muted">{formatBytes(item.size_bytes, language)}</td>
                 </tr>
               ))}
             </tbody>
@@ -420,6 +433,7 @@ function IdentityPanel({
   const text = t.diskSheet;
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
+  const nameInput = useRef<HTMLInputElement>(null);
   const [name, setName] = useState(disk.display_name);
   const [color, setColor] = useState<DiskColor | null>(diskColor(disk.color));
   const [location, setLocation] = useState(disk.location_note ?? "");
@@ -486,14 +500,16 @@ function IdentityPanel({
     <Dialog open={open} onOpenChange={(value) => !value && onClose()}>
       <DialogContent
         aria-describedby="identity-help"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          nameInput.current?.focus();
+        }}
         className="bottom-0 left-auto right-0 top-0 h-full max-h-none w-[min(440px,100vw)] max-w-none translate-x-0 overflow-y-auto rounded-none border-0 border-l border-solid"
         data-identity-panel
       >
         <div className="flex items-center gap-3 border-0 border-b border-solid border-border px-5 py-4">
           <DialogTitle className="m-0 flex-1 text-[17px] font-semibold">{text.identity}</DialogTitle>
-          <button type="button" aria-label={t.shell.close} title={t.shell.close} onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-lg border-0 bg-transparent text-faint outline-none hover:bg-subtle hover:text-fg focus-visible:bg-subtle">
-            <X className="h-4 w-4" />
-          </button>
+          <CloseButton label={t.shell.close} onClick={onClose} />
         </div>
         <div className="flex flex-col gap-4 px-5 py-4">
           <DialogDescription id="identity-help" className="m-0 text-[13px] text-muted">{text.identityHelp}</DialogDescription>
@@ -506,7 +522,7 @@ function IdentityPanel({
           </div>
           <label className="flex flex-col gap-1.5 text-[13px] text-muted">
             {text.name}
-            <input className={input} value={name} maxLength={255} onChange={(event) => setName(event.target.value)} />
+            <input ref={nameInput} className={input} value={name} maxLength={255} onChange={(event) => setName(event.target.value)} />
           </label>
           <div className="flex flex-col gap-1.5 text-[13px] text-muted">
             <span id="color-label">{text.color}</span>
@@ -573,11 +589,11 @@ function HealthCard({ disk, t, language }: { disk: ExternalDisk; t: TranslationD
   const speed = disk.usb_speed_mbps;
   return (
     <section className={card} aria-labelledby="health-title">
-      <h2 id="health-title" className="m-0 text-[15px] font-semibold">{text.health}</h2>
+      <h2 id="health-title" className="m-0 text-sm font-semibold">{text.health}</h2>
       <div className="flex flex-col gap-1.5">
-        <span className={cn("w-fit rounded-full px-2.5 py-[3px] text-xs font-medium", SMART_TONE[status ?? "unknown"])} data-smart={status ?? "none"}>
+        <StatusDot tone={SMART_TONE[status ?? "unknown"]} className="w-fit text-fg" data-smart={status ?? "none"}>
           {status ? text.smart[status] : text.smart.none}
-        </span>
+        </StatusDot>
         <span className="text-[13px] leading-[1.45] text-muted">{status ? text.smartHelp[status] : text.smartHelp.none}</span>
         {reasons.length ? (
           <ul className="m-0 list-disc pl-5 text-[13px] text-muted">
@@ -627,7 +643,7 @@ function RetentionCard({ disk, t, onChanged }: { disk: ExternalDisk; t: Translat
   );
   return (
     <section className={card} aria-labelledby="retention-title">
-      <h2 id="retention-title" className="m-0 text-[15px] font-semibold">{text.retention}</h2>
+      <h2 id="retention-title" className="m-0 text-sm font-semibold">{text.retention}</h2>
       <span className="text-[13px] leading-[1.45] text-muted">{text.retentionHelp}</span>
       {field("keepLast", text.keepLast)}
       {field("keepWeekly", text.keepWeekly)}
@@ -665,7 +681,7 @@ function ReminderCard({ t }: { t: TranslationDictionary }) {
   }
   return (
     <section className={card} aria-labelledby="reminder-title">
-      <h2 id="reminder-title" className="m-0 text-[15px] font-semibold">{text.reminder}</h2>
+      <h2 id="reminder-title" className="m-0 text-sm font-semibold">{text.reminder}</h2>
       <label className="flex items-center gap-2 text-[13px] text-muted">
         <span className="flex-1">{text.staleDays}</span>
         <input className={cn(input, "w-20 text-right")} inputMode="numeric" value={days} onChange={(event) => setDays(event.target.value)} />

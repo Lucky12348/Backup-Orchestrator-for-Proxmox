@@ -2,13 +2,12 @@ import { useCallback, useEffect, useState } from "react";
 import { ArrowUpCircle, Loader2 } from "lucide-react";
 
 import { getAgentUpdates, updateAgentNow, type AgentUpdatesOverview } from "../../api";
-import { cn } from "../../components/ui/utils";
 import type { Language, TranslationDictionary } from "../../i18n";
 import { useToast } from "../../ui/toast";
+import { StatusDot } from "../../ui/StatusDot";
 import { fill, formatWhen } from "../format";
 import { canUpdateNow, shortBuild, UPDATE_TONE } from "./integrationsModel";
 
-const TONE_CLASS = { ok: "bg-success/15 text-success-text", warn: "bg-warning/15 text-warning-text", err: "bg-danger/15 text-danger-text", run: "bg-accent/15 text-accent-text", off: "bg-subtle text-faint" } as const;
 const button = "flex items-center gap-1.5 rounded-lg border border-solid border-border bg-subtle px-3 py-1.5 text-[13px] font-medium text-fg hover:brightness-110 disabled:opacity-50";
 const POLL_MS = 3000;
 
@@ -74,7 +73,7 @@ export function AgentUpdates({
               {agent.version ? fill(text.version, { version: agent.version }) : text.unknownVersion}
               {agent.build_id ? ` · ${fill(text.build, { build: shortBuild(agent.build_id) })}` : ""}
             </span>
-            <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", TONE_CLASS[UPDATE_TONE[agent.state]])}>{text.state[agent.state]}</span>
+            <StatusDot tone={UPDATE_TONE[agent.state]} pulse={UPDATE_TONE[agent.state] === "run"}>{text.state[agent.state]}</StatusDot>
             <span className="flex-1" />
             <button
               type="button"

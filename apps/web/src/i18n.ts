@@ -121,6 +121,12 @@ export const translations = {
       pill: "{kind} · {disk}",
       open: "Show the run",
       loadFailed: "Cannot load this run.",
+      stepOf: "Step {n} of {total}",
+      stepFailed: "failed",
+      finishedIn: "Finished in {duration}",
+      details: "Details",
+      route: "Copy",
+      runId: "Run",
     },
     // PBO run journal messages (codes from apps/api/app/services/run_log.py).
     runLog: {
@@ -1792,6 +1798,12 @@ export const translations = {
       pill: "{kind} · {disk}",
       open: "Afficher le suivi",
       loadFailed: "Impossible de charger ce run.",
+      stepOf: "Étape {n} sur {total}",
+      stepFailed: "en échec",
+      finishedIn: "Terminé en {duration}",
+      details: "Détails",
+      route: "Copie",
+      runId: "Exécution",
     },
     runLog: {
       run_created: "Sauvegarde externe créée, démarrage imminent.",

@@ -1,10 +1,11 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { AlertTriangle, Loader2, Lock, LogIn, Monitor, Moon, ShieldCheck, Sun } from "lucide-react";
+import { AlertTriangle, Loader2, Lock, LogIn, Monitor, Moon, Sun } from "lucide-react";
 
 import { useAuth } from "../AuthContext";
 import { cn } from "../components/ui/utils";
 import type { TranslationDictionary } from "../i18n";
 import { loginMessage, waitText, type LoginFailure } from "../loginModel";
+import { LogoMark } from "../ui/Logo";
 import { useTheme } from "../ui/theme";
 
 interface LoginPageProps {
@@ -93,20 +94,18 @@ export function LoginPage({ t }: LoginPageProps) {
         </header>
 
         <div className="flex flex-col items-center gap-3 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-[14px] bg-accent text-white shadow-[0_6px_24px_rgb(var(--pbo-accent)/0.35)]">
-            <ShieldCheck className="h-6 w-6" />
-          </div>
-          <h1 className="m-0 text-[22px] font-semibold tracking-[-0.01em]">{text.title}</h1>
+          <LogoMark size={32} className="text-fg" />
+          <h1 className="m-0 text-[20px] font-semibold tracking-[-0.015em]">{text.title}</h1>
           <p className="m-0 text-sm text-muted">{text.subtitleV2}</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-4 rounded-2xl border border-solid border-border bg-surface p-6" noValidate>
+        <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-4 rounded-lg border border-solid border-border bg-surface p-6" noValidate>
           {error ? (
-            <div role="alert" className={cn("flex gap-2.5 rounded-[10px] p-3 text-[13px] leading-[1.45]", locked ? "bg-warning/15 text-warning-text" : "bg-danger/15 text-danger-text")}>
+            <div role="alert" className={cn("flex gap-2.5 rounded-md p-3 text-[13px] leading-[1.45]", locked ? "bg-warning/15 text-warning-text" : "bg-danger/15 text-danger-text")}>
               {locked ? <Lock className="mt-0.5 h-4 w-4 flex-none" /> : <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" />}
               <span>
                 {error}
-                {locked && lockedUntil ? <span className="mt-1 block font-mono text-xs">{waitText((lockedUntil - now) / 1000)}</span> : null}
+                {locked && lockedUntil ? <span className="mt-1 block text-xs">{waitText((lockedUntil - now) / 1000)}</span> : null}
               </span>
             </div>
           ) : null}

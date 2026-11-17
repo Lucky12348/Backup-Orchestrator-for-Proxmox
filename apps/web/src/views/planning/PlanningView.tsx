@@ -82,7 +82,7 @@ const TONE_MARK: Partial<Record<Tone, string>> = { success: "✓ ", failed: "✕
 export const KIND_COLOR: Record<ItemKind, string> = {
   external: "rgb(var(--pbo-accent))",
   monthly: "rgb(var(--pbo-warning))",
-  manual: "#9B8CFF",
+  manual: "rgb(var(--pbo-accent-text))",
   proxmox: "rgb(var(--pbo-faint))",
 };
 
@@ -277,11 +277,11 @@ export function PlanningView(props: PlanningViewProps) {
   return (
     <EventMenuContext.Provider value={eventMenu}>
     <div className="-mx-4 -my-5 flex min-h-[calc(100vh-61px)] flex-wrap sm:-mx-7 sm:-my-7 2xl:-mx-10">
-      <div className="order-2 flex flex-[1_1_250px] flex-col gap-[22px] border-solid border-border px-4 py-5 lg:order-1 lg:max-w-[290px] lg:border-r">
+      <div className="order-2 flex flex-[1_1_250px] flex-col gap-5 border-solid border-border px-4 py-5 lg:order-1 lg:max-w-[290px] lg:border-r">
         <button
           type="button"
           onClick={() => openCreate(slotStart(anchor, 9, tz))}
-          className="flex items-center gap-2.5 self-start rounded-[14px] border-0 bg-accent py-3 pl-3.5 pr-[18px] text-sm font-medium text-white shadow-[0_4px_16px_rgb(var(--pbo-accent)/0.3)] hover:brightness-110"
+          className="flex items-center gap-2.5 self-start rounded-lg border-0 bg-accent py-3 pl-3.5 pr-4 text-sm font-medium text-white shadow-[0_4px_16px_rgb(var(--pbo-accent)/0.3)] hover:brightness-110"
         >
           <CalendarPlus className="h-[18px] w-[18px]" />
           {text.newPlanning}
@@ -317,7 +317,7 @@ export function PlanningView(props: PlanningViewProps) {
           <button
             type="button"
             onClick={() => setAnchor(todayDay)}
-            className="rounded-lg border border-solid border-border-strong bg-transparent px-3.5 py-[7px] text-[13px] font-medium text-fg hover:bg-hover"
+            className="rounded-lg border border-solid border-border-strong bg-transparent px-3.5 py-1.5 text-[13px] font-medium text-fg hover:bg-hover"
           >
             {text.today}
           </button>
@@ -330,7 +330,7 @@ export function PlanningView(props: PlanningViewProps) {
           <h1 className="m-0 ml-1.5 flex-1 text-xl font-semibold tracking-[-0.01em]" data-period={view}>
             {periodTitle(view, anchor, lang)}
           </h1>
-          <div role="tablist" aria-label={text.viewsLabel} className="flex rounded-[9px] border border-solid border-border bg-subtle p-[3px]">
+          <div role="tablist" aria-label={text.viewsLabel} className="flex rounded-md border border-solid border-border bg-subtle p-[3px]">
             {VIEWS.map((key) => (
               <button
                 key={key}
@@ -885,7 +885,7 @@ export function DetailCard({
         <span className="flex-1" />
         <ActionMenuButton actions={menu} label={fill(t.menu.label, { name: itemLabel(item, t) })} className="-my-1 -mr-1.5" />
       </span>
-      <span className="text-[15px] font-semibold">{itemLabel(item, t)}</span>
+      <span className="text-sm font-semibold">{itemLabel(item, t)}</span>
       <span className="text-xs text-muted">
         {day} · {timeOf(item.starts_at, tz)} – {timeOf(item.ends_at, tz)}
       </span>
@@ -951,7 +951,7 @@ export function ExportPopover({ t, loadFeed = getCalendarFeed, regenerate = rege
       onOpenChange={setOpen}
       className="w-[min(380px,calc(100vw-32px))]"
       triggerClassName={cn(
-        "flex items-center gap-2 rounded-lg border border-solid border-border-strong px-3 py-[7px] text-[13px] font-medium text-fg",
+        "flex items-center gap-2 rounded-lg border border-solid border-border-strong px-3 py-1.5 text-[13px] font-medium text-fg",
         open ? "bg-hover" : "bg-transparent hover:bg-hover",
       )}
       trigger={
@@ -961,10 +961,10 @@ export function ExportPopover({ t, loadFeed = getCalendarFeed, regenerate = rege
         </>
       }
     >
-      <div className="flex flex-col gap-1 px-[18px] pb-3 pt-4">
-        <span className="text-[15px] font-semibold">{text.exportTitle}</span>
+      <div className="flex flex-col gap-1 px-4 pb-3 pt-4">
+        <span className="text-sm font-semibold">{text.exportTitle}</span>
       </div>
-      <div className="flex flex-col gap-2 px-[18px] pb-3.5">
+      <div className="flex flex-col gap-2 px-4 pb-3.5">
         <span className="text-[13px] font-medium">
           {text.subscribe}
           <span className="ml-1 rounded-full bg-accent/15 px-[7px] py-px text-[11px] font-medium text-accent-text">{text.recommended}</span>
@@ -1002,7 +1002,7 @@ export function ExportPopover({ t, loadFeed = getCalendarFeed, regenerate = rege
           </button>
         ) : null}
       </div>
-      <div className="flex flex-col gap-2 border-t border-solid border-border px-[18px] py-3">
+      <div className="flex flex-col gap-2 border-t border-solid border-border px-4 py-3">
         <label className="flex cursor-pointer items-center gap-2 text-[13px] text-muted">
           <input type="checkbox" checked={history} onChange={(event) => setHistory(event.target.checked)} className="m-0 h-4 w-4 accent-[rgb(var(--pbo-accent))]" />
           {text.includeHistory}
@@ -1013,7 +1013,7 @@ export function ExportPopover({ t, loadFeed = getCalendarFeed, regenerate = rege
         </label>
       </div>
       {feed?.enabled && feed.url ? (
-        <div className="flex flex-wrap gap-2 border-t border-solid border-border px-[18px] pb-4 pt-3">
+        <div className="flex flex-wrap gap-2 border-t border-solid border-border px-4 pb-4 pt-3">
             <a
               href={feedUrl(feed.url, { history, proxmox, download: true })}
               download="pbo.ics"

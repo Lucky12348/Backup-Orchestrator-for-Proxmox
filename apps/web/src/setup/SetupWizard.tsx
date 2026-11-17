@@ -20,6 +20,7 @@ import {
   type ThemePreference,
   type WizardStep,
 } from "./logic";
+import { Logo } from "../ui/Logo";
 import { ErrorAlert, TextContext } from "./shared";
 import { AdminStep } from "./steps/AdminStep";
 import { AgentStep } from "./steps/AgentStep";
@@ -134,9 +135,7 @@ export function SetupWizard({
         <div className="mx-auto flex min-h-screen w-full max-w-[640px] flex-col px-4 pb-16 pt-6 sm:px-6 sm:pt-10">
           <header className="mb-8 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-[13px] font-semibold text-accent-fg">
-                PBO
-              </div>
+              <Logo />
               <span className="text-sm font-medium text-muted">{text.product}</span>
             </div>
             <div className="flex items-center gap-1">

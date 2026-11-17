@@ -24,8 +24,8 @@ const KIND_ICON: Record<DiskKind, ComponentType<{ className?: string }>> = {
 const AVATAR_BOX = {
   xs: "h-5 w-5 rounded-[5px]",
   sm: "h-7 w-7 rounded-[7px]",
-  md: "h-[38px] w-[38px] rounded-[10px]",
-  lg: "h-[88px] w-[88px] rounded-[14px]",
+  md: "h-[38px] w-[38px] rounded-md",
+  lg: "h-[88px] w-[88px] rounded-lg",
   hd: "h-16 w-16 rounded-[12px]",
 } as const;
 const AVATAR_ICON = { xs: "h-3 w-3", sm: "h-4 w-4", md: "h-[18px] w-[18px]", lg: "h-9 w-9", hd: "h-7 w-7" } as const;
@@ -115,7 +115,7 @@ export function PbsConfigNotice({
     <div
       role="status"
       className={cn(
-        "flex flex-col gap-1.5 rounded-[10px] p-3 text-[13px] leading-[1.45]",
+        "flex flex-col gap-1.5 rounded-md p-3 text-[13px] leading-[1.45]",
         note === "missing_recoverable" ? "bg-warning/15 text-warning-text" : "bg-danger/15 text-danger-text",
       )}
       data-config-notice={note}
@@ -175,7 +175,7 @@ export function VerifyNowButton({
       disabled={busy || !disk.connected}
       onClick={() => void verify()}
       className={cn(
-        "flex items-center justify-center gap-2 rounded-lg border-0 bg-accent px-3.5 py-[9px] text-[13px] font-medium text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50",
+        "flex items-center justify-center gap-2 rounded-lg border-0 bg-accent px-3.5 py-2 text-[13px] font-medium text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50",
         className,
       )}
       data-verify-now={disk.id}
@@ -245,7 +245,7 @@ export function RepairButton({
       disabled={busy}
       onClick={() => void repair()}
       className={cn(
-        "flex items-center justify-center gap-2 rounded-lg border-0 bg-accent px-3.5 py-[9px] text-[13px] font-medium text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50",
+        "flex items-center justify-center gap-2 rounded-lg border-0 bg-accent px-3.5 py-2 text-[13px] font-medium text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50",
         className,
       )}
       data-repair={diskId}
@@ -263,7 +263,7 @@ export function DamagedVersions({ disk, t, onChanged }: { disk: ExternalDisk; t:
   if (!items.length) return null;
   const lost = items.filter((item) => item.in_source === false).map((item) => `${item.group} ${item.time}`);
   return (
-    <div role="alert" className="flex flex-col gap-2.5 rounded-[14px] bg-danger/15 p-4 text-[13px] leading-[1.45] text-danger-text" data-damaged={items.length}>
+    <div role="alert" className="flex flex-col gap-2.5 rounded-lg bg-danger/15 p-4 text-[13px] leading-[1.45] text-danger-text" data-damaged={items.length}>
       <b>{fill(text.title, { n: items.length })}</b>
       <span>{text.text}</span>
       <ul className="m-0 flex list-none flex-col gap-1 p-0">

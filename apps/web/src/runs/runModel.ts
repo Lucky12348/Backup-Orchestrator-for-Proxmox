@@ -540,3 +540,57 @@ export function currentActivity(steps: readonly RunStepKey[], states: readonly S
 export function runPercent(run: RunLike, entries: readonly JournalEntry[] = []): number {
   return overallPercent(run, stepStates(run, [...entries]), runSteps(run));
 }
+
+// --- Step bar (Phase 5i) ----------------------------------------------------------------
+
+function stampMs(at: string | null | undefined): number | null {
+  if (!at) return null;
+  const ms = Date.parse(/Z$|[+-]\d\d:?\d\d$/.test(at) ? at : `${at}Z`);
+  return Number.isNaN(ms) ? null : ms;
+}
+
+/** Index in `steps` of a journal step code (-1 when it belongs to none). */
+function entryStepIndex(run: RunLike, steps: readonly RunStepKey[], step: string | null | undefined): number {
+  if (run.verify_only || run.repair) return shortStepIndex(steps, step);
+  const index = stepIndex(step);
+  return index === null ? -1 : index;
+}
+
+/**
+ * How long each step took (seconds), from the journal: a step starts with
+ * its first line and ends when a later step starts (the active one runs
+ * until now, the last one until the run's end). null = not run / unknown.
+ */
+export function stepTimings(run: RunLike, entries: readonly JournalEntry[], steps: readonly RunStepKey[], states: readonly StepState[], nowMs: number): (number | null)[] {
+  const starts: (number | null)[] = steps.map(() => null);
+  for (const entry of entries) {
+    const index = entryStepIndex(run, steps, entry.step);
+    const ms = stampMs(entry.at);
+    if (index < 0 || ms === null) continue;
+    const known = starts[index];
+    if (known === null || ms < known) starts[index] = ms;
+  }
+  if (starts[0] === null && states[0] !== "skipped") starts[0] = stampMs(run.started_at);
+  const runEnd = stampMs(run.finished_at ?? null) ?? nowMs;
+  return steps.map((_, index) => {
+    const start = starts[index];
+    const state = states[index];
+    if (start === null || state === "skipped" || state === "not_run" || state === "upcoming") return null;
+    let end: number | null = null;
+    for (let next = index + 1; next < steps.length && end === null; next += 1) {
+      if (starts[next] !== null && states[next] !== "skipped") end = starts[next];
+    }
+    const until = end ?? (state === "active" ? nowMs : runEnd);
+    return Math.max(0, Math.round((until - start) / 1000));
+  });
+}
+
+/** The step the line under the bar talks about: the active one, the failed one, else the last done. */
+export function focusStep(states: readonly StepState[]): number {
+  const active = states.indexOf("active");
+  if (active >= 0) return active;
+  const failed = states.indexOf("failed");
+  if (failed >= 0) return failed;
+  for (let index = states.length - 1; index >= 0; index -= 1) if (states[index] === "done") return index;
+  return 0;
+}

@@ -1,5 +1,5 @@
 import { Copy, ExternalLink, EyeOff, Palette, Play, RefreshCw, ShieldCheck, Unplug } from "lucide-react";
-import { useInRouterContext, useNavigate } from "react-router-dom";
+import { useInRouterContext, useLocation, useNavigate } from "react-router-dom";
 
 import { decideDisk, reactivateDisk, startDiskVerify } from "../../api";
 import type { TranslationDictionary } from "../../i18n";
@@ -31,7 +31,9 @@ export function diskMenuKeys(disk: ExternalDisk, runs: readonly RunLike[] = []):
 /** The actions of a disk, the same in its card, the dashboard and its sheet. */
 export function useDiskMenu(disk: ExternalDisk | undefined, t: TranslationDictionary, runs: readonly RunLike[] = []): MenuAction[] {
   // Rendered outside a router (component tests): plain navigation. The condition never changes for a mounted tree.
-  const navigate = useInRouterContext() ? useNavigate() : (to: string) => window.location.assign(to); // eslint-disable-line react-hooks/rules-of-hooks
+  const routed = useInRouterContext();
+  const navigate = routed ? useNavigate() : (to: string) => window.location.assign(to); // eslint-disable-line react-hooks/rules-of-hooks
+  const pathname = routed ? useLocation().pathname : ""; // eslint-disable-line react-hooks/rules-of-hooks
   const commands = useCommands();
   const { toast } = useToast();
   if (!disk) return [];
@@ -72,7 +74,16 @@ export function useDiskMenu(disk: ExternalDisk | undefined, t: TranslationDictio
         }),
     },
     open: { label: text.open, icon: ExternalLink, onSelect: () => navigate(`/disks/${disk.id}`) },
-    rename: { label: text.rename, icon: Palette, onSelect: () => navigate(`/disks/${disk.id}#identity`) },
+    // Page state, not a URL fragment: works when already on the sheet, and F5 does not reopen it.
+    rename: {
+      label: text.rename,
+      icon: Palette,
+      onSelect: () => {
+        const sheet = `/disks/${disk.id}`;
+        if (routed) (navigate as ReturnType<typeof useNavigate>)(sheet, { state: { editIdentity: true }, replace: pathname === sheet });
+        else (navigate as (to: string) => void)(sheet);
+      },
+    },
     copySerial: {
       label: text.copySerial,
       icon: Copy,

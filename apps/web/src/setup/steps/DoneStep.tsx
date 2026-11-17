@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowRight, CheckCircle2, Circle, Loader2, PartyPopper, XCircle } from "lucide-react";
+import { ArrowRight, CheckCircle2, Circle, Loader2, XCircle } from "lucide-react";
+import { StatusIcon } from "../../ui/StatusIcon";
 
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
@@ -63,9 +64,7 @@ export function DoneStep({
   return (
     <>
       <CardHeader>
-        <div className="mb-1 flex h-10 w-10 items-center justify-center rounded-full bg-success/15 text-success">
-          <PartyPopper className="h-5 w-5" />
-        </div>
+        <StatusIcon kind="success" size={20} className="mb-1" />
         <CardTitle>{text.done.title}</CardTitle>
         <CardDescription>{text.done.description}</CardDescription>
       </CardHeader>

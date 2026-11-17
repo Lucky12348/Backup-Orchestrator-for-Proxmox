@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CalendarClock, ListChecks, Pencil, Play, Plus, Trash2, X } from "lucide-react";
+import { CalendarClock, ListChecks, Pencil, Play, Plus, Trash2 } from "lucide-react";
 import { ApiError } from "../../notices";
 import { ActionMenuArea, ActionMenuButton, type MenuAction } from "../../ui/ActionMenu";
 
 import { createProxmoxBackupJob, deleteProxmoxBackupJob, replaceProxmoxBackupJob, getProxmoxTask, runProxmoxJobNow } from "../../api";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../../components/ui/dialog";
 import { cn } from "../../components/ui/utils";
+import { CloseButton } from "../../ui/CloseButton";
 import type { Language, TranslationDictionary } from "../../i18n";
 import type { ProxmoxBackupJob, VirtualMachine } from "../../types";
 import { useConfirm } from "../../ui/confirm";
@@ -100,9 +101,9 @@ export function ProxmoxJobsSection({
   }
 
   return (
-    <section id="proxmox-jobs" aria-label={text.title} className="flex flex-col gap-4 rounded-2xl border border-solid border-border bg-surface p-[22px]">
+    <section id="proxmox-jobs" aria-label={text.title} className="flex flex-col gap-4 rounded-lg border border-solid border-border bg-surface p-5">
       <div className="flex flex-wrap items-center gap-3">
-        <h2 className="m-0 flex-1 text-[15px] font-semibold">{text.title}</h2>
+        <h2 className="m-0 flex-1 text-sm font-semibold">{text.title}</h2>
         <button type="button" className={ghost} onClick={() => setEditing({ mode: "create" })}>
           <Plus className="h-4 w-4" />
           {text.create}
@@ -350,18 +351,6 @@ export function DayPills({ days, onToggle, lang }: { days: readonly DayCode[]; o
 }
 
 /** A plain icon button: no focus ring drawn as a bar next to the icon ("|x"). */
-export function CloseButton({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      className="flex h-8 w-8 flex-none items-center justify-center rounded-md border-0 bg-transparent p-0 text-muted outline-none hover:bg-hover hover:text-fg focus-visible:ring-2 focus-visible:ring-accent"
-    >
-      <X className="h-4 w-4" />
-    </button>
-  );
-}
+export { CloseButton };
 
 export { describeSchedule };

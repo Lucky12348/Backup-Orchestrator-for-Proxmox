@@ -60,6 +60,7 @@ export default {
         subtle: token("subtle"),
         border: { DEFAULT: token("border"), strong: token("border-strong") },
         hover: token("hover"),
+        focus: token("focus"),
         console: { DEFAULT: token("console"), fg: token("console-fg") },
         fg: token("fg"),
         muted: token("muted"),

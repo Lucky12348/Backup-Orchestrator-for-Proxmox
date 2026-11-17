@@ -1,8 +1,8 @@
-import { Loader2 } from "lucide-react";
 
 import type { TranslationDictionary } from "../i18n";
 import { useRunMonitor } from "./RunMonitor";
 import { isRunning, RUN_STEPS, runPercent, stepIndex, type JournalEntry } from "./runModel";
+import { StatusIcon } from "../ui/StatusIcon";
 import { DiskMark } from "../views/disks/DiskTag";
 
 function fill(template: string, values: Record<string, string>): string {
@@ -26,15 +26,15 @@ export function RunPill({ t }: { t: TranslationDictionary }) {
       type="button"
       onClick={() => monitor.openRun(run.id)}
       title={t.runModal.open}
-      className="flex items-center gap-2.5 rounded-full border border-accent/35 bg-accent/15 py-1.5 pl-2.5 pr-3 text-[13px] font-medium text-accent-text hover:brightness-110"
+      className="flex items-center gap-2.5 rounded-md border border-solid border-border bg-surface py-1.5 pl-2.5 pr-3 text-[13px] font-medium text-fg hover:bg-hover"
     >
-      <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
+      <StatusIcon kind="running" progress={percent} />
       <DiskMark id={run.disk_id} t={t} />
-      <span className="max-w-[220px] truncate">{label}</span>
-      <span className="block h-1 w-16 overflow-hidden rounded-full bg-accent/25">
+      <span className="min-w-0 max-w-[220px] truncate">{label}</span>
+      <span className="hidden h-1 w-16 overflow-hidden rounded-full bg-border sm:block">
         <span className="block h-full rounded-full bg-accent" style={{ width: `${percent}%` }} />
       </span>
-      <span className="font-mono text-xs">{percent} %</span>
+      <span className="whitespace-nowrap text-xs text-muted">{percent} %</span>
     </button>
   );
 }

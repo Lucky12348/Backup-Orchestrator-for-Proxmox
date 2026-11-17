@@ -23,10 +23,15 @@ before(async () => {
   await build({
     stdin: {
       contents: [
-        'export { StepList, LogLines } from "./src/runs/LiveRunModal";',
+        'export { StepBar, LogLines, RunView } from "./src/runs/LiveRunModal";',
+        'export { RunMonitorProvider } from "./src/runs/RunMonitor";',
+        'export { StatusIcon } from "./src/ui/StatusIcon";',
+        'export { StatusDot } from "./src/ui/StatusDot";',
+        'export { Logo } from "./src/ui/Logo";',
+        'export { PageTitle } from "./src/ui/PageTitle";',
+        'export { wantsIdentityPanel } from "./src/views/disks/DiskSheetView";',
         'export { PageHeader } from "./src/components/PageHeader";',
         'export { EmptyState } from "./src/components/EmptyState";',
-        'export { InfoTip } from "./src/ui/InfoTip";',
         'export { ConfirmModal } from "./src/components/ConfirmModal";',
         'export { DiskCard, DiskDetail, ApprovalFlow, StatusPill } from "./src/views/disks/DisksView";',
         'export { diskMenuKeys } from "./src/views/disks/diskMenu";',
@@ -68,16 +73,58 @@ before(async () => {
 
 const html = (element: unknown) => renderToStaticMarkup(element as never);
 
-test("StepList: 7 steps with their state", () => {
+test("StepBar (5i): one segment per step — filled, animated, hatched, red — name and duration on hover", () => {
   const markup = html(
-    createElement(ui.StepList, { states: ["done", "done", "done", "active", "upcoming", "upcoming", "upcoming"], t: translations.fr }),
+    createElement(ui.StepBar, {
+      run: { status: "running", progress_percent: 40 },
+      states: ["done", "done", "done", "done", "active", "skipped", "upcoming"],
+      timings: [3, 12, 5, 610, 42, null, null],
+      t: translations.fr,
+      lang: "fr",
+    }),
   );
   for (const label of ["Détection", "Passthrough", "Montage", "Synchronisation", "Nettoyage", "Vérification", "Éjection sûre"]) {
     assert.ok(markup.includes(label), label);
   }
-  assert.equal((markup.match(/data-state="done"/g) ?? []).length, 3);
-  assert.equal((markup.match(/data-state="active"/g) ?? []).length, 1);
+  assert.equal((markup.match(/<li /g) ?? []).length, 7);
+  assert.equal((markup.match(/data-state="done"/g) ?? []).length, 4);
+  assert.ok(markup.includes("Nettoyage · 42 s") && markup.includes("Synchronisation · 10 min"));
+  assert.ok(markup.includes("pbo-indeterminate"), "the active step (no own %) is animated");
+  assert.ok(markup.includes("pbo-hatch"), "the skipped step is hatched");
   assert.ok(markup.includes('aria-label="Étapes"'));
+  const failed = html(createElement(ui.StepBar, { states: ["done", "failed", "not_run", "not_run", "not_run", "not_run", "not_run"], t: translations.en }));
+  assert.ok(failed.includes("bg-danger") && failed.includes("Passthrough · failed"));
+  const copying = html(createElement(ui.StepBar, { run: { status: "running", progress_percent: 40 }, states: ["done", "done", "done", "active", "upcoming", "upcoming", "upcoming"], t: translations.en }));
+  assert.ok(copying.includes("width:40%"), "the copy step fills with its own percentage");
+});
+
+test("StatusIcon (5i): ring that fills, disc + check, disc + cross, dotted, empty", () => {
+  const ring = html(createElement(ui.StatusIcon, { kind: "running", progress: 50 }));
+  assert.ok(ring.includes('data-status-icon="running"') && /stroke-dasharray="19\.63 39\.27"/.test(ring), ring);
+  assert.ok(html(createElement(ui.StatusIcon, { kind: "running" })).includes("animate-spin"), "unknown progress: the glyph turns");
+  assert.ok(!html(createElement(ui.StatusIcon, { kind: "running" })).includes("origin-center"), "never rotate the arc alone (it would leave the box)");
+  const ok = html(createElement(ui.StatusIcon, { kind: "success", label: "Réussie" }));
+  assert.ok(ok.includes('role="img"') && ok.includes('aria-label="Réussie"') && ok.includes("text-success") && ok.includes("<path"));
+  assert.ok(html(createElement(ui.StatusIcon, { kind: "failed" })).includes("text-danger"));
+  assert.ok(html(createElement(ui.StatusIcon, { kind: "skipped" })).includes("stroke-dasharray"));
+  assert.ok(html(createElement(ui.StatusIcon, { kind: "pending" })).includes('aria-hidden="true"'));
+});
+
+test("design (5i): « ● text » states, logo without a tile, title tooltip without an 'i'", () => {
+  const dot = html(createElement(ui.StatusDot, { tone: "ok" }, "Approuvé"));
+  assert.ok(dot.includes("bg-success") && dot.includes("Approuvé") && !dot.includes("rounded-full py-"));
+  const logo = html(createElement(ui.Logo));
+  assert.ok(logo.includes("data-logo") && logo.includes(">PBO<") && !logo.includes("bg-accent"));
+  const title = html(createElement(ui.PageTitle, { tip: "Aide de la page" }, "Disques"));
+  assert.ok(title.includes("<h1") && title.includes('role="tooltip"') && title.includes("Aide de la page") && !title.includes(">i<"));
+  assert.ok(title.includes('tabindex="0"'), "the tooltip opens on keyboard focus too");
+});
+
+test("disk sheet (5i, E): the identity panel opens from page state, a legacy #identity is consumed", () => {
+  assert.equal(ui.wantsIdentityPanel({ editIdentity: true }, ""), true);
+  assert.equal(ui.wantsIdentityPanel(null, "#identity"), true);
+  assert.equal(ui.wantsIdentityPanel(null, ""), false, "F5 after the state was cleared: closed");
+  assert.equal(ui.wantsIdentityPanel({ editIdentity: false }, ""), false);
 });
 
 test("LogLines: real journal, translated PBO lines, PBS lines tagged, no progress lines", () => {
@@ -90,7 +137,7 @@ test("LogLines: real journal, translated PBO lines, PBS lines tagged, no progres
   assert.equal((markup.match(/TASK OK/g) ?? []).length, 1);
 });
 
-test("PageHeader: no subtitle, an info button with the text in a tooltip", () => {
+test("PageHeader: no subtitle, the help in a tooltip on the title", () => {
   const markup = html(createElement(ui.PageHeader, { title: "Disques", description: "Les disques de rotation." }));
   assert.ok(markup.includes("<h1"));
   assert.ok(markup.includes('role="tooltip"'));
@@ -98,10 +145,8 @@ test("PageHeader: no subtitle, an info button with the text in a tooltip", () =>
   assert.ok(!markup.includes("page-description"));
 });
 
-test("EmptyState and InfoTip", () => {
+test("EmptyState", () => {
   assert.ok(html(createElement(ui.EmptyState, { title: "Aucun disque", description: "Branchez-en un." })).includes("Aucun disque"));
-  const tip = html(createElement(ui.InfoTip, { text: "Aide", label: "À propos" }));
-  assert.ok(tip.includes('aria-label="À propos"') && tip.includes("Aide"));
 });
 
 test("ConfirmModal (shadcn AlertDialog) renders nothing while closed", () => {

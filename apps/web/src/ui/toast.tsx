@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2, Info, Unplug, X, XCircle } from "lucide-re
 import { useNavigate } from "react-router-dom";
 
 import { cn } from "../components/ui/utils";
+import { StatusIcon } from "./StatusIcon";
 import { addToast, makeToast, remainingAfter, removeToast, type Toast, type ToastInput } from "./toastStore";
 
 type ToastFn = (input: ToastInput) => string;
@@ -110,7 +111,12 @@ function ToastView({
       onBlur={() => setPaused(false)}
       role={toast.tone === "danger" ? "alert" : undefined}
     >
-      {disk ?? <Icon className={cn("mt-0.5 h-4 w-4", ICON_COLORS[toast.tone])} />}
+      {disk ??
+        (toast.tone === "success" || toast.tone === "danger" ? (
+          <StatusIcon kind={toast.tone === "success" ? "success" : "failed"} className="mt-0.5" />
+        ) : (
+          <Icon className={cn("mt-0.5 h-4 w-4", ICON_COLORS[toast.tone])} />
+        ))}
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <p className="m-0 text-sm font-medium text-fg">{toast.title}</p>
         {toast.description ? <p className="m-0 text-[13px] text-muted">{toast.description}</p> : null}

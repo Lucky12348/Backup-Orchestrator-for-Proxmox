@@ -15,6 +15,7 @@ import {
   type ExternalBackupReadiness,
 } from "../../api";
 import { cn } from "../../components/ui/utils";
+import { StatusDot } from "../../ui/StatusDot";
 import type { Language, TranslationDictionary } from "../../i18n";
 import { focusedDiskId } from "../../liveDisks";
 import { ApiError } from "../../notices";
@@ -22,7 +23,7 @@ import { readinessTitle } from "../../readiness";
 import { openRunModal } from "../../runs/openRun";
 import type { ExternalBackupRun, ExternalDisk } from "../../types";
 import { useConfirm } from "../../ui/confirm";
-import { InfoTip } from "../../ui/InfoTip";
+import { PageTitle } from "../../ui/PageTitle";
 import { useToast } from "../../ui/toast";
 import { usageParts } from "../../units";
 import { runPercent } from "../../runs/runModel";
@@ -77,13 +78,12 @@ export interface DisksViewProps {
   alerts?: DiskAlert[];
 }
 
+/** A disk's state as « ● text » (docs/DESIGN.md); the name stays the export used everywhere. */
 export function StatusPill({ status, label }: { status: DiskUiStatus; label: string }) {
-  const tone = TONE[STATUS_TONE[status]];
   return (
-    <span className={cn("inline-flex items-center gap-1.5 whitespace-nowrap rounded-full py-[3px] pl-2 pr-2.5 text-xs font-medium", tone.pill)} data-status={status}>
-      <span className={cn("h-1.5 w-1.5 rounded-full", tone.dot)} />
+    <StatusDot tone={STATUS_TONE[status]} pulse={status === "running"} data-status={status}>
       {label}
-    </span>
+    </StatusDot>
   );
 }
 
@@ -136,16 +136,15 @@ export function DisksView({ disks, runs, language, t, onBackup, onEject, isStart
   }
 
   return (
-    <div className="flex flex-col gap-[18px]">
+    <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="m-0 text-[26px] font-semibold tracking-[-0.02em]">{text.title}</h1>
-        <InfoTip text={text.info} label={t.shell.about} />
+        <PageTitle tip={text.info}>{text.title}</PageTitle>
         <span className="flex-1" />
         <button
           type="button"
           onClick={() => void rescan()}
           disabled={rescanning}
-          className="flex items-center gap-2 rounded-lg border border-solid border-border bg-subtle px-3.5 py-[9px] text-sm font-medium text-fg hover:brightness-110 disabled:opacity-60"
+          className="flex items-center gap-2 rounded-lg border border-solid border-border bg-subtle px-3.5 py-2 text-sm font-medium text-fg hover:brightness-110 disabled:opacity-60"
         >
           <RefreshCw className={cn("h-4 w-4", rescanning && "animate-spin")} />
           {text.rescan}
@@ -153,7 +152,7 @@ export function DisksView({ disks, runs, language, t, onBackup, onEject, isStart
       </div>
 
       <div className="flex flex-wrap items-center gap-3 border-b border-solid border-border">
-        <div role="tablist" aria-label={text.tabsLabel} className="-mb-px flex min-w-0 flex-1 gap-[22px] overflow-x-auto">
+        <div role="tablist" aria-label={text.tabsLabel} className="-mb-px flex min-w-0 flex-1 gap-5 overflow-x-auto">
           {DISK_TABS.filter((key) => key !== "hidden" || counts.hidden > 0 || tab === "hidden").map((key) => {
             const active = tab === key;
             return (
@@ -196,11 +195,11 @@ export function DisksView({ disks, runs, language, t, onBackup, onEject, isStart
       {/* B27: cards fill the width (auto-fill), the detail panel sits right next to them. */}
       {/* Cards and panel side by side with no hole: fixed 380 px panel, cards
           auto-fit (empty tracks collapse, the cards fill the row). */}
-      <div className="grid items-start gap-[18px] lg:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
         <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(300px,1fr))] gap-3.5">
           {shown.length === 0 ? (
-            <div className="col-span-full rounded-[14px] border border-dashed border-border-strong px-6 py-10 text-center">
-              <p className="m-0 text-[15px] font-medium">{query ? text.noMatch : text.empty}</p>
+            <div className="col-span-full rounded-lg border border-dashed border-border-strong px-6 py-10 text-center">
+              <p className="m-0 text-sm font-medium">{query ? text.noMatch : text.empty}</p>
               {query ? null : <p className="m-0 mt-1.5 text-[13px] text-muted">{text.emptyHint}</p>}
             </div>
           ) : (
@@ -237,7 +236,7 @@ export function DisksView({ disks, runs, language, t, onBackup, onEject, isStart
             alerts={alertsFor(alerts, selected.disk.id)}
           />
         ) : (
-          <aside className="rounded-[14px] border border-solid border-border bg-surface p-[18px] text-[13px] text-muted lg:sticky lg:top-4">
+          <aside className="rounded-lg border border-solid border-border bg-surface p-4 text-[13px] text-muted lg:sticky lg:top-4">
             {text.selectHint}
           </aside>
         )}
@@ -305,7 +304,7 @@ export function DiskCard({
       label={menuLabel}
       data-disk={disk.id}
       className={cn(
-        "relative flex flex-col rounded-[14px] border border-solid bg-surface text-fg outline-none focus-visible:ring-2 focus-visible:ring-accent",
+        "relative flex flex-col rounded-lg border border-solid bg-surface text-fg outline-none focus-visible:ring-2 focus-visible:ring-accent",
         color ? cn("border-l-4", COLOR_CLASS[color].stripe) : "",
         selected ? "border-accent shadow-[0_0_0_3px_rgb(var(--pbo-accent)/0.18)]" : "border-border hover:border-border-strong",
       )}
@@ -314,12 +313,12 @@ export function DiskCard({
       type="button"
       onClick={onSelect}
       aria-pressed={selected}
-      className="flex flex-col gap-3 rounded-[14px] border-0 bg-transparent p-4 pr-11 text-left text-fg"
+      className="flex flex-col gap-3 rounded-lg border-0 bg-transparent p-4 pr-11 text-left text-fg"
     >
       <div className="flex w-full items-start gap-3">
-        <DiskAvatar disk={disk} t={t} toneClass={tone.icon} />
+        <DiskAvatar disk={disk} t={t} />
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="truncate text-[15px] font-semibold">{disk.display_name}</span>
+          <span className="truncate text-sm font-semibold">{disk.display_name}</span>
           <span className="truncate text-xs text-faint">{diskSecondary(disk)}</span>
         </div>
         <StatusPill status={status} label={t.disksV2.status[status]} />
@@ -327,7 +326,7 @@ export function DiskCard({
       <div className="flex w-full flex-col gap-1.5">
         <div className="flex gap-2 text-xs text-muted">
           <span className="min-w-0 flex-1 truncate">{capacityLine(row, language, t)}</span>
-          <span className="flex-none font-mono">{formatSize(disk.capacity_gb, language)}</span>
+          <span className="flex-none">{formatSize(disk.capacity_gb, language)}</span>
         </div>
         <div className="h-1.5 overflow-hidden rounded-full bg-subtle">
           <div className={cn("h-full rounded-full", usageBar)} style={{ width: `${usage ?? 0}%` }} />
@@ -345,13 +344,10 @@ export function DiskCard({
         <span className={cn("text-[13px]", tone.note)}>{noteText(row, t, language)}</span>
       )}
       {tags.length ? (
-        <div className="flex flex-wrap gap-1.5">
-          {tags.map((tag) => (
-            <span key={tag} className="rounded-md bg-subtle px-2 py-0.5 text-[11px] text-muted">
-              {tag}
-            </span>
-          ))}
-        </div>
+        // Plain text (5i): badges are kept for exceptions.
+        <p className="m-0 text-xs text-faint" data-tags>
+          {tags.join(" · ")}
+        </p>
       ) : null}
     </button>
     <ActionMenuButton actions={actions} label={menuLabel} className="absolute right-2 top-[52px]" />
@@ -408,7 +404,7 @@ function useReadiness(disk: ExternalDisk, status: DiskUiStatus, runs: ExternalBa
 const primary = "flex items-center justify-center gap-2 rounded-lg border-0 bg-accent px-3.5 py-2.5 text-sm font-medium text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50";
 /** Discreet text button (Phase 5h.1: "Run detection again" next to "Reactivate"). */
 const quiet = "flex w-fit items-center gap-1.5 self-start rounded-md border-0 bg-transparent px-1 py-1 text-[13px] font-medium text-muted hover:text-fg disabled:opacity-50";
-const secondary = "flex items-center justify-center gap-2 rounded-lg border border-solid border-border bg-subtle px-3 py-[9px] text-[13px] font-medium text-fg hover:brightness-110 disabled:cursor-not-allowed disabled:text-muted disabled:hover:brightness-100";
+const secondary = "flex items-center justify-center gap-2 rounded-lg border border-solid border-border bg-subtle px-3 py-2 text-[13px] font-medium text-fg hover:brightness-110 disabled:cursor-not-allowed disabled:text-muted disabled:hover:brightness-100";
 
 export function DiskDetail({
   configState,
@@ -464,8 +460,8 @@ export function DiskDetail({
   ];
 
   return (
-    <aside aria-label={text.selected} className="flex min-w-0 flex-col rounded-[14px] border border-solid border-border bg-surface lg:sticky lg:top-4">
-      <div className="flex flex-col gap-1 border-b border-solid border-border p-[18px]">
+    <aside aria-label={text.selected} className="flex min-w-0 flex-col rounded-lg border border-solid border-border bg-surface lg:sticky lg:top-4">
+      <div className="flex flex-col gap-1 border-b border-solid border-border p-4">
         <span className="text-xs text-faint">{text.selected}</span>
         <span className="text-[17px] font-semibold">{disk.display_name}</span>
         <span className="text-[13px] text-muted">{text.summary[status]}</span>
@@ -478,8 +474,8 @@ export function DiskDetail({
       </div>
 
       {disk.verify_recommended ? (
-        <div className="border-0 border-b border-solid border-border p-[18px]" data-verify-recommended>
-          <div className="flex flex-col gap-2.5 rounded-[10px] bg-warning/15 p-3 text-[13px] leading-[1.45] text-warning-text">
+        <div className="border-0 border-b border-solid border-border p-4" data-verify-recommended>
+          <div className="flex flex-col gap-2.5 rounded-md bg-warning/15 p-3 text-[13px] leading-[1.45] text-warning-text">
             <span className="flex gap-2.5">
               <ShieldCheck className="mt-0.5 h-4 w-4 flex-none" />
               <span className="flex flex-col gap-0.5">
@@ -493,18 +489,18 @@ export function DiskDetail({
       ) : null}
 
       {pbsConfigNote(configState) ? (
-        <div className="border-0 border-b border-solid border-border p-[18px]" data-config-detail={pbsConfigNote(configState)}>
+        <div className="border-0 border-b border-solid border-border p-4" data-config-detail={pbsConfigNote(configState)}>
           <PbsConfigNotice note={pbsConfigNote(configState) as PbsConfigNote} datastore={configState?.datastore ?? ""} serial={disk.serial_number} t={t} />
         </div>
       ) : null}
 
       {detailed.length ? (
-        <ul className="m-0 flex list-none flex-col gap-2 border-0 border-b border-solid border-border p-[18px]" data-alert-details={detailed.map((alert) => alert.code).join(",")}>
+        <ul className="m-0 flex list-none flex-col gap-2 border-0 border-b border-solid border-border p-4" data-alert-details={detailed.map((alert) => alert.code).join(",")}>
           {detailed.map((alert) => (
             <li
               key={alert.code}
               className={cn(
-                "flex flex-col gap-2 rounded-[10px] p-3 text-[13px] leading-[1.45]",
+                "flex flex-col gap-2 rounded-md p-3 text-[13px] leading-[1.45]",
                 alert.level === "danger" ? "bg-danger/15 text-danger-text" : "bg-warning/15 text-warning-text",
               )}
             >
@@ -520,15 +516,15 @@ export function DiskDetail({
       {status === "new" ? <ApprovalFlow disk={disk} t={t} language={language} onChanged={onChanged} /> : null}
 
       {status === "rejected" && reason ? (
-        <div className="border-b border-solid border-border p-[18px]">
-          <div className="rounded-[10px] bg-danger/15 p-3 text-[13px] leading-[1.45] text-danger-text">
+        <div className="border-b border-solid border-border p-4">
+          <div className="rounded-md bg-danger/15 p-3 text-[13px] leading-[1.45] text-danger-text">
             {rejectText(disk, reason, t, language)}
           </div>
         </div>
       ) : null}
 
       {actions.length ? (
-        <div className="flex flex-col gap-2.5 border-b border-solid border-border p-[18px]">
+        <div className="flex flex-col gap-2.5 border-b border-solid border-border p-4">
           {actions.map((action) => {
             switch (action) {
               case "backup": {
@@ -604,14 +600,14 @@ export function DiskDetail({
         </div>
       ) : null}
 
-      <div className="px-[18px] pb-1.5 pt-3.5 text-[13px] font-semibold">{text.history}</div>
+      <div className="px-4 pb-1.5 pt-3.5 text-[13px] font-semibold">{text.history}</div>
       <div className="px-[14px]">
         <DiskHistoryList disk={disk} runs={runs} language={language} t={t} pageSize={5} />
       </div>
 
       <details className="mt-2.5 border-t border-solid border-border">
-        <summary className="cursor-pointer px-[18px] py-3.5 text-[13px] font-medium text-muted">{text.technical}</summary>
-        <div className="grid grid-cols-2 gap-x-3 gap-y-2 px-[18px] pb-4 text-xs">
+        <summary className="cursor-pointer px-4 py-3.5 text-[13px] font-medium text-muted">{text.technical}</summary>
+        <div className="grid grid-cols-2 gap-x-3 gap-y-2 px-4 pb-4 text-xs">
           {technical
             .filter(([, value]) => value)
             .map(([label, value]) => (
@@ -687,13 +683,13 @@ function ApproveAnyway({
     }
   }
   return (
-    <div className="flex flex-col gap-2.5 rounded-[10px] bg-warning/15 p-3 text-[13px] leading-[1.45] text-warning-text" data-approve-anyway>
+    <div className="flex flex-col gap-2.5 rounded-md bg-warning/15 p-3 text-[13px] leading-[1.45] text-warning-text" data-approve-anyway>
       <b>{text.anywayTitle}</b>
       <span>{fill(text.anywayRisk, { size: formatSize(disk.capacity_gb, language), min: disk.min_size_gb ?? 32 })}</span>
       <label className="flex flex-col gap-1 text-fg">
         <span className="text-xs text-muted">{fill(text.typeName, { name: disk.display_name })}</span>
         <input
-          className="rounded-lg border border-solid border-border-strong bg-bg px-3 py-[9px] text-sm text-fg outline-none focus:border-accent"
+          className="rounded-lg border border-solid border-border-strong bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent"
           aria-label={text.typeNameLabel}
           autoComplete="off"
           placeholder={disk.display_name}
@@ -782,9 +778,9 @@ export function ApprovalFlow({
   }
 
   return (
-    <div className="flex flex-col gap-3 border-b border-solid border-border p-[18px]">
+    <div className="flex flex-col gap-3 border-b border-solid border-border p-4">
       {warning.hasData ? (
-        <div className="flex gap-2.5 rounded-[10px] bg-warning/15 p-3 text-[13px] leading-[1.45] text-warning-text" role="alert">
+        <div className="flex gap-2.5 rounded-md bg-warning/15 p-3 text-[13px] leading-[1.45] text-warning-text" role="alert">
           <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" />
           <div className="flex flex-col gap-1.5">
             <b>{text.dataWarning}</b>
@@ -804,13 +800,13 @@ export function ApprovalFlow({
           </div>
         </div>
       ) : (
-        <div className="rounded-[10px] bg-subtle p-3 text-[13px] leading-[1.45] text-muted">
+        <div className="rounded-md bg-subtle p-3 text-[13px] leading-[1.45] text-muted">
           {warning.partitionsUnknown ? text.unknownText : text.blankText}
         </div>
       )}
       <label htmlFor={`confirm-name-${disk.id}`} className="text-[13px] text-muted">
         {text.typeName.split("{name}")[0]}
-        <b className="font-mono text-fg">{disk.display_name}</b>
+        <b className="font-semibold text-fg">{disk.display_name}</b>
         {text.typeName.split("{name}")[1] ?? ""}
       </label>
       <input
@@ -820,7 +816,7 @@ export function ApprovalFlow({
         onChange={(event) => setTyped(event.target.value)}
         placeholder={disk.display_name}
         autoComplete="off"
-        className="rounded-lg border border-solid border-border-strong bg-bg px-3 py-[9px] text-sm text-fg outline-none focus:border-accent"
+        className="rounded-lg border border-solid border-border-strong bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent"
       />
       <button
         type="button"

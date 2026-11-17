@@ -19,7 +19,7 @@ import { WIZARD_TEXT } from "../../setup/i18n";
 import { TextContext } from "../../setup/shared";
 import { RECONFIGURE_PATH } from "../../setup/logic";
 import { useConfirm } from "../../ui/confirm";
-import { InfoTip } from "../../ui/InfoTip";
+import { PageTitle } from "../../ui/PageTitle";
 import { useToast } from "../../ui/toast";
 import { ChooseDatastoreDialog } from "../datastores/ChooseDatastoreDialog";
 import { fill, formatWhen } from "../format";
@@ -131,8 +131,7 @@ export function IntegrationsView({
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="m-0 text-[26px] font-semibold tracking-[-0.02em]">{text.title}</h1>
-        <InfoTip text={text.info} label={t.shell.about} />
+        <PageTitle tip={text.info}>{text.title}</PageTitle>
       </div>
 
       <div className="grid gap-5 lg:grid-cols-3">
@@ -150,7 +149,7 @@ export function IntegrationsView({
             onSync={key === "agent" ? undefined : () => void onSync(key)}
             warning={
               key === "pbs" && missingDatastore ? (
-                <div className="mx-[22px] mb-3 flex flex-col gap-2 rounded-lg bg-warning/15 px-3 py-2 text-xs text-warning-text" data-datastore-missing={missingDatastore}>
+                <div className="mx-5 mb-3 flex flex-col gap-2 rounded-lg bg-warning/15 px-3 py-2 text-xs text-warning-text" data-datastore-missing={missingDatastore}>
                   <span>{fill(t.datastoresV2.missing, { name: missingDatastore })}</span>
                   <button type="button" onClick={() => setChoosing(true)} className="self-start rounded-[7px] border-0 bg-accent px-2.5 py-1 text-xs font-medium text-white hover:brightness-110">
                     {t.datastoresV2.chooseAction}
@@ -171,9 +170,9 @@ export function IntegrationsView({
         t={t}
       />
 
-      <section aria-label={text.agents} className="flex flex-col gap-4 rounded-2xl border border-solid border-border bg-surface p-[22px]">
+      <section aria-label={text.agents} className="flex flex-col gap-4 rounded-lg border border-solid border-border bg-surface p-5">
         <div className="flex flex-wrap items-center gap-3">
-          <h2 className="m-0 flex-1 text-[15px] font-semibold">{text.agents}</h2>
+          <h2 className="m-0 flex-1 text-sm font-semibold">{text.agents}</h2>
           <button type="button" className={button} onClick={() => setInstalling(!installing)}>
             {installing ? <X className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
             {installing ? text.closeInstall : active.length ? text.reinstall : text.install}
@@ -276,20 +275,18 @@ export function IntegrationCard({
     [text.field.lastSync, integration === "agent" ? null : formatWhen(health?.last_sync_at ?? null, language, now, t.dashboardV2)],
   ];
   return (
-    <section aria-label={text.name[integration]} className="flex flex-col rounded-2xl border border-solid border-border bg-surface" data-integration={integration} data-state={state}>
-      <div className="flex items-center gap-3 border-0 border-b border-solid border-border px-[22px] py-4">
-        <span className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-subtle text-muted">
-          <Icon className="h-[18px] w-[18px]" />
-        </span>
+    <section aria-label={text.name[integration]} className="flex flex-col rounded-lg border border-solid border-border bg-surface" data-integration={integration} data-state={state}>
+      <div className="flex items-center gap-3 border-0 border-b border-solid border-border px-5 py-4">
+        <Icon className="h-4 w-4 text-muted" />
         <span className="flex flex-1 flex-col">
-          <span className="text-[15px] font-semibold">{text.name[integration]}</span>
+          <span className="text-sm font-semibold">{text.name[integration]}</span>
           <span className="flex items-center gap-1.5 text-xs text-muted">
             <span className={cn("h-1.5 w-1.5 rounded-full", DOT[state])} />
             {text.state[state]}
           </span>
         </span>
       </div>
-      <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 px-[22px] py-4 text-[13px]">
+      <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 px-5 py-4 text-[13px]">
         {rows
           .filter(([, value]) => value)
           .map(([label, value]) => (
@@ -300,7 +297,7 @@ export function IntegrationCard({
           ))}
       </dl>
       {health?.fingerprint ? (
-        <div className="flex flex-col gap-1 px-[22px] pb-3">
+        <div className="flex flex-col gap-1 px-5 pb-3">
           <span className="text-xs text-faint">{text.field.fingerprint}</span>
           {/* Selectable, copied by hand (no clipboard write). */}
           <input
@@ -313,14 +310,14 @@ export function IntegrationCard({
         </div>
       ) : null}
       {state === "down" && health?.message ? (
-        <p className="m-0 mx-[22px] mb-3 rounded-lg bg-danger/10 px-3 py-2 text-xs text-danger-text [overflow-wrap:anywhere]">{health.message}</p>
+        <p className="m-0 mx-5 mb-3 rounded-lg bg-danger/10 px-3 py-2 text-xs text-danger-text [overflow-wrap:anywhere]">{health.message}</p>
       ) : null}
       {warning}
       {health?.last_sync_error ? (
-        <p className="m-0 mx-[22px] mb-3 text-xs text-warning-text [overflow-wrap:anywhere]">{fill(text.syncError, { reason: health.last_sync_error })}</p>
+        <p className="m-0 mx-5 mb-3 text-xs text-warning-text [overflow-wrap:anywhere]">{fill(text.syncError, { reason: health.last_sync_error })}</p>
       ) : null}
       <span className="flex-1" />
-      <div className="flex flex-wrap gap-2 border-0 border-t border-solid border-border px-[22px] py-3.5">
+      <div className="flex flex-wrap gap-2 border-0 border-t border-solid border-border px-5 py-3.5">
         <button type="button" className={button} disabled={checking} onClick={onTest}>
           {checking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Stethoscope className="h-4 w-4" />}
           {text.test}

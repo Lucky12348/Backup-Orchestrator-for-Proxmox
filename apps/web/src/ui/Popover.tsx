@@ -78,7 +78,7 @@ export function Popover({
           role={role}
           aria-label={label}
           className={cn(
-            "absolute z-40 rounded-[14px] border border-solid border-border-strong bg-surface text-fg shadow-[0_16px_48px_rgba(0,0,0,0.45)] animate-fade-in",
+            "absolute z-40 rounded-lg border border-solid border-border-strong bg-surface text-fg shadow-[0_16px_48px_rgba(0,0,0,0.45)] animate-fade-in",
             placement === "bottom-end" && "right-0 top-[calc(100%+6px)]",
             placement === "bottom-start" && "left-0 top-[calc(100%+6px)]",
             placement === "top-start" && "bottom-[calc(100%+6px)] left-0",

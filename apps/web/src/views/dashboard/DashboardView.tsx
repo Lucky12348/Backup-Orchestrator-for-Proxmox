@@ -8,10 +8,11 @@ import { useToast } from "../../ui/toast";
 import { ChooseDatastoreDialog } from "../datastores/ChooseDatastoreDialog";
 
 import { cn } from "../../components/ui/utils";
+import { StatusIcon } from "../../ui/StatusIcon";
 import type { Language, TranslationDictionary } from "../../i18n";
 import { openRunModal } from "../../runs/openRun";
 import type { AgentStatus, ExternalBackupRun, ExternalDisk, Overview, ScheduledBackupEvent, ScheduledBackupRun } from "../../types";
-import { InfoTip } from "../../ui/InfoTip";
+import { PageTitle } from "../../ui/PageTitle";
 import { runKind } from "../disks/diskModel";
 import { alertValues } from "../disks/diskProfile";
 import { RepairButton } from "../disks/DiskBits";
@@ -86,7 +87,7 @@ function Ring({ percent, tone, label }: { percent: number; tone: "ok" | "warn" |
   );
 }
 
-const card = "rounded-2xl border border-solid border-border bg-surface";
+const card = "rounded-lg border border-solid border-border bg-surface";
 const rowLink = "flex items-center text-fg no-underline hover:bg-subtle";
 
 /** "To confirm: Weekly rotation" with Confirm / Cancel (planned run, manual confirmation). */
@@ -107,7 +108,7 @@ function ConfirmRow({ label, runId, t, onChanged }: { label: string; runId: numb
     }
   }
   return (
-    <div className="flex flex-wrap items-center gap-3 px-[22px] py-3" data-todo="to_confirm">
+    <div className="flex flex-wrap items-center gap-3 px-5 py-3" data-todo="to_confirm">
       <span className="h-2 w-2 flex-none rounded-full bg-warning" />
       <span className="min-w-0 flex-1 text-sm">{label}</span>
       <button type="button" disabled={busy} onClick={() => void act(true)} className="rounded-[7px] border-0 bg-accent px-2.5 py-1 text-xs font-medium text-white hover:brightness-110 disabled:opacity-60">
@@ -160,14 +161,13 @@ export function DashboardView(props: DashboardViewProps) {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="m-0 text-[26px] font-semibold tracking-[-0.02em]">{text.title}</h1>
-        <InfoTip text={text.info} label={t.shell.about} />
+        <PageTitle tip={text.info}>{text.title}</PageTitle>
         <span className="flex-1" />
-        <Link to="/planning" className="flex items-center gap-2 rounded-lg border border-solid border-border bg-subtle px-3.5 py-[9px] text-sm font-medium text-fg no-underline hover:brightness-110">
+        <Link to="/planning" className="flex items-center gap-2 rounded-lg border border-solid border-border bg-subtle px-3.5 py-2 text-sm font-medium text-fg no-underline hover:brightness-110">
           <CalendarDays className="h-4 w-4" />
           {text.plan}
         </Link>
-        <Link to="/disks?tab=approved" className="flex items-center gap-2 rounded-lg bg-accent px-3.5 py-[9px] text-sm font-medium text-white no-underline hover:brightness-110">
+        <Link to="/disks?tab=approved" className="flex items-center gap-2 rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-white no-underline hover:brightness-110">
           <Play className="h-4 w-4" />
           {text.startBackup}
         </Link>
@@ -179,7 +179,7 @@ export function DashboardView(props: DashboardViewProps) {
             <Ring percent={protection.percent} tone={state === "protected" ? "ok" : state === "empty" ? "off" : "warn"} label={text.coverage} />
             <div className="flex flex-[1_1_260px] flex-col gap-2.5">
               <span className={cn("text-2xl font-semibold tracking-[-0.02em]", (state === "at_risk" || state === "attention") && "text-warning-text")}>{headline}</span>
-              <span className="text-[15px] leading-normal text-muted">{sentence}</span>
+              <span className="text-sm leading-normal text-muted">{sentence}</span>
               <span className="text-[13px] text-faint">
                 {lastSuccess ? fill(text.lastSuccess, { when: when(lastSuccess) }) : text.noSuccess}
                 {protection.ignored > 0 ? (
@@ -214,7 +214,7 @@ export function DashboardView(props: DashboardViewProps) {
                   <span className="block h-1.5 flex-[1_1_120px] overflow-hidden rounded-full bg-subtle">
                     <span className="block h-full rounded-full bg-accent" style={{ width: `${runPercent(current.run as never)}%` }} />
                   </span>
-                  <span className="font-mono text-[13px] text-muted" data-run-percent>{Math.floor(runPercent(current.run as never))} %</span>
+                  <span className="text-[13px] text-muted" data-run-percent>{Math.floor(runPercent(current.run as never))} %</span>
                   <span className="text-[13px] font-medium text-accent-text">{text.follow}</span>
                 </>
               ) : (
@@ -234,7 +234,7 @@ export function DashboardView(props: DashboardViewProps) {
               )}
             </button>
           ) : null}
-          <div className="flex flex-wrap items-center gap-[18px] border-t border-solid border-border px-7 py-3.5 text-[13px] text-muted">
+          <div className="flex flex-wrap items-center gap-4 border-t border-solid border-border px-7 py-3.5 text-[13px] text-muted">
             {links.items.map((item) => (
               <span key={item.key} className="flex items-center gap-2" data-integration={item.key} data-ok={item.ok}>
                 <span className={cn("h-[7px] w-[7px] rounded-full", item.ok ? "bg-success" : "bg-danger")} />
@@ -253,19 +253,19 @@ export function DashboardView(props: DashboardViewProps) {
         </section>
 
         <div className="flex min-w-0 flex-[1_1_300px] flex-col gap-5">
-          <section className={cn(card, "flex flex-col gap-3.5 p-[22px]")}>
+          <section className={cn(card, "flex flex-col gap-3.5 p-5")}>
             <span className="text-[13px] text-faint">{text.nextRotation}</span>
             {rotation ? (
               <>
                 <div className="flex flex-col gap-1">
-                  <span className="text-2xl font-semibold tracking-[-0.02em]">{formatDay(rotation.at, language)}</span>
+                  <span className="text-xl font-semibold tracking-[-0.015em]">{formatDay(rotation.at, language)}</span>
                   <span className="text-sm text-muted">
                     {formatTime(rotation.at, language)} · {rotation.title}
                   </span>
                 </div>
                 <Link
                   to={rotation.diskId ? `/disks?disk=${rotation.diskId}` : "/disks"}
-                  className="flex items-center gap-3 rounded-[10px] bg-subtle p-3 text-fg no-underline"
+                  className="-mx-2 flex items-center gap-3 rounded-md border-0 border-t border-solid border-border px-2 pt-3 text-fg no-underline hover:bg-hover"
                 >
                   {rotation.diskId ? <DiskMark id={rotation.diskId} t={t} size="md" /> : <HardDrive className="h-[18px] w-[18px] flex-none text-muted" />}
                   <div className="flex flex-1 flex-col">
@@ -287,18 +287,18 @@ export function DashboardView(props: DashboardViewProps) {
           </section>
 
           <section className={cn(card, "flex flex-1 flex-col")} aria-label={text.todo}>
-            <div className="flex items-center gap-2 px-[22px] pb-2 pt-[18px]">
-              <span className="flex-1 text-[15px] font-semibold">{text.todo}</span>
+            <div className="flex items-center gap-2 px-5 pb-2 pt-4">
+              <span className="flex-1 text-sm font-semibold">{text.todo}</span>
               {todo.length ? (
-                <span className="rounded-full bg-warning/15 px-2 py-px text-xs font-semibold text-warning-text">{todo.length}</span>
+                <span className="text-[13px] font-medium text-warning-text" data-todo-count>{todo.length}</span>
               ) : null}
             </div>
             {todo.length === 0 ? (
-              <span className="px-[22px] pb-4 pt-1 text-[13px] text-faint">{text.todoEmpty}</span>
+              <span className="px-5 pb-4 pt-1 text-[13px] text-faint">{text.todoEmpty}</span>
             ) : (
               todo.map((item, index) =>
                 item.kind === "datastore_missing" ? (
-                  <div key="datastore" className="flex flex-wrap items-center gap-3 px-[22px] py-3" data-todo="datastore_missing">
+                  <div key="datastore" className="flex flex-wrap items-center gap-3 px-5 py-3" data-todo="datastore_missing">
                     <span className="h-2 w-2 flex-none rounded-full bg-warning" />
                     <span className="min-w-0 flex-1 text-sm">{fill(text.todoItem.datastore_missing, { name: item.label })}</span>
                     <button type="button" onClick={() => setChoosing(true)} className="rounded-[7px] border-0 bg-accent px-2.5 py-1 text-xs font-medium text-white hover:brightness-110">
@@ -306,7 +306,7 @@ export function DashboardView(props: DashboardViewProps) {
                     </button>
                   </div>
                 ) : item.kind === "disk_alert" && item.alert?.code === "damaged_versions" ? (
-                  <div key={`alert-${item.alert.disk_id}-damaged`} className="flex flex-wrap items-center gap-3 px-[22px] py-3" data-todo="alert:damaged_versions">
+                  <div key={`alert-${item.alert.disk_id}-damaged`} className="flex flex-wrap items-center gap-3 px-5 py-3" data-todo="alert:damaged_versions">
                     <span className="h-2 w-2 flex-none rounded-full bg-danger" />
                     <DiskMark id={item.alert.disk_id} t={t} />
                     <Link to={item.href} className="min-w-0 flex-1 text-sm text-fg no-underline hover:underline">
@@ -323,7 +323,7 @@ export function DashboardView(props: DashboardViewProps) {
                     />
                   </div>
                 ) : item.kind === "disk_alert" && item.alert ? (
-                  <Link key={`alert-${item.alert.disk_id}-${item.alert.code}`} to={item.href} className={cn(rowLink, "gap-3 px-[22px] py-3")} data-todo={`alert:${item.alert.code}`}>
+                  <Link key={`alert-${item.alert.disk_id}-${item.alert.code}`} to={item.href} className={cn(rowLink, "gap-3 px-5 py-3")} data-todo={`alert:${item.alert.code}`}>
                     <span className={cn("h-2 w-2 flex-none rounded-full", item.tone === "err" ? "bg-danger" : "bg-warning")} />
                     <DiskMark id={item.alert.disk_id} t={t} />
                     <span className="flex-1 text-sm">
@@ -334,7 +334,7 @@ export function DashboardView(props: DashboardViewProps) {
                 ) : item.kind === "to_confirm" && item.runId ? (
                   <ConfirmRow key={`${item.kind}-${item.runId}`} label={fill(text.todoItem.to_confirm, { name: item.label })} runId={item.runId} t={t} onChanged={props.onChanged} />
                 ) : (
-                  <Link key={`${item.kind}-${index}`} to={item.href} className={cn(rowLink, "gap-3 px-[22px] py-3")} data-todo={item.kind}>
+                  <Link key={`${item.kind}-${index}`} to={item.href} className={cn(rowLink, "gap-3 px-5 py-3")} data-todo={item.kind}>
                     <span className={cn("h-2 w-2 flex-none rounded-full", item.tone === "err" ? "bg-danger" : "bg-warning")} />
                     <span className="flex-1 text-sm">{fill((text.todoItem as Record<string, string>)[item.kind] ?? "", { name: item.label })}</span>
                     <span className="text-[13px] text-accent-text">{(text.todoAction as Record<string, string>)[item.kind]}</span>
@@ -357,18 +357,18 @@ export function DashboardView(props: DashboardViewProps) {
 
       <div className="flex flex-wrap gap-5">
         <section className={cn(card, "flex min-w-0 flex-[1_1_400px] flex-col pb-2")}>
-          <div className="flex items-center px-[22px] pb-2.5 pt-[18px]">
-            <h2 className="m-0 flex-1 text-[15px] font-semibold">{text.rotationDisks}</h2>
+          <div className="flex items-center px-5 pb-2.5 pt-4">
+            <h2 className="m-0 flex-1 text-sm font-semibold">{text.rotationDisks}</h2>
             <Link to="/disks" className="text-[13px] text-accent-text no-underline hover:underline">
               {text.allDisks}
             </Link>
           </div>
           {rotationList.length === 0 ? (
-            <span className="px-[22px] pb-3 text-[13px] text-faint">{text.noRotationDisks}</span>
+            <span className="px-5 pb-3 text-[13px] text-faint">{text.noRotationDisks}</span>
           ) : (
             rotationList.map((disk) => (
               <RotationRow key={disk.id} diskId={disk.id} runs={runs} t={t}>
-              <Link to={`/disks?disk=${disk.id}`} className={cn(rowLink, "min-w-0 flex-1 gap-3.5 py-3.5 pl-[22px] pr-1")}>
+              <Link to={`/disks?disk=${disk.id}`} className={cn(rowLink, "min-w-0 flex-1 gap-3.5 py-3.5 pl-5 pr-1")}>
                 <DiskMark id={disk.id} t={t} size="sm" />
                 <div className="flex w-[140px] flex-none flex-col gap-0.5">
                   <span className="truncate text-sm font-medium">{disk.name}</span>
@@ -402,33 +402,25 @@ export function DashboardView(props: DashboardViewProps) {
         </section>
 
         <section className={cn(card, "flex min-w-0 flex-[1_1_400px] flex-col pb-2")}>
-          <div className="flex items-center px-[22px] pb-2.5 pt-[18px]">
-            <h2 className="m-0 flex-1 text-[15px] font-semibold">{text.recentRuns}</h2>
+          <div className="flex items-center px-5 pb-2.5 pt-4">
+            <h2 className="m-0 flex-1 text-sm font-semibold">{text.recentRuns}</h2>
             <Link to="/activity" className="text-[13px] text-accent-text no-underline hover:underline">
               {text.history}
             </Link>
           </div>
           {lastRuns.length === 0 ? (
-            <span className="px-[22px] pb-3 text-[13px] text-faint">{text.noRuns}</span>
+            <span className="px-5 pb-3 text-[13px] text-faint">{text.noRuns}</span>
           ) : (
             lastRuns.map(({ run, tone }) => (
               <RunRow key={run.id} run={run} t={t} language={language}>
               <button
                 type="button"
                 onClick={() => openRunModal(run.id)}
-                className={cn(rowLink, "min-w-0 flex-1 gap-3 border-0 bg-transparent py-[11px] pl-[22px] pr-1 text-left")}
+                className={cn(rowLink, "min-w-0 flex-1 gap-3 border-0 bg-transparent py-2.5 pl-5 pr-1 text-left")}
                 data-run={run.id}
                 data-tone={tone}
               >
-                <span
-                  className={cn(
-                    "flex h-[18px] w-[18px] flex-none items-center justify-center rounded-full text-[10px] font-bold",
-                    tone === "ok" ? "bg-success/15 text-success-text" : tone === "err" ? "bg-danger/15 text-danger-text" : "bg-accent/15 text-accent-text",
-                  )}
-                  aria-hidden="true"
-                >
-                  {tone === "ok" ? "✓" : tone === "err" ? "✕" : "•"}
-                </span>
+                <StatusIcon kind={tone === "ok" ? "success" : tone === "err" ? "failed" : "running"} progress={tone === "run" ? runPercent(run as never) : undefined} />
                 <span className="flex min-w-0 flex-1 items-center truncate text-sm">
                   {withDisk(
                     runKind(run) === "eject" ? text.runEject : runKind(run) === "verify" ? text.runVerify : runKind(run) === "repair" ? text.runRepair : text.runBackup,

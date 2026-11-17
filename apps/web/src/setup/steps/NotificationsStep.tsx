@@ -14,9 +14,7 @@ export function NotificationsStep({ onBack, onNext }: { onBack: () => void; onNe
   return (
     <>
       <CardHeader>
-        <div className="mb-1 flex h-10 w-10 items-center justify-center rounded-full bg-accent/15 text-accent">
-          <Bell className="h-5 w-5" />
-        </div>
+        <Bell className="mb-1 h-4 w-4 text-muted" />
         <CardTitle>{text.notifications.title}</CardTitle>
         <CardDescription>{text.notifications.description}</CardDescription>
       </CardHeader>

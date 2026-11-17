@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNow } from "../../ui/useNow";
-import { CalendarClock, ChevronDown, CheckCircle2, HardDrive, Loader2, Search, ShieldCheck, Trash2, Unplug, Wrench, XCircle } from "lucide-react";
+import { CalendarClock, ChevronDown, HardDrive, Search, ShieldCheck, Trash2, Unplug, Wrench } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 
 import { getActivityFeed, type ActivityItem } from "../../api";
 import { cn } from "../../components/ui/utils";
+import { StatusIcon, type StatusKind } from "../../ui/StatusIcon";
 import { HANDOFF_CODES } from "../../handoff";
 import type { Language, TranslationDictionary } from "../../i18n";
 import { openRunModal } from "../../runs/openRun";
 import { useConfirm } from "../../ui/confirm";
-import { InfoTip } from "../../ui/InfoTip";
+import { PageTitle } from "../../ui/PageTitle";
 import { fill, formatWhen } from "../format";
 import { DiskTag } from "../disks/DiskTag";
 import { useRunMenu } from "../../runs/runMenu";
@@ -31,12 +32,7 @@ import {
   type ActivityType,
 } from "./activityModel";
 
-const STATE_ICON: Record<ActivityState, { icon: typeof CheckCircle2; className: string }> = {
-  ok: { icon: CheckCircle2, className: "bg-success/15 text-success-text" },
-  failed: { icon: XCircle, className: "bg-danger/15 text-danger-text" },
-  running: { icon: Loader2, className: "bg-accent/15 text-accent-text" },
-  info: { icon: HardDrive, className: "bg-subtle text-muted" },
-};
+const STATE_KIND: Record<ActivityState, StatusKind | null> = { ok: "success", failed: "failed", running: "running", info: null };
 const TYPE_ICON: Record<ActivityType, typeof HardDrive> = { backup: HardDrive, eject: Unplug, verify: ShieldCheck, repair: Wrench, detection: HardDrive, planning: CalendarClock };
 
 /** Failure step code → its translated label (usb_device_not_found…). */
@@ -95,16 +91,15 @@ export function ActivityView({ language, t, refreshKey, onCleanup, cleaning, fet
   }
 
   return (
-    <div className="flex flex-col gap-[18px]">
+    <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="m-0 text-[26px] font-semibold tracking-[-0.02em]">{text.title}</h1>
-        <InfoTip text={text.info} label={t.shell.about} />
+        <PageTitle tip={text.info}>{text.title}</PageTitle>
         <span className="flex-1" />
         <button
           type="button"
           disabled={cleaning}
           onClick={() => void cleanup()}
-          className="flex items-center gap-2 rounded-lg border border-solid border-border bg-subtle px-3.5 py-[9px] text-sm font-medium text-fg hover:brightness-110 disabled:opacity-60"
+          className="flex items-center gap-2 rounded-lg border border-solid border-border bg-subtle px-3.5 py-2 text-sm font-medium text-fg hover:brightness-110 disabled:opacity-60"
         >
           <Trash2 className="h-4 w-4" />
           {text.cleanup}
@@ -161,7 +156,7 @@ export function ActivityView({ language, t, refreshKey, onCleanup, cleaning, fet
         </select>
       </div>
 
-      <section className="overflow-hidden rounded-2xl border border-solid border-border bg-surface">
+      <section className="overflow-hidden rounded-lg border border-solid border-border bg-surface">
         {failed ? <p className="m-0 px-5 py-4 text-[13px] text-danger-text">{text.loadFailed}</p> : null}
         {items === null && !failed ? <p className="m-0 px-5 py-4 text-[13px] text-faint">{text.loading}</p> : null}
         {items !== null && shown.length === 0 ? (
@@ -249,14 +244,14 @@ export function ActivityRow({
 }) {
   const text = t.activityV2;
   const state = activityState(item);
-  const { icon: StateIcon, className } = STATE_ICON[state];
+  const kind = STATE_KIND[state];
   const TypeIcon = TYPE_ICON[item.type];
   const duration = durationText(item.duration_seconds, language);
   const clickable = item.run_id !== null;
   const content = (
     <>
-      <span className={cn("flex h-8 w-8 flex-none items-center justify-center rounded-full", className)}>
-        <StateIcon className={cn("h-4 w-4", state === "running" && "animate-spin")} />
+      <span className="flex h-5 w-5 flex-none items-center justify-center" data-state={state}>
+        {kind ? <StatusIcon kind={kind} /> : <TypeIcon className="h-4 w-4 text-faint" />}
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[13px]">
@@ -273,7 +268,7 @@ export function ActivityRow({
       </span>
       <span className="flex flex-none flex-col items-end gap-0.5 text-xs text-faint">
         <span>{formatWhen(item.at, language, now, t.dashboardV2)}</span>
-        {duration ? <span className="font-mono">{duration}</span> : null}
+        {duration ? <span>{duration}</span> : null}
       </span>
     </>
   );
