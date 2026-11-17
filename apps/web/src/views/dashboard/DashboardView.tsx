@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNow } from "../../ui/useNow";
 import { CalendarDays, HardDrive, Loader2, Play } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -115,7 +116,7 @@ function ConfirmRow({ label, runId, t, onChanged }: { label: string; runId: numb
 export function DashboardView(props: DashboardViewProps) {
   const { overview, disks, runs, language, t } = props;
   const text = t.dashboardV2;
-  const now = props.now ?? new Date();
+  const now = useNow(props.now);
   const when = (iso: string | null) => formatWhen(iso, language, now, text);
   const protection = protectionSummary(overview);
   const current = currentOrLastRun(runs);

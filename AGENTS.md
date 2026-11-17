@@ -419,6 +419,17 @@ should reach them — and every call is additionally protected with an
   / `pbs_config_missing_unknown`, with manual steps — never wiped. Journal
   codes `datastore_recreate_start` / `datastore_recreated`. Config states are
   disk alerts too (`pbs_config_recoverable|missing`, `pbs_conflict`).
+- **Token privileges (5f.1)**: re-creating a config (`POST /config/datastore`)
+  needs `Datastore.Allocate`, held only by `Admin` → `PBS_ACLS` sets `Admin` on
+  `/datastore` (was `DatastoreAdmin`). `services/pbs_permissions.py` lists the
+  privileges per path and checks the token's effective ones
+  (`GET /access/permissions`) in readiness and before creating a run (cached
+  60 s): missing → `pbs_token_cannot_create_datastore` /
+  `pbs_token_missing_privileges` with the exact `proxmox-backup-manager acl
+  update` command; a 403 during a run gives the same readable message.
+  Resources: `copies_by_group` falls back to a disk's successful runs when its
+  contents were never read (`source: "runs"`). Relative dates use `useNow()`
+  (`src/ui/useNow.ts`, refreshed every minute).
 - **Recurrence**: `recurrence_config.weekdays` (several days a week, 0 =
   Monday) in `services/recurrence.py`, RRULE `BYDAY`. The planning form
   (`views/planning/planningForm.ts`) = When / Which disk(s) / What, presets,

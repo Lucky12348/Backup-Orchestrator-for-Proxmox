@@ -44,7 +44,7 @@ Source: `https://pbs.proxmox.com/docs/api-viewer/apidoc.js` (schema of the
 | Format + create removable datastore | `POST /nodes/{node}/disks/directory` | `disk`, `name` (3-32 chars), `filesystem=ext4`, `add-datastore=true`, `removable-datastore=true` | UPID [V] | Sys.Modify `/system/disks` |
 | List configs (incl. `backing-device`) | `GET /config/datastore` | – | items incl. `name, path, backing-device` (fs UUID), `comment`, `maintenance-mode` [V] | – (filtered by ACL) |
 | PBO marker | `PUT /config/datastore/{name}` | `comment=pbo:serial=<serial>` | null [V] | Datastore.Modify `/datastore/{name}` |
-| (migration) re-register a datastore | `POST /config/datastore` | `name`, `path` (relative on-device path), `backing-device`, `reuse-datastore=true` | **null** [V] (a UPID is waited for if ever returned) | Datastore.Allocate + Sys.Modify `/system/disks` |
+| Re-register a datastore (deleted config, migration) | `POST /config/datastore` | `name`, `path` (relative on-device path), `backing-device`, `reuse-datastore=true` | **null** [V] (a UPID is waited for if ever returned) | Datastore.Allocate + Sys.Modify `/system/disks` |
 | Mount state | `GET /admin/datastore` | – | items `store, mount-status (mounted\|notmounted\|nonremovable), maintenance` [V] | – |
 | Usage | `GET /admin/datastore/{store}/status` | – | `total, used, avail` bytes [V] | Datastore.Audit/Backup |
 | Mount | `POST /admin/datastore/{store}/mount` | – | UPID [V] | Datastore.Modify `/datastore/{store}` **and** Sys.Modify `/system/disks` |
@@ -59,6 +59,7 @@ Source: `https://pbs.proxmox.com/docs/api-viewer/apidoc.js` (schema of the
 | Retention after each sync (5f) | `POST /admin/datastore/{store}/prune-datastore` | `keep-last` / `keep-weekly` / `keep-monthly` (≥ 1; at least one, refused otherwise — a prune without keep deletes everything) | UPID [V] | "Datastore.Modify or Datastore.Prune" [V] |
 | Free the pruned chunks (5f) | `POST /admin/datastore/{store}/gc` | – | UPID [V] | Datastore.Modify `/datastore/{store}` [V] |
 | Verify the copy (5f) | `POST /admin/datastore/{store}/verify` | one snapshot: `backup-type`, `backup-id`, `backup-time`, `ignore-verified=false`; whole store: `ignore-verified=false` | UPID [V] | Datastore.Verify, or Datastore.Backup + owner [V] |
+| Token's own privileges (pre-run check) | `GET /access/permissions` | `path` | `{path: {privilege: propagate}}` [V] | own privileges: anybody |
 | Task log into the run journal | `GET /nodes/{node}/tasks/{upid}/log` | `start`, `limit=500` | untyped in schema [U]: parsed as `[{n, t}]` (PBS's actual format), plain strings accepted | own tasks or Sys.Audit |
 
 Notes:
@@ -83,7 +84,7 @@ intersection of its ACLs and its user's):
 |---|---|---|
 | `/system/disks` | `Admin` | `Sys.Audit` + `Sys.Modify` (list, wipe, create removable datastore, mount/unmount) |
 | `/system/tasks` | `Audit` | `Sys.Audit` (follow tasks) |
-| `/datastore` | `DatastoreAdmin` | `Datastore.Allocate`/`Modify`/`Backup`/`Read`/`Audit` on every store (targets are created at runtime) |
+| `/datastore` | `Admin` | `Datastore.Allocate` (re-create a config, only `Admin` has it) + `Modify`/`Backup`/`Read`/`Audit`/`Prune`/`Verify` on every store (targets are created at runtime) |
 
 PBS caches its ACL configuration for a few seconds: right after the ACLs are
 set, `GET /admin/datastore` with the new token returns a **filtered (empty)**
@@ -95,7 +96,7 @@ superuser-only (the PBS node is always `localhost`).
 
 Reasons and the manual equivalent: [PERMISSIONS.md](PERMISSIONS.md). Exact
 local-sync permissions on the *source* store are not spelled out by the schema
-[U]: `DatastoreAdmin` on `/datastore` covers them.
+[U]: `Admin` on `/datastore` covers them. Per-call privileges and the pre-run check: [PERMISSIONS.md](PERMISSIONS.md).
 
 ## Flows
 

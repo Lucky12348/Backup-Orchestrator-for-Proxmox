@@ -71,6 +71,16 @@ REUSED_MESSAGE = "Existing dedicated PBS datastore reused."  # compared by exter
 CREATED_MESSAGE = "Dedicated PBS datastore created."
 RECREATED_MESSAGE = "PBS configuration re-created from the existing data, no formatting."
 EJECT_OK_MESSAGE = "External datastore unmounted safely. Disk can be detached."
+# What a 403 interrupted, for the operator.
+OPERATIONS = {
+    "/prepare-dedicated-pbs-datastore": "the datastore preparation",
+    "/run-external-export": "the sync",
+    "/eject-dedicated-pbs-datastore": "the eject",
+    "/prune-datastore": "the retention",
+    "/verify-snapshots": "the verification",
+    "/list-datastore-snapshots": "reading the disk contents",
+    "/inspect-disk": "reading the disks",
+}
 # Above this many copied snapshots: one verify task of the whole datastore.
 MAX_VERIFY_TASKS = 200
 API_MODE_CAPABILITIES = frozenset(
@@ -158,7 +168,15 @@ class PBSApiBackend:
             raise self._error(str(exc), summary, error_code=exc.code) from exc
         except (PBSTaskError, PBSTaskTimeout) as exc:
             raise self._error(str(exc), summary, stdout_log="\n".join(exc.log_lines) or None) from exc
-        except (PBSApiError, RuntimeError, KeyError, ValueError) as exc:
+        except PBSApiError as exc:
+            if exc.status_code == 403:
+                # Readable message + the exact command, not "HTTP 403 … permission check failed".
+                from app.services.pbs_permissions import denied_message
+
+                code, message = denied_message(self.client, self.settings.pbs_token_id, OPERATIONS.get(path, path))
+                raise self._error(message, summary, error_code=code, stdout_log=str(exc)) from exc
+            raise self._error(str(exc), summary) from exc
+        except (RuntimeError, KeyError, ValueError) as exc:
             raise self._error(str(exc), summary) from exc
         return HostAgentResult(
             ok=bool(result.get("ok", True)),

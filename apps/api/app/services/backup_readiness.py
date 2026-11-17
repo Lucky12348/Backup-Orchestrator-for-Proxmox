@@ -192,6 +192,12 @@ def external_backup_readiness(
                 reasons.append(_reason("pbs_unreachable", f"The PBS API does not answer: {error}"))
             else:
                 pbs_api_client = getattr(backend, "client", None)
+                if pbs_api_client is not None:
+                    # Effective privileges of the token (GET /access/permissions).
+                    from app.services import pbs_permissions
+
+                    if missing := pbs_permissions.check(settings, pbs_api_client):
+                        reasons.append(missing)
     else:
         if not settings.pbs_agent_base_url:
             reasons.append(_reason("pbs_agent_missing", "PBS_MODE=agent but no PBS agent is configured."))

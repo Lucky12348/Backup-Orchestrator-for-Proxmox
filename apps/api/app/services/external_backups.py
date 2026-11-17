@@ -220,6 +220,7 @@ def run_external_backup(
             estimate = check_space(db, disk, group_filter=group_filter, datastore=datastore_name)
             if reason := space_reason(estimate):
                 reasons.append(reason)
+        reasons.extend(_token_privilege_reasons(db))
         if reasons:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -287,6 +288,21 @@ def run_external_backup(
         )
     db.refresh(run)
     return run
+
+
+def _token_privilege_reasons(db: Session) -> list[dict[str, object]]:
+    """PBS_MODE=api: the PBO token must hold every privilege of the disk path
+    (services/pbs_permissions.py); unknown = no refusal."""
+    from app.services.settings_service import effective_settings
+
+    settings = effective_settings(db)
+    if settings.pbs_mode != "api" or not settings.pbs_api_url or not settings.pbs_token_id:
+        return []
+    from app.services import pbs_permissions
+    from app.services.pbs_client import PBSClient
+
+    found = pbs_permissions.check(settings, PBSClient(settings))
+    return [found] if found else []
 
 
 def _verify_only_reasons(disk: ExternalDisk) -> list[dict[str, str]]:

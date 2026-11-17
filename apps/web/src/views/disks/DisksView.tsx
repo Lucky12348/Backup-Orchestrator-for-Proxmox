@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNow } from "../../ui/useNow";
 import { AlertTriangle, ChevronRight, Loader2, Play, RefreshCw, Search, ShieldCheck, Unplug } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 
@@ -387,7 +388,7 @@ export function DiskDetail({
 }) {
   const { disk, status } = row;
   const text = t.disksV2;
-  const now = new Date();
+  const now = useNow();
   const when = (iso: string | null) => formatWhen(iso, language, now, t.dashboardV2);
   const actions = diskActions(disk, status);
   const readiness = useReadiness(disk, status, runs);

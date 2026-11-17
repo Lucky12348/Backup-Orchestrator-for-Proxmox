@@ -48,9 +48,13 @@ PBS_ACLS: tuple[tuple[str, str], ...] = (
     ("/system/disks", "Admin"),
     # Sys.Audit: list and follow tasks that are not the token's own.
     ("/system/tasks", "Audit"),
-    # Datastore.Allocate/Modify/Backup/Read/Audit on every store: the target
-    # stores are created at runtime, so the ACL sits on the parent path.
-    ("/datastore", "DatastoreAdmin"),
+    # Datastore.Allocate (POST /config/datastore: re-create a deleted config
+    # with reuse-datastore) + Modify/Audit/Read/Backup/Prune/Verify on every
+    # store. Only `Admin` holds Datastore.Allocate (DatastoreAdmin does not);
+    # the target stores are created at runtime, so the ACL sits on the parent
+    # path (it survives `datastore remove`, which drops /datastore/<name>).
+    # Details: services/pbs_permissions.py, docs/PERMISSIONS.md.
+    ("/datastore", "Admin"),
 )
 PBS_MIN_VERSION = (3, 3)
 PROVISION_TIMEOUT_SECONDS = 20.0

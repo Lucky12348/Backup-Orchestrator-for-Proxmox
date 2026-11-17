@@ -32,6 +32,8 @@ export interface ExternalCopy {
   newest: string | null;
   versions: number | null;
   cached_at: string | null;
+  /** "contents" = read in PBS; "runs" = what its successful backups copied (Phase 5f.1). */
+  source?: "contents" | "runs";
 }
 
 export type DiskColor = "slate" | "blue" | "green" | "amber" | "red" | "violet";

@@ -231,6 +231,12 @@ class PBSClient:
         """POST /admin/datastore/{store}/unmount → UPID."""
         return _require_upid(self._request("POST", f"admin/datastore/{_seg(store)}/unmount"), "unmount")
 
+    def permissions(self, path: str) -> dict[str, dict[str, bool]]:
+        """GET /access/permissions?path=… — the token's own effective
+        privileges: {path: {privilege: propagate}} (a token may query itself)."""
+        data = self._get("access/permissions", params={"path": path})
+        return data if isinstance(data, dict) else {}
+
     # --- retention, garbage collection, verification (Phase 5f) -------------------
     def prune_datastore(self, store: str, *, keep: Mapping[str, int], dry_run: bool = False) -> str:
         """POST /admin/datastore/{store}/prune-datastore → UPID.

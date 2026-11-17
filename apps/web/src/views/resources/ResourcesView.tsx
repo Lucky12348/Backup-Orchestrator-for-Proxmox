@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+
+import { useNow } from "../../ui/useNow";
 import { Search, Server, ShieldCheck } from "lucide-react";
 
 import { cn } from "../../components/ui/utils";
@@ -59,7 +61,9 @@ function readableJob(job: ProxmoxBackupJob, t: TranslationDictionary, language: 
   return jobLabel(job, t.jobsV2.name, language);
 }
 
-export function ResourcesView({ vms, jobs, language, t, onIgnore, onJobSelection, now = new Date() }: ResourcesViewProps) {
+export function ResourcesView({ vms, jobs, language, t, onIgnore, onJobSelection, now: fixedNow }: ResourcesViewProps) {
+  // "today / yesterday" follow the clock even when the page stays open overnight.
+  const now = useNow(fixedNow);
   const text = t.resourcesV2;
   const { toast } = useToast();
   const [filters, setFilters] = useState<ResourceFilters>({ query: "", type: "", protection: "", node: "" });
@@ -279,6 +283,10 @@ export function DiskCopies({ copies, language, now, t }: { copies: ExternalCopy[
           <Link
             key={copy.disk_id}
             to={`/disks/${copy.disk_id}`}
+            title={fill(copy.source === "runs" ? t.resourcesV2.copyFromRuns : t.resourcesV2.copyAsOf, {
+              when: formatWhen(copy.source === "runs" ? copy.newest : copy.cached_at, language, now, t.dashboardV2),
+            })}
+            data-source={copy.source ?? "contents"}
             className="flex items-center gap-1.5 whitespace-nowrap text-xs text-muted no-underline hover:text-fg"
           >
             <span className={cn("h-2 w-2 flex-none rounded-full", color ? COLOR_CLASS[color].swatch : "bg-faint")} />

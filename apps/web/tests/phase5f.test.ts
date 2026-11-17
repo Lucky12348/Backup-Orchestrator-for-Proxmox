@@ -157,3 +157,32 @@ test("PBS configuration deleted: in 'To do' first, linked to the disk sheet, tol
   assert.match(translations.fr.datastoresV2.diskHelp.missing_recoverable.data, /toujours sur le disque/);
   assert.match(translations.fr.runLog.datastore_recreated, /aucun formatage/);
 });
+
+// --- Phase 5f.1: token privileges, relative dates ------------------------------------------------
+
+test("relative label: a copy from yesterday evening is 'hier' after midnight (browser time zone)", async () => {
+  const { formatWhen } = await import("../src/views/format.ts");
+  const texts = translations.fr.dashboardV2;
+  const at = new Date(2026, 10, 16, 19, 0); // local 16 Nov 19:00
+  const lateEvening = new Date(2026, 10, 16, 23, 30);
+  const night = new Date(2026, 10, 17, 3, 36);
+  assert.match(formatWhen(at.toISOString(), "fr", lateEvening, texts), /^auj\. 19:00$/);
+  assert.match(formatWhen(at.toISOString(), "fr", night, texts), /^hier 19:00$/);
+});
+
+test("missing PBS privileges: readable reason with the exact command (FR/EN)", () => {
+  const reason = {
+    code: "pbs_token_cannot_create_datastore",
+    message: "x",
+    privileges: "Datastore.Allocate (/datastore)",
+    command: "proxmox-backup-manager acl update /datastore Admin --auth-id pbo@pbs",
+  };
+  const fr = reasonText(reason, translations.fr.readiness as Record<string, string>, "fr");
+  assert.ok(fr.startsWith("Le jeton PBO ne peut pas créer de datastore") && fr.endsWith("--auth-id pbo@pbs"));
+  for (const lang of ["en", "fr"] as const) {
+    for (const code of ["pbs_token_cannot_create_datastore", "pbs_token_missing_privileges", "pbs_permission_denied"]) {
+      assert.ok(code in translations[lang].runLog, `${code} runLog (${lang})`);
+    }
+    assert.ok("pbs_token_missing_privileges" in translations[lang].readiness);
+  }
+});

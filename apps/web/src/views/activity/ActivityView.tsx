@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useNow } from "../../ui/useNow";
 import { CalendarClock, ChevronDown, CheckCircle2, HardDrive, Loader2, Search, ShieldCheck, Trash2, Unplug, XCircle } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -60,7 +61,7 @@ export function ActivityView({ language, t, refreshKey, onCleanup, cleaning, fet
   const [items, setItems] = useState<ActivityItem[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [filters, setFilters] = useState<ActivityFilters>({ type: "runs", state: "", diskId: null, days: 30, query: "" });
-  const now = fixedNow ?? new Date();
+  const now = useNow(fixedNow);
   const fetchDays = Math.max(90, filters.days);
 
   const load = useCallback(async () => {

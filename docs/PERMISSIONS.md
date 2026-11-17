@@ -51,7 +51,44 @@ listed in [PBS_API.md](PBS_API.md#endpoints-used-checked-against-the-pbs-4x-api-
 |---|---|---|---|
 | `/system/disks` | `Admin` | `Sys.Audit` (disk list, guards), `Sys.Modify` (wipe, create removable datastore, mount / unmount) | `Admin` is the only built-in role with `Sys.Modify`; the ACL is limited to the disks subtree |
 | `/system/tasks` | `Audit` | `Sys.Audit` (list and follow PBS tasks the token did not start, e.g. sync jobs) | read-only |
-| `/datastore` | `DatastoreAdmin` | `Datastore.Allocate` (create removable datastores at runtime), `Datastore.Modify` (PBO marker, mount), `Datastore.Backup` (local sync jobs), `Datastore.Read`/`Audit` (source datastore, snapshot inventory, disk contents), `Datastore.Prune`/`Modify` (retention: prune-datastore, then gc — Phase 5f), `Datastore.Verify` (verify of the copied snapshots — Phase 5f) | target datastores do not exist yet when the ACL is set, so it sits on the parent path |
+| `/datastore` | `Admin` | `Datastore.Allocate` (`POST /config/datastore`: re-create a deleted configuration with reuse-datastore), `Datastore.Modify` (PBO marker, mount), `Datastore.Backup` (local sync jobs), `Datastore.Read`/`Audit` (source datastore, snapshot inventory, disk contents), `Datastore.Prune`/`Modify` (retention: prune-datastore, then gc — Phase 5f), `Datastore.Verify` (verify of the copied snapshots — Phase 5f) | `Admin` is the only built-in role with `Datastore.Allocate` (`DatastoreAdmin` = Audit, Modify, Read, Verify, Backup, Prune); target datastores do not exist yet when the ACL is set, so it sits on the parent path |
+
+### Privileges per call (PBS 4.x source, `access:` blocks + in-handler checks)
+
+| Call (disk path) | Privileges |
+|---|---|
+| `GET /nodes/{node}/disks/list` | `Sys.Audit` on `/system/disks` |
+| `PUT …/disks/wipedisk`, `POST …/disks/directory` (first creation, removable) | `Sys.Modify` on `/system/disks` |
+| `POST /config/datastore` (re-create, `backing-device`, `reuse-datastore`) | `Datastore.Allocate` on `/datastore` **and** `Sys.Modify` on `/system/disks` |
+| `PUT /config/datastore/{name}` (PBO marker) | `Datastore.Modify` |
+| `POST /admin/datastore/{store}/mount` / `unmount` | `Datastore.Modify` + `Sys.Modify` on `/system/disks` |
+| status, snapshots | `Datastore.Audit` |
+| local sync job (`/config/sync`, `/admin/sync/{id}/run`) | `Datastore.Backup` (target), `Datastore.Read`/`Audit` (source) |
+| `prune-datastore` | `Datastore.Modify` or `Datastore.Prune` |
+| `gc` | `Datastore.Modify` |
+| `verify` | `Datastore.Verify` |
+| following tasks of other users (sync job) | `Sys.Audit` on `/system/tasks` |
+
+The first creation goes through `disks/directory` (`Sys.Modify` only): a token
+with `DatastoreAdmin` on `/datastore` could create a datastore but not
+re-create a deleted configuration (403 "permission check failed", real test
+5f.1). `datastore remove` deletes the ACLs of `/datastore/<name>` (unless
+`--keep-job-configs`); PBO never set any — its ACL is on `/datastore` and
+survives — so nothing has to be re-applied.
+
+**Checked before every run**: `GET /access/permissions?path=…` (a token may
+read its own privileges, `services/pbs_permissions.py`). A missing privilege
+= no run, readiness reason `pbs_token_cannot_create_datastore` /
+`pbs_token_missing_privileges` with the exact command to run on PBS; a 403
+during a run is reported the same way (`pbs_permission_denied` when PBS cannot
+tell which one).
+
+**Existing installs** (provisioned with `DatastoreAdmin`), on PBS:
+
+```bash
+proxmox-backup-manager acl update /datastore Admin --auth-id pbo@pbs
+proxmox-backup-manager acl update /datastore Admin --auth-id 'pbo@pbs!pbo'
+```
 
 The wizard refuses PBS older than **3.3** (no removable datastores, so no API
 mode) before creating anything.
@@ -78,8 +115,8 @@ proxmox-backup-manager acl update /system/disks Admin --auth-id pbo@pbs
 proxmox-backup-manager acl update /system/disks Admin --auth-id 'pbo@pbs!pbo'
 proxmox-backup-manager acl update /system/tasks Audit --auth-id pbo@pbs
 proxmox-backup-manager acl update /system/tasks Audit --auth-id 'pbo@pbs!pbo'
-proxmox-backup-manager acl update /datastore DatastoreAdmin --auth-id pbo@pbs
-proxmox-backup-manager acl update /datastore DatastoreAdmin --auth-id 'pbo@pbs!pbo'
+proxmox-backup-manager acl update /datastore Admin --auth-id pbo@pbs
+proxmox-backup-manager acl update /datastore Admin --auth-id 'pbo@pbs!pbo'
 ```
 
 The PVE privilege list is defined twice (agent and API, they cannot import

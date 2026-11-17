@@ -111,11 +111,72 @@ def contents_payload(db: Session, disk: ExternalDisk) -> dict[str, Any]:
     }
 
 
-def copies_by_group(db: Session) -> dict[str, list[dict[str, Any]]]:
-    """{"vm/100": [{"disk_id", "disk_name", "color", "newest", "versions"}]}, newest first."""
+def _iso_dt(value: datetime | None) -> str | None:
+    return value.isoformat(timespec="seconds") + "Z" if value else None
+
+
+def copies_from_runs(db: Session, skip: set[int]) -> dict[str, list[dict[str, Any]]]:
+    """Disks whose contents were never read (prepared before the cache, config
+    deleted, unplugged): what their successful backups copied — the VM/CT of
+    the group filter, or every VM/CT with a PBS backup for a whole-datastore
+    copy — dated by the end of the most recent such run per group."""
+    from app.models import ExternalBackupRun
+    from app.models.backup_run import BackupRunStatus
+    from app.services.run_log import run_kind
+
+    disks = {disk.id: disk for disk in db.scalars(select(ExternalDisk))}
+    all_groups = [group for group, vm in _guest_groups(db) if vm.last_backup_at is not None]
+    newest: dict[tuple[str, int], datetime] = {}
+    for run in db.scalars(
+        select(ExternalBackupRun).where(
+            ExternalBackupRun.status == BackupRunStatus.SUCCESS, ExternalBackupRun.finished_at.is_not(None)
+        )
+    ):
+        disk = disks.get(run.disk_id)
+        if disk is None or disk.id in skip or run.verify_only or run_kind(run, disk) != "backup":
+            continue
+        groups = [str(item).removeprefix("group:") for item in run.group_filter] if run.group_filter else all_groups
+        for group in groups:
+            key = (group, disk.id)
+            if run.finished_at > newest.get(key, datetime.min):
+                newest[key] = run.finished_at
     result: dict[str, list[dict[str, Any]]] = {}
+    for (group, disk_id), at in newest.items():
+        disk = disks[disk_id]
+        result.setdefault(group, []).append(
+            {
+                "disk_id": disk.id,
+                "disk_name": disk.display_name,
+                "color": disk.color,
+                "newest": _iso_dt(at),
+                "versions": None,
+                "cached_at": _iso_dt(at),
+                "source": "runs",
+            }
+        )
+    return result
+
+
+def _guest_groups(db: Session) -> list[tuple[str, VirtualMachine]]:
+    return [
+        (f"{'ct' if vm.vm_type == VMType.CT else 'vm'}/{vm.external_id}", vm)
+        for vm in db.scalars(select(VirtualMachine))
+        if vm.external_id
+    ]
+
+
+def copies_by_group(db: Session) -> dict[str, list[dict[str, Any]]]:
+    """{"vm/100": [{"disk_id", "disk_name", "color", "newest", "versions",
+    "cached_at", "source"}]}, newest first. Per disk: its cached contents
+    (read in PBS, kept while unplugged or after its PBS config was deleted),
+    else what its successful runs copied."""
+    result: dict[str, list[dict[str, Any]]] = {}
+    cached: set[int] = set()
     for disk in db.scalars(select(ExternalDisk).where(ExternalDisk.contents_cache.is_not(None))):
         cache = disk.contents_cache if isinstance(disk.contents_cache, dict) else {}
+        if not cache.get("items"):
+            continue
+        cached.add(disk.id)
         for item in cache.get("items") or []:
             group = item.get("group")
             if not group:
@@ -127,9 +188,12 @@ def copies_by_group(db: Session) -> dict[str, list[dict[str, Any]]]:
                     "color": disk.color,
                     "newest": item.get("newest"),
                     "versions": item.get("versions"),
-                    "cached_at": disk.contents_cached_at.isoformat(timespec="seconds") + "Z" if disk.contents_cached_at else None,
+                    "cached_at": _iso_dt(disk.contents_cached_at),
+                    "source": "contents",
                 }
             )
+    for group, copies in copies_from_runs(db, cached).items():
+        result.setdefault(group, []).extend(copies)
     for copies in result.values():
         copies.sort(key=lambda copy: copy.get("newest") or "", reverse=True)
     return result

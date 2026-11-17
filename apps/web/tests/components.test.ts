@@ -578,6 +578,18 @@ test("DiskCopies: the disks holding a copy of a VM, newest first", () => {
   const markup = html(inApp(createElement(ui.DiskCopies, { copies, language: "fr", now: new Date("2026-11-16T12:00:00Z"), t: translations.fr })));
   assert.ok(markup.includes('href="/disks/1"') && markup.includes("WD 4 To") && markup.includes("bg-sky-500"));
   assert.ok(html(inApp(createElement(ui.DiskCopies, { copies: [], language: "fr", now: new Date(), t: translations.fr }))).includes("sur aucun disque"));
+  // Phase 5f.1: a disk whose contents were never read still shows what its backups copied.
+  const fromRuns = html(
+    inApp(
+      createElement(ui.DiskCopies, {
+        copies: [{ disk_id: 3, disk_name: "PBOTESTA", color: null, newest: "2026-11-15T18:00:00Z", versions: null, cached_at: "2026-11-15T18:00:00Z", source: "runs" }],
+        language: "fr",
+        now: new Date("2026-11-16T12:00:00Z"),
+        t: translations.fr,
+      }),
+    ),
+  );
+  assert.ok(fromRuns.includes("PBOTESTA") && fromRuns.includes('data-source="runs"') && fromRuns.includes("D’après ses sauvegardes réussies"));
 });
 
 test("PbsConfigNotice: what happened, data safe, what to do (manual command when PBO cannot)", () => {

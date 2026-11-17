@@ -62,6 +62,12 @@ class FakePBS:
         self.prune_calls: list[dict[str, Any]] = []
         self.gc_calls: list[str] = []
         self.status_bytes: dict[str, dict[str, int]] = {}
+        # GET /access/permissions: {path: [privileges]} the token holds.
+        self.privileges: dict[str, list[str]] = {
+            "/datastore": ["Datastore.Allocate", "Datastore.Modify", "Datastore.Audit", "Datastore.Read", "Datastore.Backup", "Datastore.Prune", "Datastore.Verify"],
+            "/system/disks": ["Sys.Audit", "Sys.Modify"],
+            "/system/tasks": ["Sys.Audit"],
+        }
         self._pid = 0x1000
         self._clock = 1_700_000_000
 
@@ -140,6 +146,8 @@ class FakePBS:
         method = request.method
         self.calls.append((method, path, body))
         params = request.url.params
+        if (method, path) == ("POST", "config/datastore") and "Datastore.Allocate" not in self.privileges.get("/datastore", []):
+            return httpx.Response(403, json={"message": "permission check failed"})
         try:
             data = self._route(method, path, body, params)
         except LookupError as exc:
@@ -150,6 +158,9 @@ class FakePBS:
 
     def _route(self, method: str, path: str, body: Any, params: Any) -> Any:
         parts = path.split("/")
+        if (method, path) == ("GET", "access/permissions"):
+            wanted = params.get("path")
+            return {wanted: dict.fromkeys(self.privileges.get(wanted, []), True)} if self.privileges.get(wanted) else {}
         if (method, path) == ("GET", "version"):
             return {"version": "4.1.0", "release": "4.1", "repoid": "fake"}
         if (method, path) == ("GET", "nodes/localhost/disks/list"):
