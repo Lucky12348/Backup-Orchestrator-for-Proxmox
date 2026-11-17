@@ -217,3 +217,48 @@ def test_deleting_on_the_source_datastore_is_refused():
     with pytest.raises(HostAgentError) as refused:
         backend.post("/delete-snapshots", {"datastore_name": "main", "snapshots": ["ct/101/1"]})
     assert refused.value.payload["error_code"] == "delete_refused"
+
+
+def test_repair_applies_the_disk_retention_then_verifies_what_it_copied(db, session_factory):
+    """5f.5 (real run 36): a group resync copies every version of the source;
+    the disk's retention then applies, and every version the run copied and
+    kept is verified, not only the damaged one."""
+    from app.services import post_sync
+
+    T3 = T2 + 3600
+    fake = FakePBS()
+    fake.add_snapshot("main", "ct/101", T3, size=2**30)
+    disk = _disk(db)
+    disk.retention = {"keep_last": 2}
+    db.commit()
+    for when in (T0, T1, T2):
+        fake.add_snapshot("main", "ct/101", when, size=2**30)
+    with ExitStack() as stack:
+        _with_runs(stack, fake, session_factory)
+        execute_external_backup_run(_run(db, disk).id)
+    db.expire_all()
+    disk = db.get(ExternalDisk, disk.id)
+    assert sorted(item["backup-time"] for item in fake.snapshots[TARGET]) == [T2, T3]
+    fake.corrupt = {f"ct/101/{T2}"}
+    disk.damaged_snapshots = [{"key": f"ct/101/{T2}", "group": "ct/101", "time": "x", "in_source": True}]
+    db.commit()
+    verified: list = []
+    original = post_sync.verify
+
+    def spy(*args, **kwargs):
+        verified.append(sorted(kwargs.get("copied") or []))
+        return original(*args, **kwargs)
+
+    run = _run(db, disk, repair=True)
+    with ExitStack() as stack:
+        _with_runs(stack, fake, session_factory)
+        stack.enter_context(patch.object(post_sync, "verify", spy))
+        fake.corrupt = set()  # the re-copied versions are sound
+        execute_external_backup_run(run.id)
+    db.expire_all()
+    stored = db.get(ExternalBackupRun, run.id)
+    assert stored.status == BackupRunStatus.SUCCESS, stored.message
+    assert sorted(item["backup-time"] for item in fake.snapshots[TARGET]) == [T2, T3]  # retention, not 4 versions
+    assert verified == [sorted([f"ct/101/{T2}", f"ct/101/{T3}"])]
+    codes = _codes(db, run.id)
+    assert codes.index("repair_start") < codes.index("cleanup_done") < codes.index("repair_done")

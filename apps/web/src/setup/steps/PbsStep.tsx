@@ -14,6 +14,7 @@ import {
   type ManualCommands,
   type PbsCandidates,
   type PbsDatastore,
+  type PbsGuestAgent,
   type PbsSummary,
 } from "../api";
 import { CommandBlock, ErrorAlert, Field, Fingerprint, ManualSection, useText } from "../shared";
@@ -53,6 +54,7 @@ export function PbsStep({ saved, onSaved, onBack, onNext }: PbsStepProps) {
   const urlEditedRef = useRef(urlEdited);
   urlEditedRef.current = urlEdited;
   const detectRun = useRef(0);
+  const [guestAgent, setGuestAgent] = useState<PbsGuestAgent | null>(null);
 
   async function runDetect(id: number | null) {
     if (!id || urlEditedRef.current) return;
@@ -60,6 +62,7 @@ export function PbsStep({ saved, onSaved, onBack, onNext }: PbsStepProps) {
     setDetect("detecting");
     try {
       const result = await wizardApi.pbsDetect(id);
+      if (run === detectRun.current) setGuestAgent(result.guest_agent ?? null);
       if (run !== detectRun.current || urlEditedRef.current) return;
       if (result.detected && result.url) {
         setUrl(result.url);
@@ -345,6 +348,18 @@ export function PbsStep({ saved, onSaved, onBack, onNext }: PbsStepProps) {
                 {busy === "verify" ? text.pbs.verifying : text.pbs.verify}
               </Button>
             </div>
+
+            {guestAgent && !guestAgent.active ? (
+              <Alert variant="warning" title={text.pbs.guestAgentMissing}>
+                <div className="flex flex-col gap-2" data-guest-agent="missing">
+                  <p>{text.pbs.guestAgentHint}</p>
+                  <p className="text-[13px] font-medium">{text.pbs.guestAgentInPbs}</p>
+                  <CommandBlock lines={guestAgent.commands.slice(0, 1)} />
+                  <p className="text-[13px] font-medium">{text.pbs.guestAgentOnHost}</p>
+                  <CommandBlock lines={guestAgent.commands.slice(1)} />
+                </div>
+              </Alert>
+            ) : null}
 
             {fingerprint ? (
               <div className="flex flex-col gap-3 rounded-lg border border-border bg-subtle p-4 animate-fade-in">

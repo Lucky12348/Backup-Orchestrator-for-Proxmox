@@ -66,6 +66,11 @@ const fr = {
     url: "Adresse de PBS",
     urlHint: "Exemple : 192.168.1.20 (port 8007 par défaut).",
     detecting: "Recherche de l'adresse de PBS…",
+    guestAgentMissing: "L’agent invité QEMU ne répond pas dans la VM PBS",
+    guestAgentHint:
+      "Ce n’est pas bloquant. Sans lui, PBO ne peut pas nettoyer les montages morts laissés par un disque arraché pendant une sauvegarde : la sauvegarde suivante peut alors échouer. Pour l’activer :",
+    guestAgentInPbs: "Dans la VM PBS :",
+    guestAgentOnHost: "Puis sur l’hôte Proxmox (arrêt puis démarrage complet de la VM) :",
     autoDetected: "Détectée automatiquement",
     notDetected:
       "Adresse non trouvée automatiquement. Saisissez l'IP de la VM PBS : elle s'affiche sur sa console au démarrage (ou avec « ip a » dans la VM).",
@@ -236,6 +241,11 @@ const en: WizardText = {
     url: "PBS address",
     urlHint: "Example: 192.168.1.20 (port 8007 by default).",
     detecting: "Looking for the PBS address…",
+    guestAgentMissing: "The QEMU guest agent does not answer in the PBS VM",
+    guestAgentHint:
+      "This is not blocking. Without it, PBO cannot clean the stale mounts left by a disk pulled out during a backup, and the next backup may then fail. To enable it:",
+    guestAgentInPbs: "In the PBS VM:",
+    guestAgentOnHost: "Then on the Proxmox host (full stop and start of the VM):",
     autoDetected: "Detected automatically",
     notDetected:
       "Address not found automatically. Enter the IP of the PBS VM: it is shown on its console at boot (or run “ip a” inside the VM).",

@@ -196,7 +196,7 @@ export function DashboardView(props: DashboardViewProps) {
                 <>
                   <Loader2 className="h-4 w-4 flex-none animate-spin text-accent-text" />
                   <span className="text-sm font-medium">
-                    {fill(runKind(current.run) === "eject" ? text.ejecting : runKind(current.run) === "verify" ? text.verifying : text.running, { disk: current.run.disk_name })}
+                    {fill(runKind(current.run) === "eject" ? text.ejecting : runKind(current.run) === "verify" ? text.verifying : runKind(current.run) === "repair" ? text.repairing : text.running, { disk: current.run.disk_name })}
                   </span>
                   <span className="block h-1.5 flex-[1_1_120px] overflow-hidden rounded-full bg-subtle">
                     <span className="block h-full rounded-full bg-accent" style={{ width: `${current.run.progress_percent ?? 0}%` }} />

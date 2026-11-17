@@ -116,9 +116,10 @@ ROUTE_ROLES: dict[str, frozenset[str]] = {
     "/cleanup-legacy-external-export-objects": _PBS,
     "/external-export-objects/status": _PBS,
     "/external-export-objects/cleanup": _PBS,
-    # B41: stale (dead) mounts of a removable datastore path.
-    "/datastore/mounts": _PBS,
-    "/datastore/mounts/cleanup": _PBS,
+    # B41: stale (dead) mounts of a removable datastore path inside the PBS
+    # VM, through its QEMU guest agent (`qm guest exec`).
+    "/pbs-guest/agent": _HOST,
+    "/pbs-guest/mounts/cleanup": _HOST,
 }
 
 
@@ -597,22 +598,23 @@ def pve_guest_addresses(
     return _run_endpoint("pve-guest-addresses", lambda: guest_addresses(payload.vmids))
 
 
-class DatastoreMountsRequest(BaseModel):
-    path: str = Field(max_length=255)
+class PbsGuestRequest(BaseModel):
+    vmid: int = Field(gt=0)
+    path: str | None = Field(default=None, max_length=255)
 
 
-@app.post("/datastore/mounts", response_model=None)
-def datastore_mounts(payload: DatastoreMountsRequest, _: None = Depends(require_agent_token)) -> Response:
-    from agent.mounts import mounts_result
+@app.post("/pbs-guest/agent", response_model=None)
+def pbs_guest_agent(payload: PbsGuestRequest, _: None = Depends(require_agent_token)) -> Response:
+    from agent.mounts import guest_agent_status
 
-    return _run_endpoint("datastore-mounts", lambda: mounts_result(payload.path))
+    return _run_endpoint("pbs-guest-agent", lambda: guest_agent_status(payload.vmid))
 
 
-@app.post("/datastore/mounts/cleanup", response_model=None)
-def datastore_mounts_cleanup(payload: DatastoreMountsRequest, _: None = Depends(require_agent_token)) -> Response:
+@app.post("/pbs-guest/mounts/cleanup", response_model=None)
+def pbs_guest_mounts_cleanup(payload: PbsGuestRequest, _: None = Depends(require_agent_token)) -> Response:
     from agent.mounts import cleanup_dead_mounts
 
-    return _run_endpoint("datastore-mounts-cleanup", lambda: cleanup_dead_mounts(payload.path))
+    return _run_endpoint("pbs-guest-mounts-cleanup", lambda: cleanup_dead_mounts(payload.vmid, payload.path or ""))
 
 
 @app.get("/usb/devices", response_model=None)

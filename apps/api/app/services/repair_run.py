@@ -52,6 +52,7 @@ def execute_repair(db: Session, run: ExternalBackupRun, disk: ExternalDisk, hand
             log(step="repair", message=f"Repair: {describe(key)} deleted — it no longer existed anywhere else.")
         if steps["recopy"]:
             groups = sorted({key.rsplit("/", 1)[0] for key in steps["recopy"]})
+            before_sync = set(_keys(bridge, store))
             log(step="run_export", message="Starting PBS datastore export to dedicated disk.")
             export = bridge.run_external_export(
                 f"/mnt/datastore/{store}",
@@ -64,7 +65,13 @@ def execute_repair(db: Session, run: ExternalBackupRun, disk: ExternalDisk, hand
             )
             if not export.ok:
                 raise AgentCommandError(export.message, stdout_log=export.stdout_log, stderr_log=export.stderr_log)
-            post_sync.verify(bridge, run, store, log, copied=steps["recopy"], db=db, disk=disk)
+            # A group sync copies every version the source holds, not only the
+            # damaged ones: the disk's retention applies (prune + GC), then
+            # every version this run copied and still kept is verified.
+            post_sync.cleanup(bridge, run, disk, store, log)
+            copied = [key for key in _keys(bridge, store) if key not in before_sync]
+            post_sync.verify(bridge, run, store, log, copied=copied, db=db, disk=disk)
+            steps["recopy"] = copied
         post_sync.refresh_contents(db, bridge, run, disk, store, log)
         remaining = [item for item in damaged if item["key"] in steps["blocked"]]
         disk.damaged_snapshots = remaining or None
@@ -82,4 +89,4 @@ def execute_repair(db: Session, run: ExternalBackupRun, disk: ExternalDisk, hand
 
             disk_eject.release_disk_within_run(db, disk, run)  # the Release step always runs
         raise
-    return f"{handoff_message} Repair completed on `{store}`.".strip()
+    return f"Repair completed on `{store}`."

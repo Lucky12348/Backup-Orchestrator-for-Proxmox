@@ -1,61 +1,81 @@
-"""B41: stale mounts stacked on a removable datastore path (PBS role)."""
+"""B41: stale mounts stacked on a removable datastore path inside the PBS VM,
+handled by the host agent through the QEMU guest agent (`qm guest exec`)."""
 
+import json
 import subprocess
-import tempfile
 import unittest
-from pathlib import Path
 
-from agent.mounts import cleanup_dead_mounts, mounts_at, validate_path
+from agent.mounts import cleanup_dead_mounts, guest_agent_status, validate_path
 
 PATH = "/mnt/datastore/pbo-pbotesta"
+ROOT = "22 1 252:1 / / rw - ext4 /dev/mapper/pbs-root rw"
 
 
-def mountinfo_line(mount_id, source, options="rw,relatime", super_options="rw"):
-    return f"{mount_id} 1 8:33 / {PATH} {options} shared:1 - ext4 {source} {super_options}"
+def layer(mount_id, source, super_options="rw"):
+    return f"{mount_id} 1 8:33 / {PATH} rw,relatime shared:1 - ext4 {source} {super_options}"
 
 
-class Stack:
-    """A simulated mount stack: `umount -l` drops the top layer."""
+class FakeGuest:
+    """`qm` on the host: a PBS VM whose mount stack and devices are simulated."""
 
-    def __init__(self, tmp: Path, layers):
-        self.file = tmp / "mountinfo"
+    def __init__(self, layers, devices=(), agent=True, agent_config="agent: 1"):
         self.layers = list(layers)
+        self.devices = set(devices)
+        self.agent = agent
+        self.agent_config = agent_config
         self.calls = []
-        self.write()
 
-    def write(self):
-        lines = ["22 1 252:1 / / rw - ext4 /dev/mapper/pbs-root rw"] + [mountinfo_line(*layer) for layer in self.layers]
-        self.file.write_text("\n".join(lines) + "\n")
+    def __call__(self, command, **kwargs):
+        self.calls.append(command)
+        if command[:2] == ["qm", "config"]:
+            return subprocess.CompletedProcess(command, 0, f"{self.agent_config}\nmemory: 2048\n", "")
+        if command[:3] == ["qm", "guest", "cmd"]:
+            return subprocess.CompletedProcess(command, 0 if self.agent else 255, "", "" if self.agent else "QEMU guest agent is not running")
+        if not self.agent:
+            return subprocess.CompletedProcess(command, 255, "", "QEMU guest agent is not running")
+        argv = command[command.index("--") + 1 :]
+        if argv == ["cat", "/proc/self/mountinfo"]:
+            out = "\n".join([ROOT] + [layer(*item) for item in self.layers])
+        elif argv[:2] == ["sh", "-c"]:
+            out = "\n".join(device for device in argv[4:] if device in self.devices)
+        elif argv == ["umount", "-l", PATH]:
+            self.layers.pop()
+            out = ""
+        else:
+            raise AssertionError(argv)
+        return subprocess.CompletedProcess(command, 0, json.dumps({"exitcode": 0, "exited": 1, "out-data": out}), "")
 
-    def run(self, args, **kwargs):
-        self.calls.append(args)
-        self.layers.pop()
-        self.write()
-        return subprocess.CompletedProcess(args, 0, "", "")
 
-
-class MountsTests(unittest.TestCase):
-    def test_real_case_two_dead_layers_are_removed_lazily(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            # sdc1 then sdd1, both gone, ext4 shut down.
-            stack = Stack(Path(tmp), [("100", "/dev/sdc1", "rw,relatime", "rw,shutdown"), ("101", "/dev/sdd1", "rw,relatime", "rw,shutdown")])
-            result = cleanup_dead_mounts(PATH, run=stack.run, mountinfo=stack.file, exists=lambda source: False)
-            self.assertEqual(stack.calls, [["umount", "-l", PATH], ["umount", "-l", PATH]])
-            self.assertEqual([item["source"] for item in result["removed"]], ["/dev/sdd1", "/dev/sdc1"])
-            self.assertEqual((result["remaining"], result["live_mount"]), ([], False))
+class GuestMountsTests(unittest.TestCase):
+    def test_real_case_two_dead_layers_are_removed_from_the_top(self):
+        guest = FakeGuest([("100", "/dev/sdc1", "rw,shutdown"), ("101", "/dev/sdd1", "rw,shutdown")])
+        result = cleanup_dead_mounts(100, PATH, run=guest)
+        umounts = [call for call in guest.calls if call[-3:] == ["umount", "-l", PATH]]
+        self.assertEqual(len(umounts), 2)
+        self.assertTrue(all(call[:4] == ["qm", "guest", "exec", "100"] for call in umounts))
+        self.assertEqual([item["source"] for item in result["removed"]], ["/dev/sdd1", "/dev/sdc1"])
+        self.assertEqual((result["guest_agent"], result["remaining"], result["live_mount"]), (True, [], False))
 
     def test_a_live_mount_is_never_removed(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            stack = Stack(Path(tmp), [("100", "/dev/sdc1", "rw", "rw,shutdown"), ("101", "/dev/sde1", "rw", "rw")])
-            result = cleanup_dead_mounts(PATH, run=stack.run, mountinfo=stack.file, exists=lambda source: source == "/dev/sde1")
-            self.assertEqual(stack.calls, [])  # live on top: untouched
-            self.assertEqual((result["live_mount"], result["hidden_dead"]), (True, 1))
+        guest = FakeGuest([("100", "/dev/sdc1", "rw,shutdown"), ("101", "/dev/sde1", "rw")], devices={"/dev/sde1"})
+        result = cleanup_dead_mounts(100, PATH, run=guest)
+        self.assertFalse([call for call in guest.calls if "umount" in call])
+        self.assertEqual((result["live_mount"], result["hidden_dead"]), (True, 1))
 
-    def test_shutdown_option_or_missing_device_is_dead(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            stack = Stack(Path(tmp), [("100", "/dev/sdc1", "rw", "rw,shutdown")])
-            (layer,) = mounts_at(PATH, mountinfo=stack.file, exists=lambda source: True)
-            self.assertTrue(layer["dead"] and layer["shutdown"] and layer["device_exists"])
+    def test_a_device_gone_without_shutdown_is_dead_too(self):
+        guest = FakeGuest([("100", "/dev/sdc1", "rw")], devices=set())
+        self.assertEqual(cleanup_dead_mounts(100, PATH, run=guest)["removed"], [{"source": "/dev/sdc1", "reason": "device_gone"}])
+
+    def test_without_guest_agent_nothing_is_checked(self):
+        result = cleanup_dead_mounts(100, PATH, run=FakeGuest([], agent=False))
+        self.assertEqual((result["guest_agent"], result["removed"]), (False, []))
+
+    def test_guest_agent_status(self):
+        self.assertEqual(
+            {key: guest_agent_status(100, run=FakeGuest([]))[key] for key in ("enabled", "active")}, {"enabled": True, "active": True}
+        )
+        status = guest_agent_status(100, run=FakeGuest([], agent=False, agent_config="boot: order=scsi0"))
+        self.assertEqual((status["enabled"], status["active"]), (False, False))
 
     def test_only_datastore_paths(self):
         for path in ("/", "/mnt/datastore", "/mnt/datastore/../../etc", "/mnt/datastore/a/b"):

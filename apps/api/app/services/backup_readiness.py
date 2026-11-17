@@ -149,6 +149,7 @@ def external_backup_readiness(
     mode = settings.pbs_mode
     reasons: list[dict[str, Any]] = []
     pbs_api_client: Any | None = None
+    guest_warning: dict[str, Any] | None = None
 
     reasons.extend(local_disk_reasons(db, disk))
 
@@ -169,6 +170,19 @@ def external_backup_readiness(
             fingerprint=settings.host_agent_fingerprint,
         )
         payload, error = _cached_version(("host", settings.host_agent_base_url), client.get_version)
+        if error is None and settings.pbs_execution_vm_id:
+            # B41: dead mounts in the PBS VM are only checked through its guest agent.
+            from app.services import stale_mounts
+
+            guest = stale_mounts.guest_agent_status(settings, client=client)
+            if guest is not None and not guest["active"]:
+                guest_warning = _reason(
+                    "pbs_guest_agent_missing",
+                    "The QEMU guest agent of the PBS VM does not answer: stale mounts left by a disk pulled out cannot be checked.",
+                    vmid=settings.pbs_execution_vm_id,
+                    enabled=guest["enabled"],
+                    commands=stale_mounts.guest_agent_commands(int(settings.pbs_execution_vm_id)),
+                )
         if error is not None:
             reasons.append(_reason("host_agent_unreachable", f"The host agent does not answer: {error}"))
         elif missing := _missing(payload, set(REQUIRED_HOST_CAPABILITIES)):
@@ -226,7 +240,7 @@ def external_backup_readiness(
         estimate = capacity.check_space(db, disk, client=pbs_api_client)
         if reason := capacity.space_reason(estimate):
             reasons.append(reason)
-    warnings: list[dict[str, Any]] = []
+    warnings: list[dict[str, Any]] = [guest_warning] if guest_warning else []
     if disk_profile.is_usb2(disk):
         warnings.append(_reason("usb2_slow", "USB 2.0 link: the copy will be about 10× slower.", speed_mbps=disk.usb_speed_mbps))
     if disk.smart_status == "warning":

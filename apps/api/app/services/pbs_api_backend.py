@@ -71,7 +71,7 @@ REUSED_MESSAGE = "Existing dedicated PBS datastore reused."  # compared by exter
 CREATED_MESSAGE = "Dedicated PBS datastore created."
 RECREATED_MESSAGE = "PBS configuration re-created from the existing data, no formatting."
 EJECT_OK_MESSAGE = "External datastore unmounted safely. Disk can be detached."
-STALE_MOUNTS_UNCHECKED = "Stale mounts of /mnt/datastore/{store} not checked: the PBS REST API does not list them (needs the PBS agent)."
+STALE_MOUNTS_UNCHECKED = "Stale mounts of /mnt/datastore/{store} not checked: no QEMU guest agent answering in the PBS VM."
 # Disk pulled out: unmount attempts (stacked stale mounts) and their timeout.
 OFFLINE_ATTEMPTS = 3
 OFFLINE_TIMEOUT_SECONDS = 120.0

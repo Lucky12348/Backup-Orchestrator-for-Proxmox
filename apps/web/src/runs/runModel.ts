@@ -48,7 +48,7 @@ export const RUN_STEPS = ["detect", "passthrough", "mount", "sync", "cleanup", "
 /** B45: a verification is a run type of its own: no copy, ends by releasing the disk. */
 export const VERIFY_STEPS = ["detect", "passthrough", "mount", "verify", "release"] as const;
 /** B47: a repair deletes the damaged versions on the disk, copies them again, verifies them. */
-export const REPAIR_STEPS = ["detect", "passthrough", "mount", "repair", "sync", "verify", "release"] as const;
+export const REPAIR_STEPS = ["detect", "passthrough", "mount", "repair", "sync", "cleanup", "verify", "release"] as const;
 export type RunStepKey = (typeof RUN_STEPS)[number] | "release" | "repair";
 /** not_run (B44): steps after the one that failed were not executed. */
 export type StepState = "done" | "active" | "upcoming" | "failed" | "skipped" | "not_run";

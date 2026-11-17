@@ -79,7 +79,7 @@ AGENT_CAPABILITIES = {
     "disk-smart",
     "usb-link-speed",
     "usb-devices",
-    "datastore-mounts",
+    "pbs-guest-mounts",
 }
 
 

@@ -108,12 +108,24 @@ confirmation before deleting it.
 A disk pulled out leaves its ext4 mount on `/mnt/datastore/<datastore>` with
 the device gone (`shutdown` in `mount` output). PBS does not see it (its mount
 check reads the UUID of the mount source) and mounts the next disk on top. The
-PBS REST API can neither list those layers nor unmount them lazily, so PBO
-removes them through the **PBS agent** (role `pbs`), before every mount and
-every 30 s: dead layers only, from the top, `umount -l`; a live mount is never
-touched. Install it on PBS with the agent command of the Integrations page plus
-`--role pbs`. Without it, the run journal says the check was not possible; by
-hand on PBS:
+PBS REST API can neither list those layers nor unmount them lazily. PBS runs in
+a VM of the Proxmox node, so the **host agent** works inside it through the
+**QEMU guest agent** (`qm guest exec <vmid> -- cat /proc/self/mountinfo`, then
+`umount -l`), before every mount and every 30 s while a disk is handed off:
+dead layers only (device gone or filesystem `shutdown`), from the top of the
+stack; a live mount is never touched, and PBO refuses to mount over a live
+mount it does not know. Every unmount is journalled. No PBS agent is needed.
+
+The guest agent must be active in the PBS VM. The readiness check and the
+setup wizard warn (non-blocking) when it is not; to enable it:
+
+```bash
+apt install qemu-guest-agent            # in the PBS VM
+qm set <vmid> --agent enabled=1         # on the Proxmox host
+qm shutdown <vmid> && qm start <vmid>   # full stop/start (a reboot from inside is not enough)
+```
+
+Without it, the run journal says the check was not possible; by hand on PBS:
 
 ```bash
 findmnt /mnt/datastore/pbo-pbotesta      # one line per stacked layer

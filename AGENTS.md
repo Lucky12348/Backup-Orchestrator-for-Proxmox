@@ -511,12 +511,17 @@ should reach them — and every call is additionally protected with an
 - **5f.3**: B41 stale mounts — a pulled disk leaves a dead ext4 layer
   (device gone, `shutdown`) that PBS's mount check cannot see, so the next
   mount stacks on top. The PBS REST API cannot list the mounts of a path nor
-  unmount lazily: `services/stale_mounts.py` uses the PBS agent (role `pbs`,
-  `/datastore/mounts[/cleanup]`, `apps/agent/src/agent/mounts.py`: mountinfo,
+  unmount lazily: `services/stale_mounts.py` goes through the HOST agent and
+  the QEMU guest agent of the PBS VM (5f.5: `POST /pbs-guest/agent` and
+  `/pbs-guest/mounts/cleanup`, capability `pbs-guest-mounts`,
+  `apps/agent/src/agent/mounts.py`: `qm guest exec` of mountinfo, `[ -e dev ]`,
   `umount -l` of dead layers from the top, never a live one) before every
   mount (`_ensure_mounted`; live mount PBS does not know → `live_mount_present`)
-  and in the watch; without a PBS agent the run journals
-  `stale_mounts_unchecked`. B44 — `external_backup_runs.interrupted`
+  and in the watch; without a guest agent the run journals
+  `stale_mounts_unchecked`, readiness warns `pbs_guest_agent_missing`
+  (non-blocking, with the 3 commands, `guest_agent_commands`) and the wizard's
+  PBS step shows the same (`guest_agent` on `/setup/pbs/detect`). There is no
+  PBS agent for this any more. B44 — `external_backup_runs.interrupted`
   (Alembic `0012`): the watch sets it with the stage (`during_sync` /
   `after_sync`), the run is FAILED at once (`current_step = disk_pulled`),
   `append_external_backup_run_log` then only accepts `disk_pulled` lines and
@@ -547,6 +552,14 @@ should reach them — and every call is additionally protected with an
   existing only on the disk blocks its older damaged versions (kept, said);
   versions gone from the source need `confirm_lost` (409
   `repair_confirm_lost`). `resync-corrupt` is not used (0-byte manifest).
+- **5f.5**: a repair resyncs whole groups (every source version comes back), so
+  it applies the disk's retention (`post_sync.cleanup`) and then verifies every
+  version it copied and kept (not only the damaged ones); modal steps
+  detect, passthrough, mount, repair, sync, cleanup, verify, release. Each run
+  type has its own journal lines and titles (`run_created_verify|repair`,
+  `run_starting_verify|repair`, `verify_completed`, `repair_completed`; modal
+  `verifyFailed` / `repairFailed`); `tests/test_journal_translated.py` fails on
+  any PBO journal line without a code in a backup, verification or repair.
 
 ## Disk ↔ USB port (Phase 4.4, read before touching the USB passthrough)
 

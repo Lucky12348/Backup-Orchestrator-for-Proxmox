@@ -277,12 +277,12 @@ def run_external_backup(
         db.commit()
         db.refresh(run)
 
-    append_external_backup_run_log(
-        db,
-        run.id,
-        step="starting",
-        message="External backup run created. Background execution will start shortly.",
-    )
+    # Each run type has its own first line (B: not "external backup" for a verification).
+    created = {
+        "repair": "Repair run created, starting shortly.",
+        "verify": "Verification run created, starting shortly.",
+    }.get("repair" if repair else "verify" if verify_only else "", "External backup run created. Background execution will start shortly.")
+    append_external_backup_run_log(db, run.id, step="starting", message=created)
     from app.services import disk_profile
 
     if smart_override and disk.smart_status == "danger":
@@ -380,7 +380,8 @@ def execute_external_backup_run(run_id: int) -> None:
         db.add(run)
         db.commit()
         db.refresh(run)
-        append_external_backup_run_log(db, run.id, step="starting", message="Starting external backup execution.")
+        starting = "Starting the repair." if run.repair else "Starting the verification." if run.verify_only else "Starting external backup execution."
+        append_external_backup_run_log(db, run.id, step="starting", message=starting)
 
         prepare_result = None
         export_result = None
@@ -725,7 +726,7 @@ def _execute_verify_only(db: Session, run: ExternalBackupRun, disk: ExternalDisk
         raise
     post_sync.refresh_contents(db, bridge, run, disk, store, log)
     _verification_passed(db, disk)
-    return f"{handoff_message} PBS verify completed on `{store}`.".strip()
+    return f"Verification completed on `{store}`."
 
 
 def _verification_passed(db: Session, disk: ExternalDisk) -> None:

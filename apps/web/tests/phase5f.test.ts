@@ -219,7 +219,7 @@ test("B47: repair and verification runs have their own steps; the release runs a
   const { runSteps, stepStates } = await import("../src/runs/runModel.ts");
   const entry = (step: string, level: "info" | "ok" | "warn" | "err" = "info", code: string | null = null) => ({ at: null, step, source: "pbo" as const, level, code, params: {}, text: step, count: 1 });
   const repair = { id: 1, disk_id: 1, status: "success" as const, started_at: "2026-11-17T04:00:00Z", current_step: "released", progress_percent: 100, repair: true };
-  assert.deepEqual(runSteps(repair), ["detect", "passthrough", "mount", "repair", "sync", "verify", "release"]);
+  assert.deepEqual(runSteps(repair), ["detect", "passthrough", "mount", "repair", "sync", "cleanup", "verify", "release"]);
   // A failed verification: its step failed, the release still done.
   const failed = { ...repair, repair: false, verify_only: true, status: "failed" as const, current_step: "verify_failed" };
   const entries = [entry("handoff_disk"), entry("prepare_dedicated_datastore"), entry("verify"), entry("verify_failed", "err", "verify_failed"), entry("release"), entry("released", "ok", "released")];
@@ -234,4 +234,21 @@ test("B47: repair and verification runs have their own steps; the release runs a
   assert.match(translations.fr.runLog.disk_pulled_after_sync, /non garantie : vérification obligatoire/);
   assert.doesNotMatch(translations.fr.runLog.disk_pulled_after_sync, /terminée/);
   assert.match(translations.fr.runLog.verify_damaged_lost, /n’existe plus que sous forme abîmée sur ce disque/);
+});
+
+// --- Phase 5f.5: guest agent warning, one title per run type ------------------------------------------
+
+test("5f.5: the missing guest agent is a translated, non-blocking warning; each run type has its own lines", () => {
+  for (const language of ["en", "fr"] as const) {
+    const t = translations[language];
+    assert.ok(t.launch.warning.pbs_guest_agent_missing.includes("{vmid}"));
+    assert.ok(t.readiness.pbs_guest_agent_missing);
+    for (const code of ["run_created_verify", "run_created_repair", "run_starting_verify", "run_starting_repair", "verify_completed", "repair_completed"]) {
+      assert.ok((t.runLog as Record<string, string>)[code], `${language} runLog.${code}`);
+    }
+    assert.notEqual(t.runModal.title.verifyFailed, t.runModal.title.failed);
+    assert.notEqual(t.runModal.title.repairFailed, t.runModal.title.failed);
+  }
+  const reasons = [{ code: "pbs_guest_agent_missing", message: "x", vmid: 100, commands: ["a", "b", "c"] }];
+  assert.equal(launchState({ ready: true, reasons: [], warnings: reasons } as never, false).blocking.length, 0);
 });

@@ -90,7 +90,11 @@ export function RunView({ run, t, language }: { run: RunLike; t: TranslationDict
     : run.status === "failed"
       ? run.current_step === "disk_pulled"
         ? text.title.interrupted
-        : text.title.failed
+        : run.repair
+          ? text.title.repairFailed
+          : run.verify_only
+            ? text.title.verifyFailed
+            : text.title.failed
       : run.repair
         ? run.status === "success"
           ? text.title.repairOk

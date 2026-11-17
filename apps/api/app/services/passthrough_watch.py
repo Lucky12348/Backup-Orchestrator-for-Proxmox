@@ -304,17 +304,19 @@ def reconcile(db: Session, *, host_client: Any | None = None, pbs_client: Any | 
 
 def clean_stale_mounts(db: Session, settings: Any) -> list[str]:
     """B41: dead mounts left on the datastores of disks PBS is not using now
-    (needs the PBS agent, see services/stale_mounts.py)."""
+    (through the PBS VM's QEMU guest agent, see services/stale_mounts.py)."""
     from app.services import disk_guards, stale_mounts
 
-    agent = stale_mounts.pbs_root_agent(settings)
-    if agent is None:
+    if not settings.host_agent_base_url or not settings.pbs_execution_vm_id:
+        return []
+    status = stale_mounts.guest_agent_status(settings)
+    if not status or not status.get("active"):
         return []
     removed: list[str] = []
     for disk in db.scalars(select(ExternalDisk).where(ExternalDisk.pbs_datastore_name.is_not(None))):
         if disk.pbs_handoff_slot or disk_guards.active_run_for(db, disk.id) is not None:
             continue
-        result = stale_mounts.clean(disk.pbs_datastore_name, settings=settings, client=agent)
+        result = stale_mounts.clean(disk.pbs_datastore_name, settings=settings)
         removed.extend(str(item.get("source")) for item in (result or {}).get("removed") or [])
     return removed
 

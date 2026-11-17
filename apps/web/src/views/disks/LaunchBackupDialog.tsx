@@ -121,7 +121,17 @@ export function LaunchBackupDialog({
           {warnings.map((warning) => (
             <div key={warning.code} className="flex gap-2 rounded-[10px] bg-warning/15 p-3 text-warning-text" data-warning={warning.code}>
               <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" />
-              <span>{(text.warning as Record<string, string>)[warning.code]}</span>
+              <span className="flex min-w-0 flex-col gap-1">
+                <span>{fill((text.warning as Record<string, string>)[warning.code], { vmid: String(warning.vmid ?? "") })}</span>
+                {warning.code === "pbs_guest_agent_missing" && Array.isArray(warning.commands)
+                  ? (warning.commands as string[]).map((command, index) => (
+                      <span key={command} className="flex flex-col">
+                        <span className="text-xs opacity-80">{index === 0 ? text.guestAgentInPbs : text.guestAgentOnHost}</span>
+                        <code className="break-all font-mono text-xs">{command}</code>
+                      </span>
+                    ))
+                  : null}
+              </span>
             </div>
           ))}
 

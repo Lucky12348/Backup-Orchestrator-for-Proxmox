@@ -225,9 +225,13 @@ PBS_API_OK = FakeVersion(["version-endpoint"])
 
 @pytest.fixture(autouse=True)
 def _fresh_cache():
+    from app.services import stale_mounts
+
     backup_readiness.reset_version_cache()
+    stale_mounts.reset_cache()
     yield
     backup_readiness.reset_version_cache()
+    stale_mounts.reset_cache()
 
 
 def _configure(db, mode="api"):
@@ -268,6 +272,40 @@ def test_api_mode_ready_without_any_pbs_agent(db):
     assert {key: result[key] for key in ("disk_id", "ready", "pbs_mode", "reasons", "warnings")} == {
         "disk_id": result["disk_id"], "ready": True, "pbs_mode": "api", "reasons": [], "warnings": [],
     }
+
+
+class HostWithGuest(FakeVersion):
+    """Host agent answering `/pbs-guest/agent` (5f.5)."""
+
+    def __init__(self, active, enabled=True):
+        super().__init__(["version-endpoint", "qemu-usb-attach", "qemu-usb-detach", "pbs-guest-mounts"])
+        self.guest = {"ok": True, "enabled": enabled, "active": active}
+
+    def post(self, path, payload):
+        assert (path, payload) == ("/pbs-guest/agent", {"vmid": 110})
+        return SimpleNamespace(payload=self.guest)
+
+
+def test_missing_guest_agent_is_a_warning_with_the_commands(db):
+    """5f.5: no QEMU guest agent in the PBS VM never blocks a backup."""
+    _configure(db, "api")
+    result = backup_readiness.external_backup_readiness(db, _ready_disk(db), host_client=HostWithGuest(False, enabled=False), pbs_client=PBS_API_OK)
+    assert (result["ready"], result["reasons"]) == (True, [])
+    assert result["warnings"] == [
+        {
+            "code": "pbs_guest_agent_missing",
+            "message": result["warnings"][0]["message"],
+            "vmid": 110,
+            "enabled": False,
+            "commands": ["apt install qemu-guest-agent", "qm set 110 --agent enabled=1", "qm shutdown 110 && qm start 110"],
+        }
+    ]
+
+
+def test_active_guest_agent_gives_no_warning(db):
+    _configure(db, "api")
+    result = backup_readiness.external_backup_readiness(db, _ready_disk(db), host_client=HostWithGuest(True), pbs_client=PBS_API_OK)
+    assert (result["ready"], result["warnings"]) == (True, [])
 
 
 def test_reasons_are_specific(db):

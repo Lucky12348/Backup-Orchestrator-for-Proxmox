@@ -153,7 +153,7 @@ export const wizardApi = {
     call<unknown>("/setup/proxmox", json("PUT", body)),
   pbsCandidates: () => call<PbsCandidates>("/setup/pbs/candidates"),
   pbsDetect: (vmid: number) =>
-    call<{ vmid: number; detected: boolean; ip: string | null; source: string | null; url: string | null }>(
+    call<{ vmid: number; detected: boolean; ip: string | null; source: string | null; url: string | null; guest_agent?: PbsGuestAgent | null }>(
       `/setup/pbs/detect?vmid=${encodeURIComponent(vmid)}`,
     ),
   pbsFingerprint: (api_url: string) => call<{ api_url: string; fingerprint: string }>("/setup/pbs/fingerprint", json("POST", { api_url })),
@@ -175,3 +175,10 @@ export const wizardApi = {
   syncProxmox: () => call<{ synced_vms_count: number; synced_cts_count: number; total_seen: number }>("/integrations/proxmox/sync", json("POST")),
   syncPbs: () => call<{ matched_vms: number; matched_cts: number; total_snapshots_seen: number }>("/integrations/pbs/sync", json("POST")),
 };
+
+/** QEMU guest agent of the PBS VM (5f.5): needed to clean stale mounts; a missing one is only a warning. */
+export interface PbsGuestAgent {
+  enabled: boolean;
+  active: boolean;
+  commands: string[];
+}

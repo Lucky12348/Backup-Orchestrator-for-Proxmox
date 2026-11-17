@@ -102,9 +102,10 @@ def test_new_plannings_use_the_app_time_zone_existing_ones_keep_theirs(client, d
 
 
 class FakeAgent:
-    def __init__(self, addresses=None, error=None):
+    def __init__(self, addresses=None, error=None, guest=None):
         self.addresses = addresses or []
         self.error = error
+        self.guest = guest if guest is not None else {"enabled": True, "active": True}
         self.calls = []
 
     def post(self, path, payload):
@@ -113,7 +114,8 @@ class FakeAgent:
             raise self.error
         return HostAgentResult(
             ok=True, message="", stdout_log=None, stderr_log=None, command_summary=None,
-            execution_cwd=None, return_code=0, payload={"ok": True, "addresses": self.addresses},
+            execution_cwd=None, return_code=0,
+            payload={"ok": True, **self.guest} if path == "/pbs-guest/agent" else {"ok": True, "addresses": self.addresses},
         )
 
 
@@ -127,7 +129,20 @@ def test_detect_keeps_the_first_address_where_pbs_answers(db):
     result = setup_wizard.detect_pbs_url(db, 110, agent_client=agent, prober=lambda ip: ip == "10.0.0.5")
     assert result["detected"] is True
     assert result["url"] == "https://10.0.0.5:8007" and result["source"] == "neighbour"
-    assert agent.calls == [("/pve/vm-addresses", {"vmid": 110})]
+    assert agent.calls == [("/pve/vm-addresses", {"vmid": 110}), ("/pbs-guest/agent", {"vmid": 110})]
+    assert result["guest_agent"]["active"] is True
+
+
+def test_detect_reports_a_missing_guest_agent_with_the_commands(db):
+    """5f.5: no QEMU guest agent in the PBS VM = a non-blocking warning with the 3 commands."""
+    agent = FakeAgent([{"ip": "10.0.0.5", "source": "neighbour"}], guest={"enabled": False, "active": False})
+    result = setup_wizard.detect_pbs_url(db, 110, agent_client=agent, prober=lambda ip: True)
+    assert result["detected"] is True
+    assert result["guest_agent"] == {
+        "enabled": False,
+        "active": False,
+        "commands": ["apt install qemu-guest-agent", "qm set 110 --agent enabled=1", "qm shutdown 110 && qm start 110"],
+    }
 
 
 def test_detect_without_answer_leaves_the_field_empty(db):

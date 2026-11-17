@@ -75,6 +75,8 @@ class PbsDetectRead(BaseModel):
     source: str | None = None  # "guest-agent" | "neighbour"
     url: str | None = None
     addresses: list[dict[str, Any]] = []
+    # B41: QEMU guest agent of that VM ({"enabled", "active", "commands"}; None: unknown).
+    guest_agent: dict[str, Any] | None = None
 
 
 class PbsFingerprintRequest(BaseModel):

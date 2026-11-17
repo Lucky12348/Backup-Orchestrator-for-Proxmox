@@ -412,6 +412,7 @@ def detect_pbs_url(
     except HostAgentError as exc:
         raise _agent_error(exc, "the PBS VM address lookup") from None
     candidates = [item for item in payload.get("addresses") or [] if isinstance(item, dict) and item.get("ip")]
+    guest = _guest_agent(client, vmid)
     probe = prober or _pbs_answers
     for item in candidates:
         if probe(str(item["ip"])):
@@ -422,8 +423,20 @@ def detect_pbs_url(
                 "source": item.get("source") or "",
                 "url": f"https://{item['ip']}:{PBS_PORT}",
                 "addresses": candidates,
+                "guest_agent": guest,
             }
-    return {"vmid": vmid, "detected": False, "ip": None, "source": None, "url": None, "addresses": candidates}
+    return {"vmid": vmid, "detected": False, "ip": None, "source": None, "url": None, "addresses": candidates, "guest_agent": guest}
+
+
+def _guest_agent(client: Any, vmid: int) -> dict[str, Any] | None:
+    """B41: is the QEMU guest agent of the PBS VM active? (None: old host agent)."""
+    from app.services.stale_mounts import guest_agent_commands
+
+    try:
+        payload = client.post("/pbs-guest/agent", {"vmid": vmid}).payload or {}
+    except Exception:  # noqa: BLE001
+        return None
+    return {"enabled": bool(payload.get("enabled")), "active": bool(payload.get("active")), "commands": guest_agent_commands(vmid)}
 
 
 def pbs_fingerprint(api_url: str, *, transport: httpx.BaseTransport | None = None) -> dict[str, Any]:

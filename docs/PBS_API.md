@@ -164,8 +164,10 @@ Checked against the 4.x schema: no endpoint lists the mounts of a datastore
 path, `GET /admin/datastore` reports `mount-status` from the top mount's
 filesystem UUID only (a dead layer — device gone — reads as `notmounted`, and
 the next `mount` stacks on it), and `POST /admin/datastore/{store}/unmount`
-has no lazy option. PBO therefore uses the PBS agent for this (see
-docs/OPERATIONS.md); everything else stays on the REST API.
+has no lazy option. PBO therefore goes through the host agent and the QEMU
+guest agent of the PBS VM (`qm guest exec`, see docs/OPERATIONS.md); everything
+else stays on the REST API. No PBS agent and no extra Proxmox privilege: `qm`
+runs as root on the host.
 
 ### Cleanup, contents and verification (Phase 5f)
 

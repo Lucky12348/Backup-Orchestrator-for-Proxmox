@@ -18,16 +18,19 @@ from test_disk_guards import TARGET, _disk, _flow, _run, _source
 
 
 class FakePbsAgent:
-    """PBS agent (role pbs) answering the stale-mount routes."""
+    """Host agent answering the PBS VM guest routes (`qm guest exec` inside)."""
 
-    def __init__(self, removed=(), live=False):
+    def __init__(self, removed=(), live=False, guest_agent=True):
         self.removed = list(removed)
         self.live = live
+        self.guest_agent = guest_agent
         self.calls = []
 
     def post(self, path, payload):
         self.calls.append((path, payload))
-        return SimpleNamespace(payload={"removed": self.removed, "live_mount": self.live, "remaining": []})
+        if path == "/pbs-guest/agent":
+            return SimpleNamespace(payload={"enabled": self.guest_agent, "active": self.guest_agent})
+        return SimpleNamespace(payload={"guest_agent": self.guest_agent, "removed": self.removed, "live_mount": self.live, "remaining": []})
 
 
 # --- B41 ------------------------------------------------------------------------------------------------
@@ -42,10 +45,10 @@ def test_dead_layers_are_removed_before_mounting_and_journalled(db, session_fact
         fake.mount_status[TARGET] = "notmounted"  # pulled out, plugged back: PBO mounts it
         db.expire_all()
         run = _run(db, db.get(ExternalDisk, disk.id))
-        stack.enter_context(patch("app.services.stale_mounts.pbs_root_agent", lambda settings: agent))
+        stack.enter_context(patch("app.services.stale_mounts._host", lambda settings, client: agent))
         execute_external_backup_run(run.id)
     db.expire_all()
-    assert agent.calls[0] == ("/datastore/mounts/cleanup", {"path": f"/mnt/datastore/{TARGET}"})
+    assert agent.calls[0] == ("/pbs-guest/mounts/cleanup", {"vmid": 100, "path": f"/mnt/datastore/{TARGET}"})
     codes = [entry["code"] for entry in run_journal(db.get(ExternalBackupRun, run.id), None)["entries"]]
     assert codes.count("stale_mount_removed") == 2
     assert db.get(ExternalBackupRun, run.id).status == BackupRunStatus.SUCCESS
@@ -55,7 +58,7 @@ def test_never_mounts_over_a_live_filesystem(db, session_factory):
     fake = FakePBS(disks=[usb_disk(partitions=[])])
     backend = make_backend(fake, session_factory)
     _disk(db, serial_number="WD-123")
-    with patch("app.services.stale_mounts.pbs_root_agent", lambda settings: FakePbsAgent(live=True)):
+    with patch("app.services.stale_mounts._host", lambda settings, client: FakePbsAgent(live=True)):
         result = backend.post("/prepare-dedicated-pbs-datastore", {"disk": "WD-123", "datastore_name": TARGET, "confirmation": True})
         assert result.ok  # first creation: PBS mounts it itself
         fake.mount_status[TARGET] = "notmounted"  # PBS lost track, a live mount is still there
