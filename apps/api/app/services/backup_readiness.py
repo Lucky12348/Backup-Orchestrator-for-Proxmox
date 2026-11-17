@@ -231,6 +231,8 @@ def external_backup_readiness(
         warnings.append(_reason("usb2_slow", "USB 2.0 link: the copy will be about 10× slower.", speed_mbps=disk.usb_speed_mbps))
     if disk.smart_status == "warning":
         warnings.append(_reason("smart_warning", "SMART: this disk should be watched (reallocated sectors, errors)."))
+    if disk.verify_required:
+        warnings.append(_reason("verify_required_first", "The disk was pulled out before its datastore was unmounted: this backup starts with a full verification."))
     if disk.verify_recommended:
         warnings.append(_reason("verify_recommended", "The disk was unplugged without eject: a PBS verify is recommended."))
     return {

@@ -207,6 +207,8 @@ def run_external_backup(
     verify_after_backup: bool = False,
     smart_override: bool = False,
     verify_only: bool = False,
+    repair: bool = False,
+    confirm_lost: bool = False,
 ) -> ExternalBackupRun:
     if not confirmation:
         raise HTTPException(
@@ -224,8 +226,10 @@ def run_external_backup(
 
         reasons = local_disk_reasons(db, disk, smart_override=smart_override)
         estimate = None
-        if verify_only:
+        if verify_only or repair:
             reasons.extend(_verify_only_reasons(disk))
+        if repair:
+            reasons.extend(_repair_reasons(disk, confirm_lost))
         else:
             # Phase 5f: estimated copy vs free space (PBS API; unknown = no refusal).
             from app.services.capacity import check_space, space_reason
@@ -265,6 +269,7 @@ def run_external_backup(
             group_filter=group_filter or None,
             verify_after_backup=verify_after_backup or verify_only,
             verify_only=verify_only or None,
+            repair=repair or None,
             mode=plan.mode,
             created_at=now,
         )
@@ -320,6 +325,22 @@ def _token_privilege_reasons(db: Session) -> list[dict[str, object]]:
 
     found = pbs_permissions.check(settings, PBSClient(settings))
     return [found] if found else []
+
+
+def _repair_reasons(disk: ExternalDisk, confirm_lost: bool) -> list[dict[str, object]]:
+    damaged = disk.damaged_snapshots or []
+    if not damaged:
+        return [{"code": "repair_nothing", "message": "No damaged version is recorded on this disk."}]
+    lost = [item for item in damaged if item.get("in_source") is False]
+    if lost and not confirm_lost:
+        return [
+            {
+                "code": "repair_confirm_lost",
+                "message": "Some damaged versions no longer exist in the source: they only exist, damaged, on this disk. Confirm their deletion.",
+                "lost": [f"{item['group']} {item['time']}" for item in lost],
+            }
+        ]
+    return []
 
 
 def _verify_only_reasons(disk: ExternalDisk) -> list[dict[str, str]]:
@@ -394,7 +415,15 @@ def execute_external_backup_run(run_id: int) -> None:
 
             check_interrupted(db, run)
 
-            if run.verify_only:
+            if run.repair:
+                from app.services.repair_run import execute_repair
+
+                run.message = execute_repair(db, run, disk, handoff_status.message, log)
+                run.current_step = "success"
+                run.progress_message = run.message
+                run.last_log_at = datetime.utcnow()
+                backup_message = run.message
+            elif run.verify_only:
                 run.message = _execute_verify_only(db, run, disk, handoff_status.message, log)
                 run.current_step = "success"
                 run.progress_message = run.message
@@ -406,7 +435,19 @@ def execute_external_backup_run(run_id: int) -> None:
                         db, run.id, step="run_export",
                         message="VM selection needs PBS_MODE=api: the whole datastore is copied.",
                     )
+                def verify_first(store: str) -> None:
+                    # B46: the disk was pulled out before its datastore was
+                    # unmounted: check everything before copying onto it.
+                    db.refresh(disk)
+                    if not disk.verify_required:
+                        return
+                    log(step="verify", message="Verification required first: the disk was pulled out before its datastore was unmounted.")
+                    bridge = _post_sync_bridge(execution_service)
+                    post_sync.verify(bridge, run, store, log, copied=None, verify_all=True, db=db, disk=disk)
+                    _verification_passed(db, disk)
+
                 execution_result = execution_service.execute(
+                    before_export=verify_first,
                     **({"group_filter": run.group_filter} if run.group_filter else {}),
                     disk=disk,
                     datastore_name=run.datastore_name,
@@ -461,7 +502,7 @@ def execute_external_backup_run(run_id: int) -> None:
                     check_interrupted(db, run)
                     if run.verify_after_backup:
                         copied, verify_all = post_sync.copied_keys(execution_result.pre_sync_snapshots, after)
-                        post_sync.verify(bridge, run, store, log, copied=copied, verify_all=verify_all)
+                        post_sync.verify(bridge, run, store, log, copied=copied, verify_all=verify_all, db=db, disk=disk)
                 elif run.verify_after_backup:
                     log(step="verify", message="Verification skipped: no new version was copied.")
                 run.current_step = "success"
@@ -471,7 +512,7 @@ def execute_external_backup_run(run_id: int) -> None:
             check_interrupted(db, run)
             append_external_backup_run_log(db, run.id, step="success", message=run.message)
 
-            if run.verify_only and not run.auto_eject_after_success:
+            if (run.verify_only or run.repair) and not run.auto_eject_after_success:
                 # B45: a verification ends by releasing the disk (unmount +
                 # detach, no spin-down): it is connected again, ready to use.
                 from app.services import disk_eject
@@ -626,8 +667,9 @@ def execute_external_backup_run(run_id: int) -> None:
 
 
 INTERRUPTION_MESSAGES = {
-    "during_sync": "Interrupted: the disk was pulled out during the copy. The copy is incomplete: start a new backup.",
-    "after_sync": "Interrupted: the disk was pulled out after the copy. The copy finished, the cleanup was interrupted: a verification is advised.",
+    "during_sync": "Interrupted: the disk was pulled out during the copy. The copy is incomplete and not guaranteed: the next backup starts with a verification.",
+    # B46: a copy is finished only once its datastore is unmounted.
+    "after_sync": "Interrupted: the disk was pulled out before its datastore was unmounted. The copy is not guaranteed: a verification is required.",
 }
 
 
@@ -659,7 +701,6 @@ def _post_sync_bridge(execution_service):
 def _execute_verify_only(db: Session, run: ExternalBackupRun, disk: ExternalDisk, handoff_message: str, log) -> str:
     """Hand-off done: reuse the disk's datastore (never format), verify every
     snapshot, refresh the contents, clear "verification recommended"."""
-    from app.services import disk_guards
     from app.services.external_backup_execution import build_dedicated_datastore_name
 
     log(step="starting", message="Verify-only run: the disk's datastore is checked, nothing is copied.")
@@ -673,12 +714,29 @@ def _execute_verify_only(db: Session, run: ExternalBackupRun, disk: ExternalDisk
     if not prepared.ok:
         raise RuntimeError(prepared.message)
     store = str((prepared.payload or {}).get("datastore_name") or store)
-    post_sync.verify(bridge, run, store, log, copied=None, verify_all=True)
+    try:
+        post_sync.verify(bridge, run, store, log, copied=None, verify_all=True, db=db, disk=disk)
+    except post_sync.VerifyFailed:
+        # B47: the Release step runs even after a failed verification.
+        if not run.auto_eject_after_success:
+            from app.services import disk_eject
+
+            disk_eject.release_disk_within_run(db, disk, run)
+        raise
     post_sync.refresh_contents(db, bridge, run, disk, store, log)
+    _verification_passed(db, disk)
+    return f"{handoff_message} PBS verify completed on `{store}`.".strip()
+
+
+def _verification_passed(db: Session, disk: ExternalDisk) -> None:
+    """A full verification succeeded: nothing required, nothing damaged."""
+    from app.services import disk_guards
+
     disk_guards.clear_verify_recommended(disk)
+    disk.verify_required = None
+    disk.damaged_snapshots = None
     db.add(disk)
     db.commit()
-    return f"{handoff_message} PBS verify completed on `{store}`.".strip()
 
 
 def append_external_backup_run_log(

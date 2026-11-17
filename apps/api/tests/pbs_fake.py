@@ -58,10 +58,13 @@ class FakePBS:
         # Phase 5f: snapshots per datastore, retention/verify behaviour, space.
         self.snapshots: dict[str, list[dict[str, Any]]] = {"main": []}
         self.verify_exitstatus = "OK"
+        # B47: snapshot keys ("ct/101/<epoch>") whose verification fails, as PBS reports it.
+        self.corrupt: set[str] = set()
         self.verify_calls: list[dict[str, Any]] = []
         self.prune_calls: list[dict[str, Any]] = []
         self.gc_calls: list[str] = []
         self.status_bytes: dict[str, dict[str, int]] = {}
+        self.deleted: list[tuple[str, str]] = []
         # GET /access/permissions: {path: [privileges]} the token holds.
         self.privileges: dict[str, list[str]] = {
             "/datastore": ["Datastore.Allocate", "Datastore.Modify", "Datastore.Audit", "Datastore.Read", "Datastore.Backup", "Datastore.Prune", "Datastore.Verify"],
@@ -117,9 +120,19 @@ class FakePBS:
         target = self.snapshots.setdefault(job["store"], [])
         groups = {item.removeprefix("group:") for item in job.get("group-filter") or []}
         have = {(item["backup-type"], item["backup-id"], item["backup-time"]) for item in target}
-        for snapshot in source:
+        # PBS pull: a version older than the newest one of its group on the
+        # target is skipped ("older than the newest snapshot present on sync target").
+        newest: dict[tuple, int] = {}
+        for item in target:
+            group = (item["backup-type"], item["backup-id"])
+            newest[group] = max(newest.get(group, 0), item["backup-time"])
+        self.skipped: list[str] = []
+        for snapshot in sorted(source, key=lambda item: item["backup-time"]):
             key = (snapshot["backup-type"], snapshot["backup-id"], snapshot["backup-time"])
             if key in have or (groups and f"{key[0]}/{key[1]}" not in groups):
+                continue
+            if key[2] <= newest.get(key[:2], 0):
+                self.skipped.append(f"{key[0]}/{key[1]}/{key[2]}")
                 continue
             target.append(dict(snapshot))
 
@@ -134,6 +147,32 @@ class FakePBS:
         for items in by_group.values():
             kept.extend(sorted(items, key=lambda item: item["backup-time"])[-int(keep_last):])
         self.snapshots[store] = kept
+
+    def _verify_task(self, store: str, body: dict) -> str:
+        from datetime import datetime, timezone
+
+        def iso(epoch: int) -> str:
+            return datetime.fromtimestamp(epoch, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        keys = [
+            f"{item['backup-type']}/{item['backup-id']}/{item['backup-time']}"
+            for item in self.snapshots.get(store, [])
+            if not body.get("backup-time")
+            or (item["backup-type"], item["backup-id"], item["backup-time"]) == (body.get("backup-type"), body.get("backup-id"), body.get("backup-time"))
+        ]
+        bad = [key for key in keys if key in self.corrupt]
+        if self.verify_exitstatus != "OK" and not bad:
+            return self._task("verify", store, ["verify datastore", "TASK ERROR: verification failed"], exitstatus=self.verify_exitstatus)
+        if not bad:
+            return self._task("verify", store, [f"verify datastore {store}", "TASK OK"])
+        log = [f"verify datastore {store}"]
+        for key in bad:
+            group, when = key.rsplit("/", 1)
+            log.append(f"verify {store}:{group}/{iso(int(when))} - manifest load error: unable to load blob - blob too small (0 bytes)")
+        log.append("Failed to verify the following snapshots/groups:")
+        log += [f"{key.rsplit('/', 1)[0]}/{iso(int(key.rsplit('/', 1)[1]))}" for key in bad]
+        log.append("TASK ERROR: verification failed - please check the log for details")
+        return self._task("verify", store, log, exitstatus="verification failed - please check the log for details")
 
     def add_running_task(self, worker_type: str, worker_id: str) -> str:
         upid = self._task(worker_type, worker_id, [], hang=True)
@@ -219,6 +258,14 @@ class FakePBS:
             store, action = parts[2], parts[3]
             if action == "status":
                 return self.status_bytes.get(store, {"total": 2000 * GIB, "used": 500 * GIB, "avail": 1500 * GIB})
+            if action == "snapshots" and method == "DELETE":
+                key = (params.get("backup-type"), params.get("backup-id"), int(params.get("backup-time")))
+                self.snapshots[store] = [
+                    item for item in self.snapshots.get(store, []) if (item["backup-type"], item["backup-id"], item["backup-time"]) != key
+                ]
+                self.corrupt.discard(f"{key[0]}/{key[1]}/{key[2]}")
+                self.deleted.append((store, f"{key[0]}/{key[1]}/{key[2]}"))
+                return None
             if action == "snapshots" and method == "GET":
                 return [dict(item) for item in self.snapshots.get(store, [])]
             if action == "prune-datastore" and method == "POST":
@@ -230,11 +277,7 @@ class FakePBS:
                 return self._task("garbage_collection", store, ["starting garbage collection", "TASK OK"])
             if action == "verify" and method == "POST":
                 self.verify_calls.append({"store": store, **(body or {})})
-                ok = self.verify_exitstatus == "OK"
-                return self._task(
-                    "verify", store, ["verify datastore", "TASK OK" if ok else "TASK ERROR: verification failed"],
-                    exitstatus=self.verify_exitstatus,
-                )
+                return self._verify_task(store, body or {})
             if action == "mount":
                 return self._task("mount-device", store, ["mounting"], lambda: self.mount_status.__setitem__(store, "mounted"))
             if action == "unmount":

@@ -23,7 +23,7 @@ import type { ExternalBackupRun, ExternalDisk } from "../../types";
 import { useToast } from "../../ui/toast";
 import { formatBytes, formatUsage } from "../../units";
 import { fill, formatWhen } from "../format";
-import { AlertBadges, CONFIG_ALERT_NOTE, DiskAvatar, PbsConfigNotice } from "./DiskBits";
+import { AlertBadges, CONFIG_ALERT_NOTE, DamagedVersions, DiskAvatar, PbsConfigNotice } from "./DiskBits";
 import { diskHistory, diskRows, usagePercent, type Tone } from "./diskModel";
 import {
   alertsFor,
@@ -113,7 +113,9 @@ export function DiskSheetView({ disks, runs, alerts, language, t, onChanged }: D
           />
         ))}
 
-      {disk.verify_recommended ? (
+      <DamagedVersions disk={disk} t={t} onChanged={onChanged} />
+
+      {(disk.verify_recommended || disk.verify_required) && !disk.damaged_snapshots?.length ? (
         <VerifyBanner disk={disk} t={t} language={language} onChanged={onChanged} failed={diskAlerts.some((alert) => alert.code === "verify_failed")} />
       ) : null}
 
@@ -207,8 +209,8 @@ function VerifyBanner({
   return (
     <div role="alert" className="flex flex-wrap items-center gap-3 rounded-[14px] bg-warning/15 p-4 text-[13px] leading-[1.45] text-warning-text" data-verify-banner>
       <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <b>{failed ? text.failedTitle : text.title}</b>
-        <span>{failed ? text.failedText : fill(text.text, { when: when(disk.unsafe_removal_at, language, t) })}</span>
+        <b>{failed ? text.failedTitle : disk.verify_required ? text.requiredTitle : text.title}</b>
+        <span>{failed ? text.failedText : disk.verify_required ? text.requiredText : fill(text.text, { when: when(disk.unsafe_removal_at, language, t) })}</span>
         {disk.connected ? null : <span>{text.needsPlug}</span>}
       </div>
       <button type="button" className={primary} disabled={busy || !disk.connected} onClick={() => void verify()}>

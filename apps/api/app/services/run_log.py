@@ -97,8 +97,19 @@ PBO_MESSAGES: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
         ("verify_failed", r"^PBS verify failed: (?P<reason>.+)$"),
         ("verify_nothing", r"^(?:Verification skipped: no new version was copied|Nothing new was copied: no snapshot to verify)\.$"),
         ("verify_requested", r"^Verification of the copy requested: it runs after the sync\.$"),
-        ("disk_pulled_during_sync", r"^Interrupted: the disk was pulled out during the copy\. The copy is incomplete: start a new backup\.$"),
-        ("disk_pulled_after_sync", r"^Interrupted: the disk was pulled out after the copy\. The copy finished, the cleanup was interrupted: a verification is advised\.$"),
+        ("disk_pulled_during_sync", r"^Interrupted: the disk was pulled out during the copy\. The copy is incomplete and not guaranteed: the next backup starts with a verification\.$"),
+        ("disk_pulled_after_sync", r"^Interrupted: the disk was pulled out before its datastore was unmounted\. The copy is not guaranteed: a verification is required\.$"),
+        ("datastore_sync_level", r"^Durable writes enabled on `(?P<store>[^`]+)`: sync-level=file \(each chunk is flushed to the disk\)\.$"),
+        ("datastore_sync_level_failed", r"^Durable writes could not be enabled on `(?P<store>[^`]+)`: (?P<reason>.+)$"),
+        ("verify_required_first", r"^Verification required first: the disk was pulled out before its datastore was unmounted\.$"),
+        ("verify_damaged", r"^Damaged on the disk: (?P<group>\S+), (?P<count>\d+) version\(s\) \((?P<times>[^)]*)\); still in the source `(?P<source>[^`]+)`: they can be repaired\.$"),
+        ("verify_damaged_lost", r"^Damaged on the disk: (?P<group>\S+), (?P<count>\d+) version\(s\) \((?P<times>[^)]*)\); no longer in the source `(?P<source>[^`]+)`: (?P<lost>.+)\.$"),
+        ("repair_start", r"^Repair: (?P<count>\d+) damaged version\(s\) to delete on the disk only, then copy again from `(?P<source>[^`]+)`\.$"),
+        ("repair_collateral", r"^Repair: (?P<group>\S+) — (?P<count>\d+) newer version\(s\) deleted on the disk to be copied again \(PBS skips versions older than the newest one on the disk\)\.$"),
+        ("repair_blocked", r"^Repair: (?P<version>.+) cannot be copied again: a newer version exists only on the disk \(PBS would skip it\)\. It is kept\.$"),
+        ("repair_lost_deleted", r"^Repair: (?P<version>.+) deleted — it no longer existed anywhere else\.$"),
+        ("repair_deleted", r"^(?P<count>\d+) version\(s\) deleted on `(?P<store>[^`]+)` \(the disk only\)\.$"),
+        ("repair_done", r"^Repair finished: (?P<repaired>\d+) version\(s\) copied again and verified\.$"),
         ("cleanup_gc_failed", r"^Garbage collection warning: (?P<reason>.+)$"),
         ("spin_down_unresolved", r"^Could not resolve disk `(?P<disk>[^`]+)` to spin it down"),
         ("stale_mount_removed", r"^Stale mount removed from (?P<path>\S+): (?P<source>\S+) \((?P<reason>[^)]+)\), lazy unmount\.$"),
@@ -302,6 +313,8 @@ def run_kind(run: Any, disk: Any | None) -> str:
     """"eject" for a manual eject run (it only knows the target datastore),
     "verify" for a verify-only run (Phase 5f), "backup" otherwise (a backup
     with auto-eject included, B24)."""
+    if getattr(run, "repair", False):
+        return "repair"
     if getattr(run, "verify_only", False):
         return "verify"
     if getattr(run, "auto_eject_after_success", False):

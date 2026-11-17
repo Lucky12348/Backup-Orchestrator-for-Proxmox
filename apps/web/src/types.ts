@@ -125,8 +125,21 @@ export interface ExternalDisk {
   effective_retention?: DiskRetention | null;
   usage_history?: UsageSample[] | null;
   verify_recommended?: boolean | null;
+  /** B46: pulled out before its datastore was unmounted: verify before trusting it. */
+  verify_required?: boolean | null;
+  /** B47: versions a verify could not check. */
+  damaged_snapshots?: DamagedSnapshot[] | null;
   unsafe_removal_at?: string | null;
   contents_cached_at?: string | null;
+}
+
+export interface DamagedSnapshot {
+  key: string;
+  group: string;
+  time: string;
+  reason?: string | null;
+  /** Still in the source datastore (null: unknown). */
+  in_source: boolean | null;
 }
 
 export interface SmartDetails {
@@ -356,10 +369,11 @@ export interface ExternalBackupRun {
   elapsed_seconds: number | null;
   auto_eject_after_success: boolean;
   /** "backup" | "eject" | "verify" (API run_log.run_kind). */
-  kind?: "backup" | "eject" | "verify";
+  kind?: "backup" | "eject" | "verify" | "repair";
   /** Phase 5f: PBS verify after the sync; verify-only run. */
   verify_after_backup?: boolean | null;
   verify_only?: boolean | null;
+  repair?: boolean | null;
   /** "main → pbo-pbotesta" (eject runs only know the target). */
   source_datastore?: string | null;
   target_datastore?: string | null;

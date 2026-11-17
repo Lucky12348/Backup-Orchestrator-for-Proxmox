@@ -3,7 +3,7 @@
 
 import { formatBytes, type Lang } from "../../units.ts";
 
-export type ActivityType = "backup" | "eject" | "verify" | "detection" | "planning";
+export type ActivityType = "backup" | "eject" | "verify" | "repair" | "detection" | "planning";
 export type ActivityState = "ok" | "failed" | "running" | "info";
 
 export interface ActivityLike {
@@ -25,7 +25,7 @@ export interface ActivityLike {
   message: string | null;
 }
 
-export const ACTIVITY_TYPES: readonly ActivityType[] = ["backup", "eject", "verify", "detection", "planning"];
+export const ACTIVITY_TYPES: readonly ActivityType[] = ["backup", "eject", "verify", "repair", "detection", "planning"];
 export const ACTIVITY_STATES: readonly ActivityState[] = ["ok", "failed", "running", "info"];
 export const PERIODS = [1, 7, 30, 90, 366] as const;
 
@@ -53,7 +53,7 @@ export function filterActivity<T extends ActivityLike>(items: readonly T[], filt
   const since = now.getTime() - filters.days * 24 * 3600 * 1000;
   const needle = compact(filters.query.trim());
   return items.filter((item) => {
-    if (filters.type === "runs" && item.type !== "backup" && item.type !== "eject" && item.type !== "verify") return false;
+    if (filters.type === "runs" && item.type !== "backup" && item.type !== "eject" && item.type !== "verify" && item.type !== "repair") return false;
     if (filters.type && filters.type !== "runs" && item.type !== filters.type) return false;
     if (filters.state && activityState(item) !== filters.state) return false;
     if (filters.diskId !== null && item.disk_id !== filters.diskId) return false;
@@ -92,6 +92,9 @@ export interface SummaryTexts {
   verifyOk: string;
   verifyFailed: string;
   verifyRunning: string;
+  repairOk: string;
+  repairFailed: string;
+  repairRunning: string;
   missed: string;
   cancelled: string;
   to_confirm: string;
@@ -104,6 +107,10 @@ export function activitySummary(item: ActivityLike, texts: SummaryTexts, lang: L
   if (item.type === "detection") {
     if (item.status === "unsafe_removal") return texts.unsafeRemoval;
     return item.status === "replugged" ? texts.replugged : item.status === "plugged" ? texts.plugged : texts.unplugged;
+  }
+  if (item.type === "repair") {
+    if (state === "running") return texts.repairRunning;
+    return state === "ok" ? texts.repairOk : texts.repairFailed.replace("{reason}", reason);
   }
   if (item.type === "verify") {
     if (state === "running") return texts.verifyRunning;

@@ -61,6 +61,8 @@ class ExternalBackupRun(Base):
     # ("during_sync" | "after_sync"): the run stops at once, the journal then
     # only takes the interruption line.
     interrupted: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # B47: repair run (delete the damaged versions on the disk, sync, verify).
+    repair: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     mode: Mapped[ExternalBackupMode] = mapped_column(
         SqlEnum(ExternalBackupMode, name="external_backup_mode", native_enum=False),
         nullable=False,

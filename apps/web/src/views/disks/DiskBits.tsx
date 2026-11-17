@@ -1,9 +1,10 @@
-import { AlertTriangle, HardDrive, Loader2, MemoryStick, Microchip, Server, ShieldAlert, ShieldCheck, Usb } from "lucide-react";
+import { AlertTriangle, HardDrive, Loader2, Wrench, MemoryStick, Microchip, Server, ShieldAlert, ShieldCheck, Usb } from "lucide-react";
 import { useState, type ComponentType } from "react";
 
-import { diskPhotoUrl, startDiskVerify, type DiskAlert } from "../../api";
+import { diskPhotoUrl, repairDisk, startDiskVerify, type DiskAlert } from "../../api";
 import { ApiError } from "../../notices";
 import { openRunModal } from "../../runs/openRun";
+import { useConfirm } from "../../ui/confirm";
 import { useToast } from "../../ui/toast";
 import { cn } from "../../components/ui/utils";
 import type { TranslationDictionary } from "../../i18n";
@@ -173,5 +174,99 @@ export function VerifyNowButton({
       {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
       {t.diskSheet.verify.now}
     </button>
+  );
+}
+
+
+/** B47: delete the damaged versions on the DISK only, copy them again from the
+ *  source, verify them. Versions the source no longer holds need a confirmation. */
+export function RepairButton({
+  diskId,
+  lost = [],
+  t,
+  onChanged,
+  className,
+}: {
+  diskId: number;
+  /** "ct/101 2026-11-17T04:01:25Z": damaged versions no longer in the source. */
+  lost?: string[];
+  t: TranslationDictionary;
+  onChanged?: () => Promise<void> | void;
+  className?: string;
+}) {
+  const text = t.diskSheet.repair;
+  const { toast } = useToast();
+  const confirm = useConfirm();
+  const [busy, setBusy] = useState(false);
+  async function confirmLost(versions: string[]): Promise<boolean> {
+    return confirm({
+      title: text.lostTitle,
+      description: fill(text.lostText, { versions: versions.join(", ") || text.lostUnknown }),
+      confirmLabel: text.lostConfirm,
+      tone: "danger",
+    });
+  }
+  async function repair() {
+    setBusy(true);
+    try {
+      let confirmed = false;
+      if (lost.length) {
+        if (!(await confirmLost(lost))) return;
+        confirmed = true;
+      }
+      let result;
+      try {
+        result = await repairDisk(diskId, confirmed);
+      } catch (error) {
+        if (!(error instanceof ApiError && error.code === "repair_confirm_lost") || !(await confirmLost([]))) throw error;
+        result = await repairDisk(diskId, true);
+      }
+      openRunModal(result.run_id);
+      await onChanged?.();
+    } catch (error) {
+      const errors = t.diskSheet.errors as Record<string, string>;
+      toast({ tone: "danger", title: error instanceof ApiError && error.code && errors[error.code] ? errors[error.code] : error instanceof Error ? error.message : t.error });
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={() => void repair()}
+      className={cn(
+        "flex items-center justify-center gap-2 rounded-lg border-0 bg-accent px-3.5 py-[9px] text-[13px] font-medium text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50",
+        className,
+      )}
+      data-repair={diskId}
+    >
+      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wrench className="h-4 w-4" />}
+      {text.action}
+    </button>
+  );
+}
+
+/** B47: which VM/CT versions are damaged on the disk, and whether the source still has them. */
+export function DamagedVersions({ disk, t, onChanged }: { disk: ExternalDisk; t: TranslationDictionary; onChanged?: () => Promise<void> | void }) {
+  const text = t.diskSheet.repair;
+  const items = disk.damaged_snapshots ?? [];
+  if (!items.length) return null;
+  const lost = items.filter((item) => item.in_source === false).map((item) => `${item.group} ${item.time}`);
+  return (
+    <div role="alert" className="flex flex-col gap-2.5 rounded-[14px] bg-danger/15 p-4 text-[13px] leading-[1.45] text-danger-text" data-damaged={items.length}>
+      <b>{fill(text.title, { n: items.length })}</b>
+      <span>{text.text}</span>
+      <ul className="m-0 flex list-none flex-col gap-1 p-0">
+        {items.map((item) => (
+          <li key={item.key} className="flex flex-wrap gap-2">
+            <span className="font-mono">{item.group}</span>
+            <span>{item.time}</span>
+            <span className="font-medium">{item.in_source === false ? text.onlyDamaged : item.in_source ? text.inSource : text.sourceUnknown}</span>
+          </li>
+        ))}
+      </ul>
+      <RepairButton diskId={disk.id} lost={lost} t={t} onChanged={onChanged} className="w-fit" />
+    </div>
   );
 }

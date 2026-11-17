@@ -68,6 +68,8 @@ class ExternalDiskRead(UTCDateTimeModel):
     effective_retention: dict | None = None
     usage_history: list[dict] | None = None
     verify_recommended: bool | None = None
+    verify_required: bool | None = None
+    damaged_snapshots: list[dict] | None = None
     unsafe_removal_at: datetime | None = None
     contents_cached_at: datetime | None = None
 

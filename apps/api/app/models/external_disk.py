@@ -95,6 +95,11 @@ class ExternalDisk(Base):
     # Unplugged while mounted on PBS or during a run: a PBS verify is advised.
     verify_recommended: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     unsafe_removal_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
+    # B46: pulled out before its datastore was unmounted during a run: the copy
+    # is not guaranteed, the next backup starts with a full verification.
+    verify_required: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # B47: versions a verify could not check: [{key, group, time, reason, in_source}].
+    damaged_snapshots: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     assignments = relationship("DiskAssignment", back_populates="disk", cascade="all, delete-orphan")
 

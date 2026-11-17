@@ -14,6 +14,7 @@ import type { AgentStatus, ExternalBackupRun, ExternalDisk, Overview, ScheduledB
 import { InfoTip } from "../../ui/InfoTip";
 import { runKind } from "../disks/diskModel";
 import { alertValues } from "../disks/diskProfile";
+import { RepairButton } from "../disks/DiskBits";
 import { formatUsage } from "../../units";
 import { fill, formatDay, formatSize, formatTime, formatWhen } from "../format";
 import {
@@ -291,6 +292,22 @@ export function DashboardView(props: DashboardViewProps) {
                       {t.datastoresV2.chooseAction}
                     </button>
                   </div>
+                ) : item.kind === "disk_alert" && item.alert?.code === "damaged_versions" ? (
+                  <div key={`alert-${item.alert.disk_id}-damaged`} className="flex flex-wrap items-center gap-3 px-[22px] py-3" data-todo="alert:damaged_versions">
+                    <span className="h-2 w-2 flex-none rounded-full bg-danger" />
+                    <Link to={item.href} className="min-w-0 flex-1 text-sm text-fg no-underline hover:underline">
+                      {fill((t.guards.alert as Record<string, string>).damaged_versions, alertValues(item.alert, (iso) => when(iso)))}
+                    </Link>
+                    <RepairButton
+                      diskId={item.alert.disk_id}
+                      lost={(disks.find((disk) => disk.id === item.alert?.disk_id)?.damaged_snapshots ?? [])
+                        .filter((damaged) => damaged.in_source === false)
+                        .map((damaged) => `${damaged.group} ${damaged.time}`)}
+                      t={t}
+                      onChanged={props.onChanged}
+                      className="px-2.5 py-1 text-xs"
+                    />
+                  </div>
                 ) : item.kind === "disk_alert" && item.alert ? (
                   <Link key={`alert-${item.alert.disk_id}-${item.alert.code}`} to={item.href} className={cn(rowLink, "gap-3 px-[22px] py-3")} data-todo={`alert:${item.alert.code}`}>
                     <span className={cn("h-2 w-2 flex-none rounded-full", item.tone === "err" ? "bg-danger" : "bg-warning")} />
@@ -395,7 +412,7 @@ export function DashboardView(props: DashboardViewProps) {
                   {tone === "ok" ? "✓" : tone === "err" ? "✕" : "•"}
                 </span>
                 <span className="min-w-0 flex-1 truncate text-sm">
-                  {fill(runKind(run) === "eject" ? text.runEject : runKind(run) === "verify" ? text.runVerify : text.runBackup, { disk: run.disk_name })}
+                  {fill(runKind(run) === "eject" ? text.runEject : runKind(run) === "verify" ? text.runVerify : runKind(run) === "repair" ? text.runRepair : text.runBackup, { disk: run.disk_name })}
                 </span>
                 <span className="text-xs text-faint">{tone === "run" ? text.inProgress : when(run.finished_at ?? run.started_at)}</span>
               </button>

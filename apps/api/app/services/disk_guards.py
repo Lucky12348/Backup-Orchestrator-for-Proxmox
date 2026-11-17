@@ -104,8 +104,22 @@ def disk_alerts(db: Session, *, now: datetime | None = None, stale_days: int | N
             alerts.append(_alert(disk, "smart_danger", "danger", **_smart_params(disk)))
         elif disk.smart_status == "warning":
             alerts.append(_alert(disk, "smart_warning", "warning", **_smart_params(disk)))
+        if disk.damaged_snapshots:
+            alerts.append(
+                _alert(
+                    disk,
+                    "damaged_versions",
+                    "danger",
+                    count=len(disk.damaged_snapshots),
+                    lost=sum(1 for item in disk.damaged_snapshots if item.get("in_source") is False),
+                )
+            )
+        elif disk.verify_required:
+            alerts.append(_alert(disk, "verify_required", "danger", connected=bool(disk.connected)))
         last_verify = _last_verify_run(db, disk.id)
-        if disk.verify_recommended and last_verify is not None and last_verify.status == BackupRunStatus.FAILED:
+        if disk.damaged_snapshots or disk.verify_required:
+            pass  # said above, more precisely
+        elif disk.verify_recommended and last_verify is not None and last_verify.status == BackupRunStatus.FAILED:
             alerts.append(_alert(disk, "verify_failed", "danger", connected=bool(disk.connected)))
         elif disk.verify_recommended:
             alerts.append(

@@ -29,6 +29,7 @@ export interface RunLike {
   /** Phase 5f: PBS verify after the sync; verify-only run (no copy). */
   verify_after_backup?: boolean | null;
   verify_only?: boolean | null;
+  repair?: boolean | null;
   kind?: string | null;
 }
 
@@ -46,7 +47,9 @@ export interface JournalEntry {
 export const RUN_STEPS = ["detect", "passthrough", "mount", "sync", "cleanup", "verify", "eject"] as const;
 /** B45: a verification is a run type of its own: no copy, ends by releasing the disk. */
 export const VERIFY_STEPS = ["detect", "passthrough", "mount", "verify", "release"] as const;
-export type RunStepKey = (typeof RUN_STEPS)[number] | "release";
+/** B47: a repair deletes the damaged versions on the disk, copies them again, verifies them. */
+export const REPAIR_STEPS = ["detect", "passthrough", "mount", "repair", "sync", "verify", "release"] as const;
+export type RunStepKey = (typeof RUN_STEPS)[number] | "release" | "repair";
 /** not_run (B44): steps after the one that failed were not executed. */
 export type StepState = "done" | "active" | "upcoming" | "failed" | "skipped" | "not_run";
 
@@ -69,6 +72,8 @@ const STEP_OF: Record<string, RunStepKey> = {
   verify: "verify",
   verify_failed: "verify",
   success: "verify",
+  // B47: repair run (delete on the disk only, sync again, verify).
+  repair: "repair",
   auto_eject: "eject",
   eject: "eject",
   eject_flush: "eject",
@@ -80,30 +85,44 @@ const STEP_OF: Record<string, RunStepKey> = {
   release_failed: "eject",
 };
 
-export function runSteps(run: Pick<RunLike, "verify_only">): readonly RunStepKey[] {
-  return run.verify_only ? VERIFY_STEPS : RUN_STEPS;
+export function runSteps(run: Pick<RunLike, "verify_only" | "repair">): readonly RunStepKey[] {
+  return run.repair ? REPAIR_STEPS : run.verify_only ? VERIFY_STEPS : RUN_STEPS;
 }
 
-function verifyStepIndex(step: string | null | undefined): number {
+function shortStepIndex(steps: readonly string[], step: string | null | undefined): number {
+  if (step === "repair") return steps.indexOf("repair");
   const key = step ? STEP_OF[step] : undefined;
   if (!key) return -1;
-  return (VERIFY_STEPS as readonly string[]).indexOf(key === "eject" ? "release" : key);
+  return steps.indexOf(key === "eject" ? "release" : key);
 }
 
+/** Verification and repair runs: their own step list, ending with Release. */
 function verifyStepStates(run: RunLike, entries: JournalEntry[]): StepState[] {
-  let reached = verifyStepIndex(run.current_step);
-  for (const entry of entries) reached = Math.max(reached, verifyStepIndex(entry.step));
+  const steps = runSteps(run) as readonly string[];
+  let reached = shortStepIndex(steps, run.current_step);
+  for (const entry of entries) reached = Math.max(reached, shortStepIndex(steps, entry.step));
   reached = Math.max(0, reached);
-  const release = VERIFY_STEPS.indexOf("release");
-  return VERIFY_STEPS.map((_, index) => {
+  const release = steps.indexOf("release");
+  // B47: the release runs even after a failure: shown as done or failed on its own.
+  const released = entries.some((entry) => entry.step === "released");
+  return steps.map((_, index) => {
+    if (index === release && run.status === "failed" && released) return "done";
     if (run.status === "success") {
       if (index !== release) return "done";
-      return entries.some((entry) => verifyStepIndex(entry.step) === release && entry.level === "err") ? "failed" : "done";
+      return entries.some((entry) => shortStepIndex(steps, entry.step) === release && entry.level === "err") ? "failed" : "done";
     }
-    if (index < reached) return "done";
-    if (index === reached) return run.status === "failed" ? "failed" : "active";
+    // After a failure the release lines are the furthest: the failed step is the one of the error.
+    const last = run.status === "failed" && released ? failedStepIndex(steps, run, entries) : reached;
+    if (index < last) return "done";
+    if (index === last) return run.status === "failed" ? "failed" : "active";
     return run.status === "failed" ? "not_run" : "upcoming";
   });
+}
+
+function failedStepIndex(steps: readonly string[], run: RunLike, entries: JournalEntry[]): number {
+  const failing = [...entries].reverse().find((entry) => entry.level === "err" && entry.step !== "release" && entry.step !== "released");
+  const index = shortStepIndex(steps, failing?.step ?? run.current_step);
+  return index >= 0 ? index : steps.indexOf("verify");
 }
 
 export function stepIndex(step: string | null | undefined): number | null {
@@ -149,7 +168,7 @@ export function skippedSteps(run: RunLike, entries: JournalEntry[]): Set<number>
 }
 
 export function stepStates(run: RunLike, entries: JournalEntry[]): StepState[] {
-  if (run.verify_only) return verifyStepStates(run, entries);
+  if (run.verify_only || run.repair) return verifyStepStates(run, entries);
   const states = rawStepStates(run, entries);
   const skip = skippedSteps(run, entries);
   return states.map((state, index) => (skip.has(index) && (state === "done" || state === "upcoming") ? "skipped" : state));

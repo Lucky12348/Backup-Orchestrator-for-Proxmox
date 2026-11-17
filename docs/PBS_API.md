@@ -140,6 +140,24 @@ Not available in API mode (explicit error, use `PBS_MODE=agent`): the
 coexistence / loop-image mode, `/prepare-disk` on the PBS side, PBS agent
 maintenance.
 
+### Durable writes, damaged versions, repair (B46/B47)
+
+- `PUT /config/datastore/{name}` `tuning=sync-level=file` (and `tuning` on
+  `POST /config/datastore` when re-creating): `file` = an fsync on every chunk
+  written; the PBS default `filesystem` only runs a syncfs after a *backup*.
+  Cost: each chunk waits for the disk — noticeably slower copies on slow USB
+  hard disks (not measured here); the price of a copy that survives a disk
+  pulled out right after the sync.
+- `DELETE /admin/datastore/{store}/snapshots` `backup-type`, `backup-id`,
+  `backup-time` → null [V] (Datastore.Modify, or Prune + owner): used only on a
+  rotation disk's datastore (PBO marker required, the source refused).
+- Sync job option `resync-corrupt` [V] ("If the verification failed for a
+  local snapshot, try to pull it again"): not used — it relies on the last
+  verification state, unreadable when the manifest is 0 bytes. PBS's sync
+  skips a version older than the newest one of its group on the target: the
+  repair deletes the newer versions the source still holds so they are copied
+  again (docs/OPERATIONS.md).
+
 ### Stale mounts (B41): what the REST API cannot do
 
 Checked against the 4.x schema: no endpoint lists the mounts of a datastore

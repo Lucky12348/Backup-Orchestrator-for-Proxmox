@@ -280,6 +280,25 @@ def verify_disk_route(disk_id: int, payload: DiskVerifyRequest, background_tasks
     return {"run_id": run.id, "status": run.status.value}
 
 
+class DiskRepairRequest(BaseModel):
+    confirmation: bool = False
+    # Delete too the damaged versions the source no longer holds (they only
+    # exist, damaged, on this disk).
+    confirm_lost: bool = False
+
+
+@router.post("/{disk_id}/repair")
+def repair_disk_route(disk_id: int, payload: DiskRepairRequest, background_tasks: BackgroundTasks, db: DbSession) -> dict:
+    """B47: delete the damaged versions on the DISK only, copy them again from
+    the source, verify them, release the disk."""
+    from app.services.external_backups import execute_external_backup_run, run_external_backup
+
+    _disk_or_404(db, disk_id)
+    run = run_external_backup(db, disk_id, payload.confirmation, repair=True, confirm_lost=payload.confirm_lost)
+    background_tasks.add_task(execute_external_backup_run, run.id)
+    return {"run_id": run.id, "status": run.status.value}
+
+
 @router.post("/{disk_id}/verify/dismiss", response_model=ExternalDiskRead)
 def dismiss_verify_route(disk_id: int, db: DbSession) -> ExternalDisk:
     """The operator chose not to verify: clear the recommendation."""

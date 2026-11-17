@@ -63,6 +63,7 @@ class ExternalBackupRunRead(UTCDateTimeModel):
     verify_after_backup: bool | None = None
     verify_only: bool | None = None
     interrupted: str | None = None
+    repair: bool | None = None
     created_at: datetime
 
 
@@ -112,6 +113,7 @@ class ExternalBackupRunSummaryRead(UTCDateTimeModel):
     verify_after_backup: bool | None = None
     verify_only: bool | None = None
     interrupted: str | None = None
+    repair: bool | None = None
     created_at: datetime
 
 

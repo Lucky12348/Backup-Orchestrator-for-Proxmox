@@ -42,6 +42,7 @@ class ExternalBackupExecutionService:
         run_id: int | None = None,
         progress: Callable[[str, str, str | None], None] | None = None,
         group_filter: list[str] | None = None,
+        before_export: Callable[[str], None] | None = None,
     ) -> ExternalBackupExecutionResult:
         if mode == ExternalBackupMode.DEDICATED:
             return self._execute_dedicated(
@@ -50,6 +51,7 @@ class ExternalBackupExecutionService:
                 run_id=run_id,
                 progress=progress,
                 group_filter=group_filter,
+                before_export=before_export,
             )
 
         disk_prepare_mode = (
@@ -129,6 +131,7 @@ class ExternalBackupExecutionService:
         run_id: int | None,
         progress: Callable[[str, str, str | None], None] | None,
         group_filter: list[str] | None = None,
+        before_export: Callable[[str], None] | None = None,
     ) -> ExternalBackupExecutionResult:
         target_datastore_name = getattr(disk, "pbs_datastore_name", None) or build_dedicated_datastore_name(disk.serial_number)
         _report(progress, "inspect_disk", "Inspecting disk on PBS agent.")
@@ -156,6 +159,8 @@ class ExternalBackupExecutionService:
             raise RuntimeError("PBS agent did not return a mount path for the dedicated datastore.")
         actual_target_path = _extract_actual_target_path(prepare.payload) or mount_path
         target_datastore_name = _extract_string(prepare.payload, "datastore_name") or target_datastore_name
+        if before_export is not None:
+            before_export(target_datastore_name)  # B46: verification required first
 
         _report(progress, "run_export", "Starting PBS datastore export to dedicated disk.")
         export = self._bridge.run_external_export(

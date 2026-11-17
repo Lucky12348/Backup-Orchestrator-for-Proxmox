@@ -107,7 +107,7 @@ def _interrupt_during(stage_step: str, session_factory):
 @pytest.mark.parametrize(
     ("hook", "stage", "message"),
     [
-        ("app.services.post_sync.cleanup", "cleanup", "after the copy"),
+        ("app.services.post_sync.cleanup", "cleanup", "before its datastore was unmounted. The copy is not guaranteed"),
         ("app.services.external_backup_execution.ExternalBackupExecutionService.execute", "sync_job", "during the copy"),
     ],
 )

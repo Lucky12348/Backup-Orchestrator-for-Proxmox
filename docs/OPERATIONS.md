@@ -84,6 +84,25 @@ qm set 100 -delete usb0
 proxmox-backup-manager datastore unmount pbo-pbotesta
 ```
 
+### Verification required, damaged versions, repair (B46/B47)
+
+A disk pulled out before its datastore was unmounted may have lost data that
+was still in the write cache (run 30 → 3 versions with a 0-byte
+`index.json.blob`). PBO then marks it **Verification required**: the next
+backup starts with a full PBS verification, or click **Verify now**. Rotation
+datastores write durably (`sync-level=file`), set automatically.
+
+When a verification finds damaged versions, the disk sheet lists them (VM/CT,
+version, still in the source datastore or not) and offers **Repair** (also in
+the run window and "To do"): the damaged versions are deleted on the **disk
+only**, copied again from the source, then verified; the disk is released at
+the end, even after an error. Because PBS's sync skips a version older than the
+newest one already on the disk, newer intact versions the source still holds
+are deleted and copied again too; if a newer version exists only on the disk,
+the older damaged one is kept and the journal says why. A damaged version the
+source no longer has "only exists, damaged, on this disk": Repair asks for a
+confirmation before deleting it.
+
 ### Stale mounts on PBS (B41)
 
 A disk pulled out leaves its ext4 mount on `/mnt/datastore/<datastore>` with

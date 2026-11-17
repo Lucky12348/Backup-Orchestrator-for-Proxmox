@@ -43,6 +43,7 @@ export interface RunLike {
   progress_percent: number | null;
   auto_eject_after_success?: boolean;
   verify_only?: boolean | null;
+  repair?: boolean | null;
 }
 
 const ACTIVE = new Set(["pending", "running"]);
@@ -213,13 +214,14 @@ export function nameConfirmed(disk: DiskLike, typed: string): boolean {
 
 export interface HistoryItem {
   id: number;
-  kind: "backup" | "eject" | "verify";
+  kind: "backup" | "eject" | "verify" | "repair";
   tone: Tone;
   at: string;
   status: string;
 }
 
-export function runKind(run: RunLike): "backup" | "eject" | "verify" {
+export function runKind(run: RunLike): "backup" | "eject" | "verify" | "repair" {
+  if (run.repair) return "repair";
   if (run.verify_only) return "verify";
   // A manual eject run starts and ends on eject steps; a backup with auto-eject
   // (B24) ends on them too, but carries the flag.

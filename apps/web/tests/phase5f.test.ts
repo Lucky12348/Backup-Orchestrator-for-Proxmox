@@ -57,7 +57,7 @@ test("alerts: per disk, ordered by severity; USB 2.0 stays off the 'To do' list"
   assert.deepEqual(todoAlerts(alerts).map((item) => item.code), ["smart_danger", "usage_warning", "rotation_stale"]);
   const values = alertValues(alert("rotation_stale", "warning", { days: 40, last_backup_at: "2026-10-01T00:00:00Z", percent: 93.6 }), () => "1 oct.");
   assert.deepEqual(values, { name: "WD 4 To", days: 40, last_backup_at: "1 oct.", percent: 94 });
-  for (const code of ["usage_critical", "usage_warning", "smart_danger", "smart_warning", "verify_recommended", "usb2_slow", "rotation_stale", "pbs_config_recoverable", "pbs_config_missing", "pbs_conflict"]) {
+  for (const code of ["usage_critical", "usage_warning", "smart_danger", "smart_warning", "verify_recommended", "usb2_slow", "rotation_stale", "pbs_config_recoverable", "pbs_config_missing", "pbs_conflict", "verify_required", "damaged_versions"]) {
     for (const lang of ["en", "fr"] as const) {
       const guards = translations[lang].guards as Record<string, Record<string, string>>;
       assert.ok(guards.alert[code] && guards.badge[code] && guards.action[code], `${code} (${lang})`);
@@ -210,4 +210,28 @@ test("a disk pulled out while handed to PBS: own status, toasts, one-click verif
   }
   assert.equal(translations.fr.runLog.verify_nothing, "Vérification sautée : aucune nouvelle version.");
   assert.match(translations.fr.guards.alert.verify_recommended, /peut-être incomplète.*Rebranchez-le/);
+});
+
+
+// --- Phase 5f.4: durability, damaged versions, repair ------------------------------------------------
+
+test("B47: repair and verification runs have their own steps; the release runs after a failure", async () => {
+  const { runSteps, stepStates } = await import("../src/runs/runModel.ts");
+  const entry = (step: string, level: "info" | "ok" | "warn" | "err" = "info", code: string | null = null) => ({ at: null, step, source: "pbo" as const, level, code, params: {}, text: step, count: 1 });
+  const repair = { id: 1, disk_id: 1, status: "success" as const, started_at: "2026-11-17T04:00:00Z", current_step: "released", progress_percent: 100, repair: true };
+  assert.deepEqual(runSteps(repair), ["detect", "passthrough", "mount", "repair", "sync", "verify", "release"]);
+  // A failed verification: its step failed, the release still done.
+  const failed = { ...repair, repair: false, verify_only: true, status: "failed" as const, current_step: "verify_failed" };
+  const entries = [entry("handoff_disk"), entry("prepare_dedicated_datastore"), entry("verify"), entry("verify_failed", "err", "verify_failed"), entry("release"), entry("released", "ok", "released")];
+  assert.deepEqual(stepStates(failed, entries), ["done", "done", "done", "failed", "done"]);
+  for (const lang of ["en", "fr"] as const) {
+    const t = translations[lang];
+    assert.ok(t.runModal.kind.repair && t.runModal.steps.repair && t.diskSheet.repair.action && t.diskSheet.verify.requiredTitle);
+    for (const code of ["verify_damaged", "verify_damaged_lost", "repair_collateral", "repair_blocked", "repair_done", "datastore_sync_level", "verify_required_first"] as const) {
+      assert.ok(t.runLog[code], `${code} (${lang})`);
+    }
+  }
+  assert.match(translations.fr.runLog.disk_pulled_after_sync, /non garantie : vérification obligatoire/);
+  assert.doesNotMatch(translations.fr.runLog.disk_pulled_after_sync, /terminée/);
+  assert.match(translations.fr.runLog.verify_damaged_lost, /n’existe plus que sous forme abîmée sur ce disque/);
 });

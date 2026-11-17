@@ -145,7 +145,7 @@ def test_config_missing_same_uuid_is_recreated_without_any_wipe(api_mode, sessio
     codes = [entry["code"] for entry in run_journal(run, disk)["entries"]]
     assert "datastore_recreate_start" in codes and "datastore_recreated" in codes
     assert fake.reused == [
-        {"name": TARGET, "path": TARGET, "backing-device": f"UUID-{TARGET}", "reuse-datastore": True, "comment": pbo_marker(SERIAL)}
+        {"name": TARGET, "path": TARGET, "backing-device": f"UUID-{TARGET}", "reuse-datastore": True, "comment": pbo_marker(SERIAL), "tuning": "sync-level=file"}
     ]
     assert fake.mount_status[TARGET] == "mounted"
     assert result.message == "PBS configuration re-created from the existing data, no formatting."

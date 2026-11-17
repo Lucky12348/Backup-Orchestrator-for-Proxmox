@@ -157,6 +157,7 @@ class PBSApiBackend:
             "/prune-datastore": self._prune_datastore,
             "/verify-snapshots": self._verify_snapshots,
             "/offline-removable-datastore": self._offline_datastore,
+            "/delete-snapshots": self._delete_snapshots,
             "/external-export-objects/status": lambda _payload: self._export_objects_status(),
             "/external-export-objects/cleanup": lambda _payload: self._cleanup_export_objects(),
             "/cleanup-legacy-external-export-objects": lambda _payload: self._cleanup_export_objects(),
@@ -316,6 +317,7 @@ class PBSApiBackend:
                 backing_device=plan.backing_device,
                 reuse_datastore=True,
                 comment=pbo_marker(serial),
+                tuning=DURABLE_TUNING,
             )
             if upid:
                 self.client.wait_for_task(upid, timeout_seconds=self.settings.pbs_task_timeout_seconds, on_line=on_line("prepare_dedicated_datastore"))
@@ -326,6 +328,7 @@ class PBSApiBackend:
             message = REUSED_MESSAGE
 
         self._ensure_mounted(plan.datastore_name, progress, lines)
+        self._ensure_sync_level(plan.datastore_name, progress)
         if recreated:
             count = self._check_readable(serial, plan.datastore_name)
             progress(
@@ -579,24 +582,46 @@ class PBSApiBackend:
         keys = [str(key) for key in payload.get("snapshots") or []]
         verify_all = bool(payload.get("all")) or len(keys) > MAX_VERIFY_TASKS
         count: int | None = None
-        if verify_all:
-            progress("verify", f"Verifying every snapshot of `{store}` (POST /admin/datastore/{store}/verify).")
-            self.client.wait_for_task(
-                self.client.verify(store, ignore_verified=False),
-                timeout_seconds=self.settings.pbs_task_timeout_seconds,
-                on_line=on_line,
-            )
-        else:
-            progress("verify", f"Verifying {len(keys)} copied snapshot(s) on `{store}`.")
-            for key in keys:
-                group, when = key.rsplit("/", 1)
-                kind, ident = group.split("/", 1)
+        try:
+            if verify_all:
+                progress("verify", f"Verifying every snapshot of `{store}` (POST /admin/datastore/{store}/verify).")
                 self.client.wait_for_task(
-                    self.client.verify(store, backup_type=kind, backup_id=ident, backup_time=int(when), ignore_verified=False),
+                    self.client.verify(store, ignore_verified=False),
                     timeout_seconds=self.settings.pbs_task_timeout_seconds,
                     on_line=on_line,
                 )
-            count = len(keys)
+            else:
+                progress("verify", f"Verifying {len(keys)} copied snapshot(s) on `{store}`.")
+                failed_tasks: list[str] = []
+                for key in keys:
+                    group, when = key.rsplit("/", 1)
+                    kind, ident = group.split("/", 1)
+                    try:
+                        self.client.wait_for_task(
+                            self.client.verify(store, backup_type=kind, backup_id=ident, backup_time=int(when), ignore_verified=False),
+                            timeout_seconds=self.settings.pbs_task_timeout_seconds,
+                            on_line=on_line,
+                        )
+                    except PBSTaskError:
+                        failed_tasks.append(key)
+                if failed_tasks:
+                    raise PBSTaskError(
+                        "verification failed", upid="", exitstatus="verification failed",
+                        log_lines=lines + ["Failed to verify the following snapshots/groups:"]
+                        + [_iso_key(key) for key in failed_tasks],
+                    )
+                count = len(keys)
+        except PBSTaskError as exc:
+            from app.services.repair import parse_failed_snapshots
+
+            failed = parse_failed_snapshots(exc.log_lines)
+            raise self._error(
+                f"PBS task failed: {exc.exitstatus or exc}",
+                "PBS API /verify-snapshots",
+                error_code="verify_failed",
+                stdout_log="\n".join(exc.log_lines) or None,
+                extra={"failed_snapshots": failed},
+            ) from exc
         suffix = f" ({count} snapshot(s))." if count is not None else " (all snapshots)."
         return {
             "ok": True,
@@ -605,6 +630,39 @@ class PBSApiBackend:
             "message": f"PBS verify OK on `{store}`{suffix}",
             "stdout_log": "\n".join(lines) or None,
         }
+
+    def _ensure_sync_level(self, store: str, progress: ProgressFn) -> None:
+        """B46: rotation datastores write durably (`tuning sync-level=file`: an
+        fsync per chunk) — created that way, existing ones fixed at their next
+        run. Other tuning keys are kept."""
+        try:
+            config = self.client.get_datastore_config(store)
+            current = tuning_options(str(config.get("tuning") or ""))
+            if current.get("sync-level") == "file":
+                return
+            current["sync-level"] = "file"
+            self.client.update_datastore(store, tuning=",".join(f"{key}={value}" for key, value in current.items()))
+        except PBSApiError as exc:
+            progress("mount_datastore", f"Durable writes could not be enabled on `{store}`: {exc}")
+            return
+        progress("mount_datastore", f"Durable writes enabled on `{store}`: sync-level=file (each chunk is flushed to the disk).")
+
+    def _delete_snapshots(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """B47: delete versions on a ROTATION DISK's datastore only — never the
+        source datastore, never a datastore without the PBO marker."""
+        store = self._mounted_store(payload)
+        config = self.client.get_datastore_config(store)
+        if store == self.settings.pbs_datastore or "pbo:serial=" not in str(config.get("comment") or ""):
+            raise GuardViolation("delete_refused", f"Refusing to delete snapshots on `{store}`: not a PBO rotation disk datastore.")
+        progress = self._progress(payload.get("callback_run_id"))
+        deleted = []
+        for key in [str(key) for key in payload.get("snapshots") or []]:
+            group, when = key.rsplit("/", 1)
+            kind, ident = group.split("/", 1)
+            self.client.delete_snapshot(store, backup_type=kind, backup_id=ident, backup_time=int(when))
+            deleted.append(key)
+        progress("repair", f"{len(deleted)} version(s) deleted on `{store}` (the disk only).")
+        return {"ok": True, "datastore_name": store, "deleted": deleted, "message": f"{len(deleted)} snapshot(s) deleted on `{store}`."}
 
     def _offline_datastore(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Disk pulled out: unmount its removable datastore without failing when
@@ -812,8 +870,9 @@ class PBSApiBackend:
         *,
         error_code: str | None = None,
         stdout_log: str | None = None,
+        extra: dict[str, Any] | None = None,
     ) -> HostAgentError:
-        payload: dict[str, Any] = {"ok": False, "success": False, "message": message}
+        payload: dict[str, Any] = {"ok": False, "success": False, "message": message, **(extra or {})}
         if error_code:
             payload["error_code"] = error_code
         return HostAgentError(
@@ -834,6 +893,26 @@ class PBSApiBackend:
             f"{method} {path}",
             error_code="unsupported_in_api_mode",
         )
+
+
+DURABLE_TUNING = "sync-level=file"
+
+
+def tuning_options(text: str) -> dict[str, str]:
+    """'sync-level=filesystem,chunk-order=none' → ordered dict."""
+    options: dict[str, str] = {}
+    for part in text.split(","):
+        if "=" in part:
+            key, value = part.split("=", 1)
+            options[key.strip()] = value.strip()
+    return options
+
+
+def _iso_key(key: str) -> str:
+    from datetime import datetime, timezone
+
+    group, when = key.rsplit("/", 1)
+    return f"{group}/{datetime.fromtimestamp(int(when), tz=timezone.utc):%Y-%m-%dT%H:%M:%SZ}"
 
 
 def _store_from_mount_path(mount_path: str) -> str | None:

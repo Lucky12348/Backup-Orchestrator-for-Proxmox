@@ -197,6 +197,7 @@ class PBSClient:
         backing_device: str | None = None,
         reuse_datastore: bool = False,
         comment: str | None = None,
+        tuning: str | None = None,
     ) -> str | None:
         """POST /config/datastore. Schema return type is null; a UPID is waited for if one comes back."""
         body: dict[str, Any] = {"name": name, "path": path}
@@ -206,6 +207,8 @@ class PBSClient:
             body["reuse-datastore"] = True
         if comment:
             body["comment"] = comment
+        if tuning:
+            body["tuning"] = tuning
         data = self._request("POST", "config/datastore", body=body)
         return data if is_upid(data) else None
 
@@ -248,6 +251,14 @@ class PBSClient:
         if dry_run:
             body["dry-run"] = True
         return _require_upid(self._request("POST", f"admin/datastore/{_seg(store)}/prune-datastore", body=body), "prune-datastore")
+
+    def delete_snapshot(self, store: str, *, backup_type: str, backup_id: str, backup_time: int) -> None:
+        """DELETE /admin/datastore/{store}/snapshots (Datastore.Modify, or Prune + owner)."""
+        self._request(
+            "DELETE",
+            f"admin/datastore/{_seg(store)}/snapshots",
+            params={"backup-type": backup_type, "backup-id": backup_id, "backup-time": int(backup_time)},
+        )
 
     def start_garbage_collection(self, store: str) -> str:
         """POST /admin/datastore/{store}/gc → UPID (Datastore.Modify)."""

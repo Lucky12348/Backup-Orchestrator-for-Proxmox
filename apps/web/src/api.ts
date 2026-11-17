@@ -719,7 +719,9 @@ export type DiskAlertCode =
   | "pbs_config_recoverable"
   | "pbs_config_missing"
   | "pbs_conflict"
-  | "verify_failed";
+  | "verify_failed"
+  | "verify_required"
+  | "damaged_versions";
 
 export interface DiskAlert {
   disk_id: number;
@@ -808,6 +810,13 @@ export function startDiskVerify(diskId: number, autoEject = false) {
   return request<{ run_id: number; status: string }>(`/disks/${diskId}/verify`, {
     method: "POST",
     body: JSON.stringify({ confirmation: true, auto_eject_after_success: autoEject }),
+  });
+}
+
+export function repairDisk(diskId: number, confirmLost = false) {
+  return request<{ run_id: number; status: string }>(`/disks/${diskId}/repair`, {
+    method: "POST",
+    body: JSON.stringify({ confirmation: true, confirm_lost: confirmLost }),
   });
 }
 

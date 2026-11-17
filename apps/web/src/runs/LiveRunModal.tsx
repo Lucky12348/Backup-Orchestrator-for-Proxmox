@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { RepairButton } from "../views/disks/DiskBits";
 import { AlertTriangle, Check, Download, Loader2, Minimize2, X } from "lucide-react";
 
 import { cancelExternalBackupRun } from "../api";
@@ -90,7 +91,11 @@ export function RunView({ run, t, language }: { run: RunLike; t: TranslationDict
       ? run.current_step === "disk_pulled"
         ? text.title.interrupted
         : text.title.failed
-      : run.verify_only
+      : run.repair
+        ? run.status === "success"
+          ? text.title.repairOk
+          : text.title.repair
+        : run.verify_only
         ? run.status === "success"
           ? text.title.verifyOk
           : text.title.verify
@@ -154,7 +159,7 @@ export function RunView({ run, t, language }: { run: RunLike; t: TranslationDict
         <div className="flex min-w-[240px] flex-1 flex-col gap-1">
           <DialogTitle className="m-0 text-lg font-semibold tracking-[-0.01em]">{title}</DialogTitle>
           <DialogDescription id="run-subtitle" className="m-0 text-[13px] text-muted">
-            {eject ? text.kind.eject : run.verify_only ? text.kind.verify : text.kind.backup} · {fill(text.subtitle, { time: clockTime(run.started_at.endsWith("Z") ? run.started_at : `${run.started_at}Z`) })} · {diskName}
+            {eject ? text.kind.eject : run.repair ? text.kind.repair : run.verify_only ? text.kind.verify : text.kind.backup} · {fill(text.subtitle, { time: clockTime(run.started_at.endsWith("Z") ? run.started_at : `${run.started_at}Z`) })} · {diskName}
             {target ? (
               <>
                 {" "}
@@ -254,6 +259,9 @@ export function RunView({ run, t, language }: { run: RunLike; t: TranslationDict
           </label>
         ) : null}
         <span className="flex-1" />
+        {run.status === "failed" && (run.current_step === "verify_failed" || run.current_step === "disk_pulled") ? (
+          <RepairButton diskId={run.disk_id} t={t} />
+        ) : null}
         {running ? (
           <>
             {run.cancellable ? (

@@ -69,6 +69,35 @@ def refresh_contents(db: Session, bridge: Any, run: ExternalBackupRun | None, di
     return list(cache.get("snapshots") or [])
 
 
+def record_damaged(db: Session, bridge: Any, run: ExternalBackupRun, disk: ExternalDisk, failed: list[dict[str, Any]], log: Log) -> None:
+    """B47: which VM/CT versions are damaged on the disk, and whether the
+    source datastore still holds them (one readable line per group)."""
+    source = run.datastore_name or get_settings().pbs_datastore
+    source_keys: set[str] | None = None
+    try:
+        listed = bridge.pbs_command("/list-datastore-snapshots", {"datastore_name": source}, run_id=None)
+        source_keys = {key for key in (disk_contents.snapshot_key(item) for item in (listed.payload or {}).get("snapshots") or []) if key}
+    except AgentCommandError:
+        source_keys = None
+    damaged = []
+    for item in failed:
+        in_source = None if source_keys is None else item["key"] in source_keys
+        damaged.append({**item, "in_source": in_source})
+    disk.damaged_snapshots = damaged
+    db.add(disk)
+    db.commit()
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for item in damaged:
+        groups.setdefault(item["group"], []).append(item)
+    for group, items in groups.items():
+        times = ", ".join(item["time"] for item in items)
+        if all(item["in_source"] for item in items):
+            log(step="verify_failed", message=f"Damaged on the disk: {group}, {len(items)} version(s) ({times}); still in the source `{source}`: they can be repaired.", stream="stderr")
+        else:
+            lost = ", ".join(item["time"] for item in items if item["in_source"] is False) or "unknown"
+            log(step="verify_failed", message=f"Damaged on the disk: {group}, {len(items)} version(s) ({times}); no longer in the source `{source}`: {lost}.", stream="stderr")
+
+
 def verify(
     bridge: Any,
     run: ExternalBackupRun,
@@ -77,6 +106,8 @@ def verify(
     *,
     copied: list[str] | None,
     verify_all: bool = False,
+    db: Session | None = None,
+    disk: ExternalDisk | None = None,
 ) -> None:
     if not api_mode():
         log(step="verify", message="Verification needs PBS_MODE=api: skipped.")
@@ -93,6 +124,9 @@ def verify(
         result = bridge.pbs_command("/verify-snapshots", payload, run_id=run.id)
     except AgentCommandError as exc:
         log(step="verify_failed", message=f"PBS verify failed: {exc}", stream="stderr")
+        failed = (exc.payload or {}).get("failed_snapshots") if isinstance(getattr(exc, "payload", None), dict) else None
+        if failed and db is not None and disk is not None:
+            record_damaged(db, bridge, run, disk, failed, log)
         raise VerifyFailed(f"PBS verify failed: {exc}") from exc
     log(step="verify", message=result.message)
 

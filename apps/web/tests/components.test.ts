@@ -41,7 +41,7 @@ before(async () => {
         'export { ChooseDatastoreDialog } from "./src/views/datastores/ChooseDatastoreDialog";',
         'export { PlanningDialog } from "./src/views/planning/PlanningDialog";',
         'export { UserMenu } from "./src/shell/AppShellV2";',
-        'export { DiskAvatar, AlertBadges, PbsConfigNotice } from "./src/views/disks/DiskBits";',
+        'export { DiskAvatar, AlertBadges, PbsConfigNotice, DamagedVersions } from "./src/views/disks/DiskBits";',
         'export { ContentsCard } from "./src/views/disks/DiskSheetView";',
         'export { UsageChart } from "./src/views/disks/UsageChart";',
         'export { DiskCopies } from "./src/views/resources/ResourcesView";',
@@ -598,4 +598,18 @@ test("PbsConfigNotice: what happened, data safe, what to do (manual command when
   assert.ok(!recoverable.includes("proxmox-backup-manager datastore create"));
   const missing = html(createElement(ui.PbsConfigNotice, { note: "missing", datastore: "pbo-pbotesta", serial: "PBOTESTA", t: translations.fr }));
   assert.ok(missing.includes("action requise") && missing.includes("--reuse-datastore true --comment pbo:serial=PBOTESTA"));
+});
+
+test("DamagedVersions: which versions, whether the source still has them, a Repair button", () => {
+  const disk = {
+    ...baseDisk,
+    damaged_snapshots: [
+      { key: "ct/101/1", group: "ct/101", time: "2026-11-17T04:05:47Z", in_source: true },
+      { key: "ct/102/2", group: "ct/102", time: "2026-11-17T04:01:29Z", in_source: false },
+    ],
+  };
+  const markup = html(inApp(createElement(ui.DamagedVersions, { disk, t: translations.fr })));
+  assert.ok(markup.includes('data-damaged="2"') && markup.includes("2 version(s) abîmée(s) sur ce disque"));
+  assert.ok(markup.includes("encore dans la source") && markup.includes("n’existe plus qu’abîmée ici"));
+  assert.ok(markup.includes("data-repair=") && markup.includes("Réparer"));
 });

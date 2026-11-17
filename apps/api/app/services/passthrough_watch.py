@@ -183,6 +183,8 @@ def handle_pulled(
         run.interrupted = stage
         _apply_interruption(run)
         db.add(run)
+        # B46: data may still have been in the write cache: verify before trusting it.
+        disk.verify_required = True
         db.commit()
         client = getattr(pbs, "client", None)
         if api and run.pbs_task_upid and client is not None:

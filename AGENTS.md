@@ -528,6 +528,25 @@ should reach them — and every call is additionally protected with an
   (detect, passthrough, mount, verify, release): it ends with
   `release_disk_within_run` (unmount + detach, no spin-down, disk back to
   "connected"), auto-eject off by default.
+- **5f.4** B46 durability: rotation datastores get `tuning sync-level=file`
+  (fsync per chunk; PBS default `filesystem` = one syncfs after a *backup*)
+  at creation, re-creation and every reuse (`PBSApiBackend._ensure_sync_level`,
+  other tuning keys kept). A copy is guaranteed only once unmounted: a removal
+  during a run sets `external_disks.verify_required` (Alembic `0013`), the
+  message says "not guaranteed, verification required", and the next backup
+  verifies everything before copying (`before_export` hook of
+  `ExternalBackupExecutionService`). B47: a failed verify records
+  `damaged_snapshots` (parsed from PBS's "Failed to verify the following
+  snapshots", `services/repair.py`, with `in_source`); verification and repair
+  runs always run their Release step. Repair (`POST /disks/{id}/repair`,
+  `external_backup_runs.repair`, `services/repair_run.py`): delete on the DISK
+  datastore only (`/delete-snapshots` refuses the source and any datastore
+  without the PBO marker), resync the affected groups, verify the re-copied
+  versions; newer intact versions the source still holds are deleted and
+  re-copied too (PBS skips versions older than the newest on the target), one
+  existing only on the disk blocks its older damaged versions (kept, said);
+  versions gone from the source need `confirm_lost` (409
+  `repair_confirm_lost`). `resync-corrupt` is not used (0-byte manifest).
 
 ## Disk ↔ USB port (Phase 4.4, read before touching the USB passthrough)
 
