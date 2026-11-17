@@ -17,6 +17,8 @@ from app.schemas.agents import (
     PairingCodeRead,
     RegisteredAgentRead,
 )
+from app.models import RegisteredAgent
+from app.services import agent_updates
 from app.services.agent_bootstrap import (
     AppUrlError,
     agent_source_dir,
@@ -81,6 +83,25 @@ def create_pairing(request: Request, db: DbSession) -> PairingCodeRead:
 @router.get("", response_model=list[RegisteredAgentRead])
 def get_agents(db: DbSession) -> list[RegisteredAgentRead]:
     return [_agent_read(agent) for agent in list_agents(db)]
+
+
+@router.get("/updates")
+def get_agent_updates(db: DbSession) -> dict:
+    """Integrations: shipped build, each agent's version/state, update history."""
+    return agent_updates.overview(db)
+
+
+@router.post("/{agent_id}/update", status_code=status.HTTP_202_ACCEPTED)
+def update_agent_now(agent_id: int, db: DbSession) -> dict:
+    """"Update now": runs in the background, follow it with GET /agents/updates."""
+    agent = db.get(RegisteredAgent, agent_id)
+    if agent is None or agent.revoked_at is not None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "agent_not_found"})
+    try:
+        row = agent_updates.start_update(db, agent, trigger="manual")
+    except agent_updates.AgentUpdateError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": exc.code, "message": str(exc)}) from exc
+    return {"id": row.id, "status": row.status}
 
 
 @router.delete("/revoked")

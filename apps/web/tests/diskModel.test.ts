@@ -73,8 +73,8 @@ test("actions per state", () => {
   assert.deepEqual(diskActions(disk(), "approved"), ["backup", "rescan"]);
   assert.deepEqual(diskActions(disk({ pbs_visible: true, handoff_status: "visible_on_pbs" }), "approved"), ["backup", "eject", "rescan"]);
   assert.deepEqual(diskActions(disk(), "running"), ["follow", "eject"]);
-  assert.deepEqual(diskActions(disk({ operator_decision: "rejected" }), "rejected"), ["unreject", "rescan"]);
-  assert.deepEqual(diskActions(disk({ reject_reason: "zero_size" }), "rejected"), ["rescan"]);
+  assert.deepEqual(diskActions(disk({ operator_decision: "rejected" }), "rejected"), ["unreject", "hide", "rescan"]);
+  assert.deepEqual(diskActions(disk({ reject_reason: "zero_size" }), "rejected"), ["hide", "rescan"]);
   assert.deepEqual(diskActions(disk(), "new"), []);
 });
 
@@ -87,7 +87,7 @@ test("tabs and counters (plugged includes an ejected disk still there)", () => {
     disk({ id: 5, display_name: "Ejected", connected: false, status: "ejected", handoff_status: "ejected" }),
   ];
   const rows = diskRows(disks, [run({ disk_id: 1, status: "running" })]);
-  assert.deepEqual(tabCounts(rows), { all: 5, plugged: 3, approved: 3, review: 1, rejected: 1 });
+  assert.deepEqual(tabCounts(rows), { all: 5, plugged: 3, approved: 3, review: 1, rejected: 1, hidden: 0 });
   assert.deepEqual(visibleRows(rows, "review", "").map((row) => row.disk.id), [3]);
   assert.equal(rows[0].status, "running"); // the running disk comes first
 });

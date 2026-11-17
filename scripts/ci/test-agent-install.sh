@@ -9,6 +9,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=../../apps/api/app/agent_install/install.sh
 PBO_INSTALL_SOURCED=1 source "${ROOT}/apps/api/app/agent_install/install.sh"
 set +e  # the installer enables errexit; failures are counted here instead
+# Units and udev rule come from the agent package (agent/deploy.py).
+AGENT_SRC="${ROOT}/apps/agent/src"
 
 failures=0
 check() {
@@ -115,14 +117,26 @@ rule_case() {
 }
 rule_case
 
-# The report service is debounced and the timer is only a 5-minute fallback.
-INSTALLER="${ROOT}/apps/api/app/agent_install/install.sh"
-for expect in "sync-state --settle 2" "OnUnitActiveSec=5min" "StateDirectory=pbo-agent"; do
-  if ! grep -qF -- "${expect}" "${INSTALLER}"; then
-    echo "FAIL  installer misses: ${expect}"
-    failures=$((failures + 1))
-  fi
-done
+# The report service is debounced and the timer is only a 5-minute fallback;
+# the units run the code of the active release (self-update, Phase 5g).
+units_case() {
+  local tmp
+  tmp="$(mktemp -d)"
+  PYTHONPATH="${AGENT_SRC}" python3 -m agent.deploy write --role host --install-dir /opt/pbo-agent     --env-file /etc/pbo-agent/agent.env --systemd-dir "${tmp}/systemd" --udev-rule-file "${tmp}/udev.rules" >/dev/null
+  for expect in "sync-state --settle 2" "StateDirectory=pbo-agent" "Environment=PYTHONPATH=/opt/pbo-agent/current/src"; do
+    if ! grep -qF -- "${expect}" "${tmp}/systemd/pbo-agent-report.service"; then
+      echo "FAIL  report service misses: ${expect}"
+      failures=$((failures + 1))
+    fi
+  done
+  grep -qF "OnUnitActiveSec=5min" "${tmp}/systemd/pbo-agent-report.timer" || { echo "FAIL  timer"; failures=$((failures + 1)); }
+  grep -qF "ExecStart=/opt/pbo-agent/venv/bin/python -m agent.main serve" "${tmp}/systemd/pbo-agent.service" ||
+    { echo "FAIL  agent service"; failures=$((failures + 1)); }
+  [[ -f "${tmp}/udev.rules" ]] || { echo "FAIL  host role without udev rule"; failures=$((failures + 1)); }
+  command rm -rf "${tmp}"
+  echo "ok    units"
+}
+units_case
 
 # Proxmox firewall rule (B12): app IP from the URL, rules first in [RULES],
 # idempotent, removed by --uninstall, skipped with --no-firewall.

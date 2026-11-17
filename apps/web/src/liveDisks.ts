@@ -24,16 +24,18 @@ export function formatCapacity(gb: number, lang: Lang): string {
   return formatGib(gb, lang);
 }
 
-export function rejectReasonText(reason: DiskEventData["reject_reason"], minSizeGb: number, lang: Lang): string {
+export function rejectReasonText(reason: DiskEventData["reject_reason"], minSizeGb: number, lang: Lang, sizeGb?: number): string {
   if (reason === "zero_size") {
     return lang === "fr"
       ? "Taille 0 : le disque ne répond pas (câble, port USB ou boîtier défaillant, ou lecteur de carte vide)."
       : "Size 0: the disk does not answer (faulty cable, USB port or enclosure, or an empty card reader).";
   }
   if (reason === "too_small") {
+    // Phase 5g: the disk's size next to the minimum.
+    const size = sizeGb === undefined ? "" : `${formatCapacity(sizeGb, lang)}, `;
     return lang === "fr"
-      ? `Trop petit : il faut au moins ${minSizeGb} Gio pour un datastore PBS.`
-      : `Too small: a PBS datastore needs at least ${minSizeGb} GiB.`;
+      ? `Trop petit : ${size}il faut au moins ${minSizeGb} Gio pour un datastore PBS.`
+      : `Too small: ${size}a PBS datastore needs at least ${minSizeGb} GiB.`;
   }
   return "";
 }
@@ -81,6 +83,8 @@ export interface DiskToast {
 export function toastForDiskEvent(event: AppEvent, lang: Lang): DiskToast | null {
   const data = event.data as DiskEventData;
   if (!data || typeof data.id !== "number") return null;
+  // Phase 5g: a disk the operator hid makes no noise.
+  if ((data as { status?: string }).status === "hidden") return null;
   const name = cardTitle(data);
   const size = formatCapacity(data.capacity_gb, lang);
   const sep = lang === "fr" ? " : " : ": ";
@@ -100,7 +104,7 @@ export function toastForDiskEvent(event: AppEvent, lang: Lang): DiskToast | null
       return {
         key: `${event.id}`,
         tone: "warning",
-        message: `${lang === "fr" ? "Disque rejeté" : "Disk rejected"}${sep}${name} — ${rejectReasonText(data.reject_reason, data.min_size_gb, lang)}`,
+        message: `${lang === "fr" ? "Disque rejeté" : "Disk rejected"}${sep}${name} — ${rejectReasonText(data.reject_reason, data.min_size_gb, lang, data.capacity_gb)}`,
       };
     }
     return {

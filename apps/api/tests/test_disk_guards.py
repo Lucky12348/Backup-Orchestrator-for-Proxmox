@@ -121,7 +121,7 @@ def test_retention_prunes_then_garbage_collects_after_the_sync(db, session_facto
     assert mutating.index(f"admin/datastore/{TARGET}/prune-datastore") > mutating.index(next(p for p in mutating if p.startswith("admin/sync/")))
     assert mutating.index(f"admin/datastore/{TARGET}/gc") > mutating.index(f"admin/datastore/{TARGET}/prune-datastore")
     codes = _codes(db, run.id)
-    assert {"cleanup_retention", "cleanup_gc", "cleanup_done", "contents_updated"} <= set(codes)
+    assert {"cleanup_retention", "cleanup_gc", "cleanup_pending", "contents_updated"} <= set(codes)
     # Contents cached: vm/100 kept 2 versions, ct/101 one.
     disk = db.get(ExternalDisk, disk.id)
     items = {item["group"]: item for item in disk.contents_cache["items"]}

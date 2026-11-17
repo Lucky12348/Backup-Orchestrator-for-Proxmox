@@ -24,7 +24,7 @@ from urllib.parse import urlparse
 import httpx
 import uvicorn
 
-from agent import hotplug, smart
+from agent import __version__, hotplug, smart
 from agent.usb_location import list_usb_devices, usb_location
 
 
@@ -80,6 +80,8 @@ AGENT_CAPABILITIES = {
     "usb-link-speed",
     "usb-devices",
     "pbs-guest-mounts",
+    # The app pushes its agent build (POST /self-update); see agent/self_update.py.
+    "self-update",
 }
 
 
@@ -94,7 +96,7 @@ def parse_bool(value: str | None, default: bool = False) -> bool:
 class AgentSettings:
     api_base_url: str = os.getenv("AGENT_API_BASE_URL", "http://localhost:8000/api/v1")
     hostname: str = os.getenv("AGENT_HOSTNAME", socket.gethostname())
-    agent_version: str = os.getenv("AGENT_VERSION", "0.1.0")
+    agent_version: str = os.getenv("AGENT_VERSION", __version__)
     timeout_seconds: float = float(os.getenv("AGENT_TIMEOUT_SECONDS", "10"))
     include_non_usb_candidates: bool = parse_bool(
         os.getenv("AGENT_INCLUDE_NON_USB_CANDIDATES"),
@@ -217,10 +219,19 @@ class ExternalExportProgress:
         return self.run_id is not None
 
 
+def agent_build_id(settings: AgentSettings) -> str | None:
+    """Build of the running code (BUILD_ID of the release the app served),
+    compared by the app with the build it ships."""
+    from agent.self_update import build_of
+
+    return build_of(Path(settings.repo_path))
+
+
 def post_heartbeat(settings: AgentSettings) -> None:
     payload = {
         "hostname": settings.hostname,
         "agent_version": settings.agent_version,
+        "build_id": agent_build_id(settings),
         "observed_at": current_timestamp(),
     }
     post_json(settings, "/agent/heartbeat", payload, token=settings.reporting_token)
@@ -283,6 +294,7 @@ def version_payload(settings: AgentSettings, routes: list[str] | None = None) ->
         "component": "agent",
         "agent_version": settings.agent_version,
         "package_version": settings.agent_version,
+        "build_id": agent_build_id(settings),
         "git_sha": _git_sha(settings.repo_path),
         "started_at": None,
         "installed_path": str(Path(__file__).resolve()),

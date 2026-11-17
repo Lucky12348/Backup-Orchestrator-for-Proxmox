@@ -69,7 +69,7 @@ const fr = {
     guestAgentMissing: "L’agent invité QEMU ne répond pas dans la VM PBS",
     guestAgentHint:
       "Ce n’est pas bloquant. Sans lui, PBO ne peut pas nettoyer les montages morts laissés par un disque arraché pendant une sauvegarde : la sauvegarde suivante peut alors échouer. Pour l’activer :",
-    guestAgentInPbs: "Dans la VM PBS :",
+    guestAgentInPbs: "Dans la VM PBS (la 1re commande désactive le dépôt enterprise : sans abonnement, apt échoue avec une erreur 401) :",
     guestAgentOnHost: "Puis sur l’hôte Proxmox (arrêt puis démarrage complet de la VM) :",
     autoDetected: "Détectée automatiquement",
     notDetected:
@@ -244,7 +244,7 @@ const en: WizardText = {
     guestAgentMissing: "The QEMU guest agent does not answer in the PBS VM",
     guestAgentHint:
       "This is not blocking. Without it, PBO cannot clean the stale mounts left by a disk pulled out during a backup, and the next backup may then fail. To enable it:",
-    guestAgentInPbs: "In the PBS VM:",
+    guestAgentInPbs: "In the PBS VM (the first command disables the enterprise repository: without a subscription apt fails with a 401):",
     guestAgentOnHost: "Then on the Proxmox host (full stop and start of the VM):",
     autoDetected: "Detected automatically",
     notDetected:

@@ -10,6 +10,7 @@ from app.schemas.agent import (
     AgentHeartbeatRead,
     AgentStatusRead,
 )
+from app.services import agent_updates
 from app.services.agent_registry import authenticate_callback, has_active_agent
 from app.services.disks import get_agent_status, ingest_agent_disk_report, record_agent_heartbeat
 from app.services.notifications import notify_agent_degraded
@@ -55,9 +56,13 @@ def require_reporting_agent_token(db: DbSession, x_agent_token: str | None = Hea
     response_model=AgentHeartbeatRead,
     dependencies=[Depends(require_reporting_agent_token)],
 )
-def post_heartbeat(payload: AgentHeartbeatCreate, db: DbSession) -> AgentHeartbeatRead:
+def post_heartbeat(
+    payload: AgentHeartbeatCreate, db: DbSession, x_agent_token: str | None = Header(default=None)
+) -> AgentHeartbeatRead:
     heartbeat = record_agent_heartbeat(db, payload)
     update_agent_presence(True, payload.hostname)
+    # Phase 5g: the agent announces its build; an older one is updated.
+    agent_updates.on_heartbeat(db, authenticate_callback(db, x_agent_token), payload.agent_version, payload.build_id)
     return AgentHeartbeatRead.model_validate(heartbeat)
 
 

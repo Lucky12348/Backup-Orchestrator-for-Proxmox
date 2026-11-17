@@ -29,6 +29,7 @@ directly (no HTTP callback needed).
 from __future__ import annotations
 
 import logging
+import re
 import time
 from collections.abc import Callable
 from types import SimpleNamespace
@@ -38,6 +39,7 @@ from sqlalchemy import or_, select
 
 from app.core.config import Settings, get_settings
 from app.services.disk_contents import snapshot_key
+from app.services.disk_events import min_disk_size_gib
 from app.services.disk_identity import (
     canonical_serial_number,
     disk_matches_serial,
@@ -71,6 +73,32 @@ REUSED_MESSAGE = "Existing dedicated PBS datastore reused."  # compared by exter
 CREATED_MESSAGE = "Dedicated PBS datastore created."
 RECREATED_MESSAGE = "PBS configuration re-created from the existing data, no formatting."
 EJECT_OK_MESSAGE = "External datastore unmounted safely. Disk can be detached."
+_GC_REMOVED_RE = re.compile(r"Removed garbage:\s*(?P<n>\d+(?:\.\d+)?)\s*(?P<unit>B|KiB|MiB|GiB|TiB)\b")
+_GC_UNITS = {"B": 1, "KiB": 1024, "MiB": 1024**2, "GiB": 1024**3, "TiB": 1024**4}
+
+
+def gc_removed_bytes(lines: list[str]) -> int | None:
+    """Space the garbage collection really freed ("Removed garbage: 1.2 GiB");
+    None when PBS did not say. Chunks used within the last 24 h are kept."""
+    for line in reversed(lines):
+        match = _GC_REMOVED_RE.search(line)
+        if match:
+            return int(float(match.group("n")) * _GC_UNITS[match.group("unit")])
+    return None
+
+
+def retention_message(store: str, options: str, removed: int | None, freed: int | None) -> str:
+    """B39: "space freed" only when the GC really freed some."""
+    head = f"Retention applied on `{store}` ({options})"
+    if removed is None:
+        return f"{head}, garbage collection done."
+    if removed == 0:
+        return f"{head}: no old version to delete."
+    if freed:
+        return f"{head}: {removed} old version(s) deleted, {freed} bytes freed."
+    return f"{head}: {removed} old version(s) deleted; PBS frees their space after 24 h."
+
+
 STALE_MOUNTS_UNCHECKED = "Stale mounts of /mnt/datastore/{store} not checked: no QEMU guest agent answering in the PBS VM."
 # Disk pulled out: unmount attempts (stacked stale mounts) and their timeout.
 OFFLINE_ATTEMPTS = 3
@@ -254,6 +282,8 @@ class PBSApiBackend:
             recorded_name=getattr(record, "pbs_datastore_name", None) if getattr(record, "prepared", False) else None,
             recorded_backing_device=getattr(record, "pbs_backing_device", None),
             recorded_path=getattr(record, "pbs_datastore_path", None),
+            # The setting (Settings › General); a disk approved anyway below it: 1 GiB.
+            min_size_gib=1 if getattr(record, "approved_small", False) else min_disk_size_gib(),
         )
         if payload.get("reuse_only") and plan.action == "format":
             # Verify-only runs never prepare (let alone format) a disk.
@@ -541,6 +571,7 @@ class PBSApiBackend:
             progress("cleanup", None, line)
 
         options = " ".join(f"{key}={value}" for key, value in sorted(keep.items()))
+        before = self._snapshot_count(store)
         progress("cleanup", f"Applying retention on `{store}`: {options} (POST /admin/datastore/{store}/prune-datastore).")
         try:
             self.client.wait_for_task(
@@ -550,23 +581,40 @@ class PBSApiBackend:
             )
         except (PBSApiError, PBSTaskError, PBSTaskTimeout) as exc:
             raise GuardViolation("prune_failed", f"the prune failed: {exc}") from exc
+        after = self._snapshot_count(store)
         progress("cleanup", f"Garbage collection on `{store}` (POST /admin/datastore/{store}/gc).")
+        gc_lines: list[str] = []
+
+        def on_gc_line(line: str) -> None:
+            gc_lines.append(line)
+            on_line(line)
+
         try:
             self.client.wait_for_task(
                 self.client.start_garbage_collection(store),
                 timeout_seconds=self.settings.pbs_task_timeout_seconds,
-                on_line=on_line,
+                on_line=on_gc_line,
             )
         except (PBSApiError, PBSTaskError, PBSTaskTimeout) as exc:
             raise GuardViolation("gc_failed", f"the prune succeeded, the garbage collection failed: {exc}") from exc
+        removed = before - after if before is not None and after is not None else None
+        freed = gc_removed_bytes(gc_lines)
         return {
             "ok": True,
             "datastore_name": store,
             "keep": keep,
-            "message": f"Retention applied on `{store}` ({options}), garbage collection done.",
+            "removed_versions": removed,
+            "freed_bytes": freed,
+            "message": retention_message(store, options, removed, freed),
             "stdout_log": "\n".join(lines) or None,
             "command_summary": f"POST /admin/datastore/{store}/prune-datastore {options}\nPOST /admin/datastore/{store}/gc",
         }
+
+    def _snapshot_count(self, store: str) -> int | None:
+        try:
+            return len(self.client.list_snapshots(store))
+        except (PBSApiError, PBSTaskError, PBSTaskTimeout, OSError):
+            return None
 
     def _verify_snapshots(self, payload: dict[str, Any]) -> dict[str, Any]:
         """PBS verify of the given snapshot keys ("vm/100/1700000000"), or of
@@ -846,6 +894,7 @@ class PBSApiBackend:
                 pbs_backing_device=disk.pbs_backing_device,
                 pbs_datastore_path=disk.pbs_datastore_path,
                 had_contents=bool((disk.contents_cache or {}).get("items")) if isinstance(disk.contents_cache, dict) else False,
+                approved_small=disk.operator_decision == "approved_small",
             )
 
     def _progress(self, run_id: Any) -> ProgressFn:

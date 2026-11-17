@@ -7,12 +7,15 @@
 
 from __future__ import annotations
 
+import gzip
+import hashlib
 import io
 import logging
 import os
 import re
 import ssl
 import tarfile
+import tomllib
 from functools import lru_cache
 from pathlib import Path
 
@@ -79,26 +82,85 @@ def agent_source_dir() -> Path:
     return Path(configured) if configured else _DEFAULT_AGENT_SOURCE
 
 
-def _tar_filter(info: tarfile.TarInfo) -> tarfile.TarInfo | None:
-    parts = set(Path(info.name).parts)
-    if parts & _TAR_EXCLUDED_PARTS or info.name.endswith((".pyc", ".egg-info")) or ".egg-info" in info.name:
-        return None
+def _included(root: Path, path: Path) -> bool:
+    relative = path.relative_to(root)
+    if set(relative.parts) & _TAR_EXCLUDED_PARTS or ".egg-info" in str(relative):
+        return False
+    return not path.name.endswith(".pyc")
+
+
+def _source_files(root: Path) -> list[tuple[str, Path]]:
+    """(name in the archive, file) in a stable order: pyproject, README, src/…"""
+    files = [(name, root / name) for name in ("pyproject.toml", "README.md") if (root / name).is_file()]
+    files += sorted(
+        (f"src/{path.relative_to(root / 'src').as_posix()}", path)
+        for path in (root / "src").rglob("*")
+        if path.is_file() and _included(root, path)
+    )
+    return files
+
+
+def _check_sources(root: Path) -> None:
+    if not (root / "pyproject.toml").is_file() or not (root / "src" / "agent").is_dir():
+        raise FileNotFoundError(f"Agent sources not found in {root}.")
+
+
+def _build_id(files: list[tuple[str, Path]]) -> str:
+    digest = hashlib.sha256()
+    for name, path in files:
+        digest.update(name.encode() + b"\0" + path.read_bytes() + b"\0")
+    return digest.hexdigest()[:16]
+
+
+def _add(archive: tarfile.TarFile, name: str, data: bytes) -> None:
+    info = tarfile.TarInfo(f"pbo-agent/{name}")
+    info.size = len(data)
+    info.mode = 0o644
     info.uid = info.gid = 0
     info.uname = info.gname = "root"
     info.mtime = 0  # reproducible archive
-    return info
+    archive.addfile(info, io.BytesIO(data))
 
 
 @lru_cache(maxsize=4)
 def build_agent_archive(source_dir: str) -> bytes:
-    """tar.gz with pyproject.toml, README.md and src/ under `pbo-agent/`."""
+    """tar.gz with pyproject.toml, README.md, src/ and BUILD_ID under
+    `pbo-agent/`. Reproducible: same sources = same bytes = same SHA-256."""
     root = Path(source_dir)
-    if not (root / "pyproject.toml").is_file() or not (root / "src" / "agent").is_dir():
-        raise FileNotFoundError(f"Agent sources not found in {root}.")
+    _check_sources(root)
+    files = _source_files(root)
     buffer = io.BytesIO()
-    with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
-        for name in ("pyproject.toml", "README.md"):
-            if (root / name).is_file():
-                archive.add(root / name, arcname=f"pbo-agent/{name}", filter=_tar_filter)
-        archive.add(root / "src", arcname="pbo-agent/src", filter=_tar_filter)
+    # mtime=0 in the gzip header too, so the archive hash only depends on the sources.
+    with gzip.GzipFile(fileobj=buffer, mode="wb", mtime=0) as compressed:
+        with tarfile.open(fileobj=compressed, mode="w") as archive:
+            for name, path in files:
+                _add(archive, name, path.read_bytes())
+            _add(archive, "BUILD_ID", f"{_build_id(files)}\n".encode())
     return buffer.getvalue()
+
+
+@lru_cache(maxsize=4)
+def agent_package(source_dir: str) -> dict[str, str | int]:
+    """What the app ships: version (pyproject), build (hash of the sources,
+    also in the archive's BUILD_ID), SHA-256 and size of the archive."""
+    root = Path(source_dir)
+    _check_sources(root)
+    archive = build_agent_archive(source_dir)
+    try:
+        version = str(tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"])
+    except (OSError, KeyError, ValueError):
+        version = "unknown"
+    return {
+        "version": version,
+        "build_id": _build_id(_source_files(root)),
+        "sha256": hashlib.sha256(archive).hexdigest(),
+        "size": len(archive),
+    }
+
+
+def shipped_agent() -> dict[str, str | int] | None:
+    try:
+        return agent_package(str(agent_source_dir()))
+    except FileNotFoundError:
+        logger.warning("Agent sources not found: agents cannot be updated.")
+        return None

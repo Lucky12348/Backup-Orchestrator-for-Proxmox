@@ -52,3 +52,15 @@ def client(session_factory, secret_key):
     yield TestClient(app, base_url="https://testserver")
     app.dependency_overrides.pop(get_db, None)
     reset_login_attempts()
+
+
+@pytest.fixture(autouse=True)
+def _no_background_agent_update(monkeypatch):
+    """Heartbeats of an agent older than the shipped build start an update in a
+    thread on the real database: recorded instead (tests/test_agent_updates.py
+    runs them explicitly)."""
+    from app.services import agent_updates
+
+    started: list[int] = []
+    monkeypatch.setattr(agent_updates, "_spawn", lambda run, update_id: started.append(update_id))
+    return started

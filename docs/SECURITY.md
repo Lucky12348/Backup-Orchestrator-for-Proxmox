@@ -67,6 +67,12 @@ produces, **per agent and per direction**:
   re-run the install command with a new code.
 - The agent listens on the `vmbr0` address only, over HTTPS, and serves only
   the routes of its role (`AGENT_ROLE`).
+- Self-update (`POST /self-update`, agent token): the request carries only the
+  expected build and the archive SHA-256. The agent fetches the archive from
+  its own `AGENT_API_BASE_URL` only, pinned on `AGENT_API_FINGERPRINT`, refuses
+  a hash mismatch, links or paths outside `pbo-agent/` in the archive, and an
+  agent without a pinned app (legacy static tokens). Tokens and certificates
+  are not touched; a new agent that does not answer is rolled back.
 
 ### Static tokens (legacy `.env`)
 

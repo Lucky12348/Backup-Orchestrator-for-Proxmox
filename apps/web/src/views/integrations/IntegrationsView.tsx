@@ -23,6 +23,7 @@ import { InfoTip } from "../../ui/InfoTip";
 import { useToast } from "../../ui/toast";
 import { ChooseDatastoreDialog } from "../datastores/ChooseDatastoreDialog";
 import { fill, formatWhen } from "../format";
+import { AgentUpdates } from "./AgentUpdates";
 import { integrationState, splitAgents, type IntegrationState } from "./integrationsModel";
 
 const ICON: Record<IntegrationKey, typeof Server> = { pve: Server, pbs: Database, agent: Bot };
@@ -195,6 +196,7 @@ export function IntegrationsView({
             </button>
           </div>
         ))}
+        {active.length ? <AgentUpdates language={language} t={t} now={now} onReinstall={() => setInstalling(true)} /> : null}
         {installing ? (
           // The very same block as the setup wizard (pairing code, commands, live wait).
           <div className="rounded-xl border border-solid border-border p-1" data-install="">

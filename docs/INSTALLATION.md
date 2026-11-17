@@ -190,7 +190,9 @@ The script:
   download; `--app-fingerprint <fp>` skips the prompt, `--yes` accepts
   blindly);
 - downloads the agent **from the app** (same version) over a pinned
-  connection and installs it in `/opt/pbo-agent` (Python venv);
+  connection and installs it in `/opt/pbo-agent/releases/<build>` behind the
+  `/opt/pbo-agent/current` symlink (dependencies in the Python venv
+  `/opt/pbo-agent/venv`; units and udev rule written by `agent/deploy.py`);
 - generates a self-signed certificate (`/etc/pbo-agent/tls`) and listens
   **only on the IPv4 address of `vmbr0`** (`--bridge`/`--listen-ip` to
   change), port 8090 (`--port`);
@@ -270,8 +272,43 @@ in `/opt/pbo.previous`), rebuilds the Python environment, runs the migrations,
 restarts and waits for `/health`. If migrations or `/health` fail, the
 previous code **and** the database dump are restored automatically.
 
-The host agent is updated by re-running its install command (new pairing code):
-it downloads the agent shipped with the running app.
+The host agent then updates itself to the agent shipped with the new version
+(see below). The output of `update` ends with what happened to each agent.
+
+## Automatic agent update (Phase 5g)
+
+An agent installed with the one-line command updates itself to the version
+shipped with the running app. It announces its build (`BUILD_ID`, a hash of the
+agent sources) on every heartbeat and on `/version`; when it is older and
+**Settings › Agents and disks › Update the agents automatically** is on (the
+default), PBO tells it to update:
+
+1. the agent downloads `agent.tar.gz` **only from its own app URL**, over the
+   pinned TLS connection, and checks the SHA-256 PBO announced (mismatch =
+   nothing installed);
+2. it extracts it to `/opt/pbo-agent/releases/<build>/`, installs new Python
+   dependencies only if the list changed, then a transient unit
+   (`pbo-agent-update`) writes the systemd units and the udev rule, switches
+   `/opt/pbo-agent/current` atomically and restarts `pbo-agent.service`;
+3. the restarted agent must answer `/version` with the new build within 60 s,
+   otherwise the previous release, units and udev rule are put back and the
+   previous agent restarted (**automatic rollback**), and PBO raises an alert
+   (activity + notification "update result").
+
+`/etc/pbo-agent/agent.env` is never touched: same tokens, no new pairing, no
+revocation. Never while a backup, verification or repair runs (postponed).
+**Integrations › Agents** shows each agent's version and state, an **Update
+now** button and the update history. At the end of `update` (LXC), the agents
+are updated too when the option is on (`python -m app.agent_update_cli`,
+never fails the app update).
+
+**Agent too old to update itself** (installed before this version: no
+`self-update` capability): Integrations says so; run its install command
+**one last time** (Integrations › Agents › Reinstall the agent, new pairing
+code). Its next versions install automatically.
+
+Manual rollback (should never be needed): `ls /opt/pbo-agent/releases`, then
+`ln -sfn /opt/pbo-agent/releases/<previous> /opt/pbo-agent/current && systemctl restart pbo-agent.service`.
 
 ## 6. Checks and troubleshooting
 

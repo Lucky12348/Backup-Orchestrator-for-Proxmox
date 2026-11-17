@@ -10,6 +10,7 @@ import { useToast } from "../ui/toast";
 import { useRunMonitor } from "./RunMonitor";
 import {
   clockTime,
+  copySummary,
   entryText,
   filterEntries,
   formatBytes,
@@ -120,7 +121,11 @@ export function RunView({ run, t, language }: { run: RunLike; t: TranslationDict
   const barColor = run.status === "failed" ? "bg-danger" : run.status === "success" ? "bg-success" : "bg-accent";
 
   const statsLine = [
-    summary?.no_new_data ? text.noNewData : stats.transferredBytes !== null ? fill(text.transferred, { bytes: formatBytes(stats.transferredBytes, lang) }) : null,
+    summary
+      ? copySummary(summary, text, lang)
+      : stats.transferredBytes !== null
+        ? fill(text.transferred, { bytes: formatBytes(stats.transferredBytes, lang) })
+        : null,
     formatRate(stats.rate, lang),
     running && stats.remainingSeconds !== null ? fill(text.remaining, { duration: formatDuration(stats.remainingSeconds, lang) ?? "" }) : null,
     !running ? formatDuration(stats.elapsedSeconds, lang) : null,
@@ -131,7 +136,7 @@ export function RunView({ run, t, language }: { run: RunLike; t: TranslationDict
   const visible = filterEntries(entries, filter);
 
   function download() {
-    const blob = new Blob([journalText(entries, t.runLog as Record<string, string>)], { type: "text/plain;charset=utf-8" });
+    const blob = new Blob([journalText(entries, t.runLog as Record<string, string>, monitor.journal?.timezone, lang)], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -233,7 +238,7 @@ export function RunView({ run, t, language }: { run: RunLike; t: TranslationDict
               <Download className="h-[15px] w-[15px]" />
             </button>
           </div>
-          <LogLines entries={visible} templates={t.runLog as Record<string, string>} empty={text.emptyLog} />
+          <LogLines entries={visible} templates={t.runLog as Record<string, string>} empty={text.emptyLog} lang={lang} />
         </div>
       </div>
 
@@ -379,7 +384,17 @@ function ResourceList({
 
 const LEVEL_COLOR = { info: "text-[#7DD3FC]", ok: "text-[#4ADE80]", warn: "text-[#FBBF24]", err: "text-[#F87171]" } as const;
 
-export function LogLines({ entries, templates, empty }: { entries: JournalEntry[]; templates: Record<string, string>; empty: string }) {
+export function LogLines({
+  entries,
+  templates,
+  empty,
+  lang = "en",
+}: {
+  entries: JournalEntry[];
+  templates: Record<string, string>;
+  empty: string;
+  lang?: "fr" | "en";
+}) {
   return (
     <div className="flex min-h-[320px] flex-1 flex-col justify-end gap-[3px] overflow-auto px-3.5 py-2.5 font-mono text-xs leading-[1.55]">
       {entries.length === 0 ? <p className="text-faint">{empty}</p> : null}
@@ -389,7 +404,7 @@ export function LogLines({ entries, templates, empty }: { entries: JournalEntry[
           <span className={cn("w-[38px] shrink-0", LEVEL_COLOR[entry.level])}>{LEVEL_LABEL[entry.level]}</span>
           {entry.source === "pbs" ? <span className="mt-px h-[17px] shrink-0 self-start rounded bg-white/10 px-1 text-[10px] leading-[17px] text-[#A1A1AA]">PBS</span> : null}
           <span className="min-w-0 break-words text-console-fg">
-            {entryText(entry, templates)}
+            {entryText(entry, templates, lang)}
             {entry.count > 1 ? <span className="text-[#71717A]"> ×{entry.count}</span> : null}
           </span>
         </div>

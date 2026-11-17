@@ -168,6 +168,25 @@ export interface LaunchState {
   canStart: boolean;
 }
 
+/** B48: what the launch dialog says about the copy to come. */
+export function estimateKind(estimate: {
+  new_snapshots: number;
+  known: boolean;
+  contents_known?: boolean;
+  sufficient: boolean | null;
+}): "impossible" | "nothing" | "insufficient" | "known" | "upper" {
+  if (estimate.contents_known === false) return "impossible";
+  if (estimate.new_snapshots === 0) return "nothing";
+  if (estimate.sufficient === false) return "insufficient";
+  return estimate.known ? "known" : "upper";
+}
+
+/** QEMU guest agent commands (readiness warning, wizard): where to run each one. */
+export interface GuestCommand {
+  where: "pbs" | "host";
+  command: string;
+}
+
 export function launchState(readiness: ReadinessLike | null | undefined, smartOverride: boolean): LaunchState {
   const reasons = readiness?.reasons ?? [];
   const smartFailed = reasons.some((reason) => reason.code === "smart_failed");

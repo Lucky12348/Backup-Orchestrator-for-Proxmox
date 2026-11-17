@@ -84,7 +84,7 @@ test("toast: new disk with Review action, rejected, unplugged", () => {
   const rejected = toastForDiskEvent(event("disk.added", { id: 8, capacity_gb: 16, reject_reason: "too_small" }), "fr")!;
   assert.equal(rejected.tone, "warning");
   assert.equal(rejected.action, undefined);
-  assert.match(rejected.message, /Trop petit : il faut au moins 34 Gio/);
+  assert.match(rejected.message, /Trop petit : .*Gio, il faut au moins 34 Gio/);
 
   const removed = toastForDiskEvent(event("disk.removed", { id: 7 }), "fr")!;
   assert.equal(removed.message, "Disque débranché : Samsung T7");

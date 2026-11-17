@@ -33,6 +33,11 @@ class RegisteredAgent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Announced by the agent on each heartbeat and /version (Alembic 0014): compared
+    # with the build the app ships (services/agent_updates.py).
+    agent_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    build_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    version_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class AgentPairingCode(Base):

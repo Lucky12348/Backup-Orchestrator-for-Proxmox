@@ -15,6 +15,7 @@ import { LaunchBackupDialog, type LaunchChoice } from "./views/disks/LaunchBacku
 import { ActivityView } from "./views/activity/ActivityView";
 import { PlanningView } from "./views/planning/PlanningView";
 import { IntegrationsView } from "./views/integrations/IntegrationsView";
+import { AgentDiskSettings } from "./views/settings/AgentDiskSettings";
 import { ResourcesView } from "./views/resources/ResourcesView";
 import { ProxmoxJobsSection } from "./views/resources/ProxmoxJobsSection";
 import { expectRunModal, openRunModal } from "./runs/openRun";
@@ -264,7 +265,15 @@ function AuthenticatedApp() {
             path="/activity"
           />
           <Route element={<LegacyPage><NotificationsPage language={language} t={t} /></LegacyPage>} path="/notifications" />
-          <Route element={<LegacyPage><SettingsPage t={t} /></LegacyPage>} path="/settings" />
+          <Route
+            element={
+              <>
+                <AgentDiskSettings t={t} />
+                <LegacyPage><SettingsPage t={t} /></LegacyPage>
+              </>
+            }
+            path="/settings"
+          />
         </Routes>
 
       <LaunchBackupDialog disk={launchDisk} onClose={() => setLaunchDisk(null)} onStart={startLaunch} language={language} t={t} />

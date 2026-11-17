@@ -24,6 +24,10 @@ ENV_FILE="${CONF_DIR}/agent.env"
 TLS_DIR="${CONF_DIR}/tls"
 UDEV_RULE_FILE="/etc/udev/rules.d/90-pbo-agent.rules"
 STATE_DIR="/var/lib/pbo-agent"
+# Code of the active release: releases/<build> behind the `current` symlink
+# (switched atomically by the agent's self-update, agent/self_update.py).
+# The units and the udev rule come from agent/deploy.py of that release.
+AGENT_SRC="${INSTALL_DIR}/current/src"
 ROLE="host"
 PORT="8090"
 BRIDGE="vmbr0"
@@ -376,18 +380,28 @@ detect_listen_ip() {
 install_agent_code() {
   info "Downloading the agent from the app"
   python3 "${WORK_DIR}/pbo_https.py" get "${PBO_APP_URL}/agent/agent.tar.gz" "${APP_FP}" "${WORK_DIR}/agent.tar.gz"
-  mkdir -p "${INSTALL_DIR}"
-  rm -rf "${INSTALL_DIR}/app.new"
-  mkdir -p "${INSTALL_DIR}/app.new"
-  tar -xzf "${WORK_DIR}/agent.tar.gz" -C "${INSTALL_DIR}/app.new" --strip-components=1 --no-same-owner
+  local build release
+  mkdir -p "${WORK_DIR}/agent"
+  tar -xzf "${WORK_DIR}/agent.tar.gz" -C "${WORK_DIR}/agent" --strip-components=1 --no-same-owner
+  build="$(tr -dc '0-9a-f' <"${WORK_DIR}/agent/BUILD_ID" 2>/dev/null || true)"
+  [[ -n "${build}" ]] || die "the agent archive has no BUILD_ID: update the app first."
+  release="${INSTALL_DIR}/releases/${build}"
+  mkdir -p "${INSTALL_DIR}/releases"
+  rm -rf "${release}"
+  mv "${WORK_DIR}/agent" "${release}"
+  ln -sfn "${release}" "${INSTALL_DIR}/current.new"
+  mv -Tf "${INSTALL_DIR}/current.new" "${INSTALL_DIR}/current"
+  # Other releases and the pre-self-update layout (${INSTALL_DIR}/app).
+  find "${INSTALL_DIR}/releases" -mindepth 1 -maxdepth 1 ! -name "${build}" -exec rm -rf {} +
   rm -rf "${INSTALL_DIR}/app"
-  mv "${INSTALL_DIR}/app.new" "${INSTALL_DIR}/app"
+  info "Agent build ${build}"
 
   info "Creating the Python environment (${INSTALL_DIR}/venv)"
   if [[ ! -x "${INSTALL_DIR}/venv/bin/python" ]]; then
     python3 -m venv "${INSTALL_DIR}/venv"
   fi
-  "${INSTALL_DIR}/venv/bin/pip" install --quiet --disable-pip-version-check --upgrade "${INSTALL_DIR}/app"
+  # Dependencies (the units run the code of ${INSTALL_DIR}/current through PYTHONPATH).
+  "${INSTALL_DIR}/venv/bin/pip" install --quiet --disable-pip-version-check --upgrade "${release}"
 }
 
 create_certificate() {
@@ -421,7 +435,7 @@ register_agent() {
     "AGENT_TLS_CERT_FILE=${TLS_DIR}/cert.pem" \
     "AGENT_TLS_KEY_FILE=${TLS_DIR}/key.pem" \
     "AGENT_HTTP_SERVICE_NAME=pbo-agent.service" \
-    "AGENT_REPO_PATH=${INSTALL_DIR}/app")"
+    "AGENT_REPO_PATH=${INSTALL_DIR}/current")"
   mv "${ENV_FILE}.new" "${ENV_FILE}"
   chmod 600 "${ENV_FILE}"
   info "Registered as agent #${agent_id}"
@@ -433,85 +447,15 @@ register_agent() {
 write_udev_rule() {
   local target="$1"
   mkdir -p "$(dirname "${target}")"
-  cat >"${target}" <<'RULE'
-# Proxmox Backup Orchestrator agent (installed by pbo-agent-install.sh).
-# Report USB disks as soon as they are plugged in or unplugged.
-ACTION=="add", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", ENV{ID_BUS}=="usb", TAG+="systemd", ENV{SYSTEMD_WANTS}+="pbo-agent-report.service"
-ACTION=="remove", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", ENV{ID_BUS}=="usb", RUN+="/usr/bin/systemctl --no-block start pbo-agent-report.service"
-# A disk passed through to the PBS VM has no block device on the host: only
-# the USB device event tells it was unplugged.
-ACTION=="remove", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", RUN+="/usr/bin/systemctl --no-block start pbo-agent-report.service"
-ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", RUN+="/usr/bin/systemctl --no-block start pbo-agent-report.service"
-RULE
+  PYTHONPATH="${AGENT_SRC}" python3 -m agent.deploy udev-rule >"${target}"
   chmod 0644 "${target}"
 }
 
 install_services() {
   info "Installing systemd services"
-  cat >/etc/systemd/system/pbo-agent.service <<EOF
-[Unit]
-Description=Proxmox Backup Orchestrator agent (${ROLE})
-Wants=network-online.target
-After=network-online.target
-
-[Service]
-Type=simple
-# Root is required for qm (USB passthrough) and disk inspection.
-User=root
-WorkingDirectory=${INSTALL_DIR}
-EnvironmentFile=${ENV_FILE}
-ExecStart=${INSTALL_DIR}/venv/bin/python -m agent.main serve
-Restart=on-failure
-RestartSec=5
-NoNewPrivileges=yes
-PrivateTmp=yes
-ProtectHome=yes
-RestrictSUIDSGID=yes
-LockPersonality=yes
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-  cat >/etc/systemd/system/pbo-agent-report.service <<EOF
-[Unit]
-Description=Proxmox Backup Orchestrator agent heartbeat and disk report
-Wants=network-online.target
-After=network-online.target
-
-[Service]
-Type=oneshot
-User=root
-WorkingDirectory=${INSTALL_DIR}
-EnvironmentFile=${ENV_FILE}
-# Started by the timer and by ${UDEV_RULE_FILE} (USB disk add/remove).
-# --settle 2: wait for the partitions, then udevadm settle. Start requests
-# arriving meanwhile are merged into this run by systemd (debounce).
-ExecStart=${INSTALL_DIR}/venv/bin/python -m agent.main sync-state --settle 2
-StateDirectory=pbo-agent
-TimeoutStartSec=120
-NoNewPrivileges=yes
-PrivateTmp=yes
-ProtectHome=yes
-EOF
-
-  cat >/etc/systemd/system/pbo-agent-report.timer <<EOF
-[Unit]
-Description=Proxmox Backup Orchestrator agent report (fallback, every 5 minutes)
-
-[Timer]
-OnBootSec=1min
-OnUnitActiveSec=5min
-AccuracySec=15s
-Unit=pbo-agent-report.service
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-EOF
-
+  # agent/deploy.py: the same units (and udev rule) the self-update installs.
+  PYTHONPATH="${AGENT_SRC}" python3 -m agent.deploy write --role "${ROLE}"     --install-dir "${INSTALL_DIR}" --env-file "${ENV_FILE}" --udev-rule-file "${UDEV_RULE_FILE}" >/dev/null
   if [[ "${ROLE}" == "host" ]]; then
-    write_udev_rule "${UDEV_RULE_FILE}"
     udevadm control --reload-rules 2>/dev/null || true
   fi
 
@@ -563,6 +507,7 @@ uninstall() {
   require_root
   local unit
   info "Stopping and removing the agent services"
+  systemctl stop pbo-agent-update.service 2>/dev/null || true
   for unit in pbo-agent-report.timer pbo-agent-report.service pbo-agent.service; do
     systemctl disable --now --quiet "${unit}" 2>/dev/null || true
     rm -f "/etc/systemd/system/${unit}"

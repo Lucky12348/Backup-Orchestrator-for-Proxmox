@@ -1,11 +1,11 @@
 // Disks page (docs/design/mockups/disks.html): status, tabs, search, actions
 // and history of a disk. Pure module (node:test), no React.
 
-export type DiskUiStatus = "new" | "approved" | "running" | "ejected" | "pulled" | "unplugged" | "rejected" | "ignored";
-export type DiskTab = "all" | "plugged" | "approved" | "review" | "rejected";
+export type DiskUiStatus = "new" | "approved" | "running" | "ejected" | "pulled" | "unplugged" | "rejected" | "ignored" | "hidden";
+export type DiskTab = "all" | "plugged" | "approved" | "review" | "rejected" | "hidden";
 export type Tone = "ok" | "run" | "warn" | "err" | "off";
 
-export const DISK_TABS: readonly DiskTab[] = ["all", "plugged", "approved", "review", "rejected"];
+export const DISK_TABS: readonly DiskTab[] = ["all", "plugged", "approved", "review", "rejected", "hidden"];
 
 export interface DiskLike {
   id: number;
@@ -66,6 +66,8 @@ export function rejectReason(disk: DiskLike): string | null {
 }
 
 export function diskUiStatus(disk: DiskLike, runs: readonly RunLike[] = []): DiskUiStatus {
+  // Phase 5g: hidden by the operator, listed only in the "Hidden" tab.
+  if (disk.status === "hidden" || disk.operator_decision === "hidden") return "hidden";
   if (rejectReason(disk)) return "rejected";
   if (activeRunFor(disk, runs)) return "running";
   if (disk.status === "ejected" || (disk.handoff_status ?? "").toLowerCase() === "ejected") return "ejected";
@@ -86,6 +88,7 @@ export const STATUS_TONE: Record<DiskUiStatus, Tone> = {
   unplugged: "off",
   rejected: "err",
   ignored: "off",
+  hidden: "off",
 };
 
 /** Physically there: plugged in, being backed up, or ejected but not unplugged yet. */
@@ -96,7 +99,7 @@ function isPlugged(status: DiskUiStatus): boolean {
 export function inTab(status: DiskUiStatus, disk: DiskLike, tab: DiskTab): boolean {
   switch (tab) {
     case "all":
-      return true;
+      return status !== "hidden";
     case "plugged":
       return isPlugged(status);
     case "approved":
@@ -105,6 +108,8 @@ export function inTab(status: DiskUiStatus, disk: DiskLike, tab: DiskTab): boole
       return status === "new";
     case "rejected":
       return status === "rejected";
+    case "hidden":
+      return status === "hidden";
   }
 }
 
@@ -131,7 +136,7 @@ export interface DiskRow<D extends DiskLike> {
   run?: RunLike;
 }
 
-const ORDER: Record<DiskUiStatus, number> = { running: 0, pulled: 1, new: 2, approved: 3, ejected: 4, ignored: 5, unplugged: 6, rejected: 7 };
+const ORDER: Record<DiskUiStatus, number> = { running: 0, pulled: 1, new: 2, approved: 3, ejected: 4, ignored: 5, unplugged: 6, rejected: 7, hidden: 8 };
 
 export function diskRows<D extends DiskLike>(disks: readonly D[], runs: readonly RunLike[]): DiskRow<D>[] {
   return disks
@@ -140,7 +145,7 @@ export function diskRows<D extends DiskLike>(disks: readonly D[], runs: readonly
 }
 
 export function tabCounts<D extends DiskLike>(rows: readonly DiskRow<D>[]): Record<DiskTab, number> {
-  const counts = { all: 0, plugged: 0, approved: 0, review: 0, rejected: 0 } as Record<DiskTab, number>;
+  const counts = { all: 0, plugged: 0, approved: 0, review: 0, rejected: 0, hidden: 0 } as Record<DiskTab, number>;
   for (const row of rows) for (const tab of DISK_TABS) if (inTab(row.status, row.disk, tab)) counts[tab] += 1;
   return counts;
 }
@@ -151,7 +156,7 @@ export function visibleRows<D extends DiskLike>(rows: readonly DiskRow<D>[], tab
 
 // --- Detail panel ----------------------------------------------------------------
 
-export type DiskAction = "backup" | "follow" | "eject" | "replug" | "rescan" | "unreject";
+export type DiskAction = "backup" | "follow" | "eject" | "replug" | "rescan" | "unreject" | "approveAnyway" | "hide" | "unhide";
 
 /** Attached to the PBS VM (the eject has something to undo). */
 export function isAttachedToPbs(disk: DiskLike): boolean {
@@ -169,8 +174,14 @@ export function diskActions(disk: DiskLike, status: DiskUiStatus): DiskAction[] 
       return ejectable && isAttachedToPbs(disk) ? ["backup", "eject", "rescan"] : ["backup", "rescan"];
     case "ejected":
       return ["replug", "rescan"];
-    case "rejected":
-      return disk.operator_decision === "rejected" ? ["unreject", "rescan"] : ["rescan"];
+    case "rejected": {
+      // Phase 5g: a too-small disk can be approved anyway (risk confirmed); any rejected disk can be hidden.
+      const reason = rejectReason(disk);
+      if (disk.operator_decision === "rejected") return ["unreject", "hide", "rescan"];
+      return reason === "too_small" ? ["approveAnyway", "hide", "rescan"] : ["hide", "rescan"];
+    }
+    case "hidden":
+      return ["unhide"];
     case "unplugged":
     case "pulled":
     case "ignored":

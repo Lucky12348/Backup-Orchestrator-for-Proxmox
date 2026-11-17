@@ -119,8 +119,11 @@ def get_run_log(run_id: int, db: DbSession) -> dict[str, object]:
     messages coded for translation, PBS lines marked) + Summary statistics."""
     from app.services.run_log import run_journal
 
+    from app.services.settings_service import effective_settings
+
     run = get_external_backup_run(db, run_id)
-    return run_journal(run, db.get(ExternalDisk, run.disk_id))
+    # The exported journal writes every time in PBO's time zone (B37).
+    return {**run_journal(run, db.get(ExternalDisk, run.disk_id)), "timezone": effective_settings(db).timezone}
 
 
 @router.post("/runs/{run_id}/cancel", status_code=status.HTTP_202_ACCEPTED)

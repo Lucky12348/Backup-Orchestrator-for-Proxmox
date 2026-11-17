@@ -1,5 +1,6 @@
 from app.models.activity_event import ActivityEvent
 from app.models.agent_heartbeat import AgentHeartbeat
+from app.models.agent_update import AgentUpdate
 from app.models.app_setting import AppSetting
 from app.models.asset_ignore import AssetIgnore
 from app.models.backup_run import BackupRun, BackupRunStatus
@@ -26,6 +27,7 @@ __all__ = [
     "ActivityEvent",
     "AgentPairingCode",
     "AgentHeartbeat",
+    "AgentUpdate",
     "AppSetting",
     "AssetIgnore",
     "BackupRun",

@@ -97,6 +97,7 @@ SETTING_SPECS: tuple[SettingSpec, ...] = (
     _spec("PBS_AGENT_TIMEOUT_SECONDS", float, "agents"),
     _spec("EXTERNAL_BACKUP_CALLBACK_BASE_URL", str, "agents"),
     _spec("AGENT_STALE_AFTER_MINUTES", int, "agents"),
+    _spec("AUTO_UPDATE_AGENTS", bool, "agents"),
     SettingSpec("AGENT_LOOP_DATASTORE_SIZE_GB", "external_loop_datastore_size_gb", int, "agents"),
     # Notifications (ntfy)
     _spec("NOTIFICATIONS_ENABLED", bool, "notifications"),
@@ -108,6 +109,7 @@ SETTING_SPECS: tuple[SettingSpec, ...] = (
     _spec("LOW_COVERAGE_THRESHOLD_PERCENT", float, "notifications"),
     _spec("DISK_DETECTION_NOTIFY_COOLDOWN_SECONDS", int, "notifications"),
     _spec("ROTATION_STALE_DAYS", int, "general"),
+    _spec("MIN_DISK_SIZE_GIB", int, "general"),
     # Inventory sync
     _spec("AUTO_SYNC_ENABLED", bool, "sync"),
     _spec("PROXMOX_SYNC_INTERVAL_SECONDS", int, "sync"),
@@ -159,6 +161,8 @@ def coerce_value(spec: SettingSpec, raw: Any) -> Any:
         raise SettingValidationError(f"{spec.key}: must be between 5 and {MAX_AUTH_TOKEN_EXPIRE_MINUTES}")
     if spec.key == "ROTATION_STALE_DAYS" and not 1 <= value <= 365:
         raise SettingValidationError(f"{spec.key}: must be between 1 and 365")
+    if spec.key == "MIN_DISK_SIZE_GIB" and not 1 <= value <= 65536:
+        raise SettingValidationError(f"{spec.key}: must be between 1 and 65536")
     return value
 
 

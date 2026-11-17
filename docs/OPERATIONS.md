@@ -120,7 +120,10 @@ The guest agent must be active in the PBS VM. The readiness check and the
 setup wizard warn (non-blocking) when it is not; to enable it:
 
 ```bash
-apt install qemu-guest-agent            # in the PBS VM
+# in the PBS VM: the enterprise repository first (without a subscription apt
+# fails with a 401): .sources (PBS 4, deb822) get "Enabled: no", .list lines are commented
+for f in /etc/apt/sources.list.d/pbs-enterprise.*; do case "$f" in *.sources) sed -i '/^Enabled:/d; /^Types:/a Enabled: no' "$f" ;; *.list) sed -i 's/^deb /# deb /' "$f" ;; esac; done
+apt update && apt install -y qemu-guest-agent
 qm set <vmid> --agent enabled=1         # on the Proxmox host
 qm shutdown <vmid> && qm start <vmid>   # full stop/start (a reboot from inside is not enough)
 ```

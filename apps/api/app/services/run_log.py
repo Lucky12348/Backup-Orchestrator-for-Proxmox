@@ -31,6 +31,7 @@ _CHUNKSTORE_RE = re.compile(r"chunkstore create:\s*(?P<pct>\d+(?:\.\d+)?)%", re.
 _SIZE_RE = re.compile(r"(?P<n>\d+(?:\.\d+)?)\s*(?P<unit>B|KiB|MiB|GiB|TiB)\b")
 _RATE_RE = re.compile(r"(?P<n>\d+(?:\.\d+)?)\s*(?P<unit>B|KiB|MiB|GiB|TiB)/s\b")
 _UNITS = {"B": 1, "KiB": 1024, "MiB": 1024**2, "GiB": 1024**3, "TiB": 1024**4}
+_SYNCED_VERSION_RE = re.compile(r"\]: sync snapshot \S+")
 
 FAILURE_STEPS = {"failure", "verify_failed", "disk_pulled", "eject_not_finished", "usb_device_not_found", "usb_location_not_in_proxmox", "disk_not_plugged", "usb_device_ambiguous"}
 
@@ -94,6 +95,9 @@ PBO_MESSAGES: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
         ("cleanup_retention", r"^Applying retention on `(?P<store>[^`]+)`: (?P<options>.+?) \(POST"),
         ("cleanup_gc", r"^Garbage collection on `(?P<store>[^`]+)`"),
         ("cleanup_done", r"^Retention applied on `(?P<store>[^`]+)` \((?P<options>.+)\), garbage collection done\.$"),
+        ("cleanup_nothing", r"^Retention applied on `(?P<store>[^`]+)` \((?P<options>.+)\): no old version to delete\.$"),
+        ("cleanup_freed", r"^Retention applied on `(?P<store>[^`]+)` \((?P<options>.+)\): (?P<removed>\d+) old version\(s\) deleted, (?P<freed_bytes>\d+) bytes freed\.$"),
+        ("cleanup_pending", r"^Retention applied on `(?P<store>[^`]+)` \((?P<options>.+)\): (?P<removed>\d+) old version\(s\) deleted; PBS frees their space after 24 h\.$"),
         ("cleanup_failed", r"^Retention warning: (?P<reason>.+)$"),
         ("cleanup_agent_mode", r"^Retention needs PBS_MODE=api: nothing was pruned on the disk\.$"),
         ("contents_updated", r"^Disk contents updated: (?P<groups>\d+) VM/CT, (?P<versions>\d+) version\(s\)\.$"),
@@ -291,15 +295,20 @@ def transfer_summary(stdout_log: str | None) -> dict[str, Any] | None:
             summary = line.split("Summary:", 1)[1].strip()
     if summary is None:
         return None
+    # B37: versions copied ("sync snapshot", not "re-sync snapshot" of the
+    # newest one already there) are not the data transferred (new chunks).
+    versions = sum(1 for line in (stdout_log or "").splitlines() if _SYNCED_VERSION_RE.search(line))
     if "no new data" in summary.casefold():
-        return {"text": summary, "transferred_bytes": 0, "rate_bytes_per_second": None, "no_new_data": True}
+        return {"text": summary, "transferred_bytes": 0, "rate_bytes_per_second": None, "no_new_data": True, "versions_copied": versions}
     size = _SIZE_RE.search(_RATE_RE.sub("", summary))
     rate = _RATE_RE.search(summary)
+    rate_bytes = _bytes(rate.group("n"), rate.group("unit")) if rate else None
     return {
         "text": summary,
         "transferred_bytes": _bytes(size.group("n"), size.group("unit")) if size else None,
-        "rate_bytes_per_second": _bytes(rate.group("n"), rate.group("unit")) if rate else None,
+        "rate_bytes_per_second": rate_bytes or None,
         "no_new_data": False,
+        "versions_copied": versions,
     }
 
 

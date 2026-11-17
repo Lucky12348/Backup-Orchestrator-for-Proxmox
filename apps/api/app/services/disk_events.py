@@ -19,19 +19,35 @@ from app.services.pbs_guards import MIN_DISK_SIZE_GIB
 
 ACTIVITY_CATEGORY = "disk"
 # Sizes are binary everywhere (agent `bytes_to_gb` = GiB, shown as Gio/Tio):
-# `capacity_gb` is compared with the PBS guard minimum as is.
+# `capacity_gb` is compared with the minimum as is. Default of the
+# MIN_DISK_SIZE_GIB setting (Settings › General, Phase 5g).
 MIN_DISK_SIZE_GB = MIN_DISK_SIZE_GIB
+# operator_decision values: "ignored" (until plugged again), "rejected"
+# (always), "hidden" (not listed, Phase 5g), "approved_small" (approved
+# although smaller than the minimum, after a confirmation of the risk).
+HIDDEN = "hidden"
+APPROVED_SMALL = "approved_small"
+
+
+def min_disk_size_gib() -> int:
+    from app.core.config import get_settings
+
+    return int(getattr(get_settings(), "min_disk_size_gib", MIN_DISK_SIZE_GIB) or MIN_DISK_SIZE_GIB)
 
 
 def reject_reason(disk: ExternalDisk) -> str | None:
-    """Why a detected disk can never be used, or None."""
+    """Why a detected disk cannot be used, or None."""
     if (disk.capacity_gb or 0) <= 0 or disk.candidate_type == "unusable":
         return "zero_size"
-    if disk.capacity_gb < MIN_DISK_SIZE_GB:
+    if disk.capacity_gb < min_disk_size_gib() and disk.operator_decision != APPROVED_SMALL:
         return "too_small"
     if disk.operator_decision == "rejected":
         return "operator"
     return None
+
+
+def is_hidden(disk: ExternalDisk) -> bool:
+    return disk.operator_decision == HIDDEN
 
 
 def is_ejected(disk: ExternalDisk) -> bool:
@@ -40,8 +56,10 @@ def is_ejected(disk: ExternalDisk) -> bool:
 
 
 def disk_status(disk: ExternalDisk) -> str:
-    """new | known | ignored | ejected | unplugged | rejected (B25: "ejected"
-    until the disk is unplugged, see services/disks.py)."""
+    """new | known | ignored | ejected | unplugged | rejected | hidden (B25:
+    "ejected" until the disk is unplugged, see services/disks.py)."""
+    if is_hidden(disk):
+        return "hidden"
     if reject_reason(disk):
         return "rejected"
     if is_ejected(disk):
@@ -66,7 +84,7 @@ def disk_event_payload(disk: ExternalDisk) -> dict[str, Any]:
         "trusted": bool(disk.trusted),
         "status": disk_status(disk),
         "reject_reason": reject_reason(disk),
-        "min_size_gb": MIN_DISK_SIZE_GB,
+        "min_size_gb": min_disk_size_gib(),
         "hostname": disk.reported_by_hostname,
         "handoff_status": disk.handoff_status,
         "verify_recommended": bool(disk.verify_recommended),

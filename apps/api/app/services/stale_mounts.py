@@ -33,12 +33,24 @@ _lock = threading.Lock()
 _status_cache: dict[int, tuple[float, dict[str, Any] | None]] = {}
 
 
-def guest_agent_commands(vmid: int) -> list[str]:
-    """What to run when the PBS VM has no QEMU guest agent (PBS, then the host)."""
+# Without a subscription the PBS enterprise repository answers 401 and apt
+# fails: disabled first, in both formats (PBS 4: deb822 `.sources` gets
+# `Enabled: no` in each stanza; PBS 3: `.list` lines commented out).
+DISABLE_PBS_ENTERPRISE = (
+    "for f in /etc/apt/sources.list.d/pbs-enterprise.*; do case \"$f\" in "
+    "*.sources) sed -i '/^Enabled:/d; /^Types:/a Enabled: no' \"$f\" ;; "
+    "*.list) sed -i 's/^deb /# deb /' \"$f\" ;; esac; done"
+)
+
+
+def guest_agent_commands(vmid: int) -> list[dict[str, str]]:
+    """What to run when the PBS VM has no QEMU guest agent: in the PBS VM,
+    then on the Proxmox host (`where`)."""
     return [
-        "apt install qemu-guest-agent",
-        f"qm set {vmid} --agent enabled=1",
-        f"qm shutdown {vmid} && qm start {vmid}",
+        {"where": "pbs", "command": DISABLE_PBS_ENTERPRISE},
+        {"where": "pbs", "command": "apt update && apt install -y qemu-guest-agent"},
+        {"where": "host", "command": f"qm set {vmid} --agent enabled=1"},
+        {"where": "host", "command": f"qm shutdown {vmid} && qm start {vmid}"},
     ]
 
 

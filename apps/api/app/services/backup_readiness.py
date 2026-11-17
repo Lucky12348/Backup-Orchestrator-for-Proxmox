@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 from app.models.backup_run import BackupRunStatus
 from app.models.external_backup_run import ExternalBackupRun
 from app.models.external_disk import ExternalDisk
-from app.services.disk_events import MIN_DISK_SIZE_GB, is_ejected, reject_reason
+from app.services.disk_events import is_ejected, min_disk_size_gib, reject_reason
 from app.services.external_backup_agent import (
     REQUIRED_HOST_CAPABILITIES,
     REQUIRED_PBS_CAPABILITIES,
@@ -69,7 +69,7 @@ def _reason(code: str, message: str, **params: Any) -> dict[str, Any]:
 
 _REJECT_MESSAGES = {
     "zero_size": "The disk reports a size of 0 (cable, port or enclosure problem).",
-    "too_small": f"The disk is too small for a PBS datastore (minimum {MIN_DISK_SIZE_GB} GiB).",
+    "too_small": "The disk is smaller than the minimum size for a PBS datastore.",
     "operator": "The disk was rejected by the operator.",
 }
 
@@ -91,7 +91,9 @@ def local_disk_reasons(db: Session, disk: ExternalDisk, *, smart_override: bool 
         )
     rejected = reject_reason(disk)
     if rejected:
-        reasons.append(_reason(f"disk_{rejected}", _REJECT_MESSAGES[rejected], min_size_gb=MIN_DISK_SIZE_GB))
+        reasons.append(
+            _reason(f"disk_{rejected}", _REJECT_MESSAGES[rejected], min_size_gb=min_disk_size_gib(), size_gb=disk.capacity_gb)
+        )
     if is_ejected(disk):
         # B25: safely ejected, still plugged in: unplug and plug it back first.
         reasons.append(_reason("disk_ejected", "The disk was ejected: unplug it, then plug it back in."))

@@ -180,5 +180,6 @@ export const wizardApi = {
 export interface PbsGuestAgent {
   enabled: boolean;
   active: boolean;
-  commands: string[];
+  /** In the PBS VM first (enterprise repository off, install), then on the Proxmox host. */
+  commands: { where: "pbs" | "host"; command: string }[];
 }

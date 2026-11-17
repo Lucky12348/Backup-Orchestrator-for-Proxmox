@@ -105,6 +105,8 @@ export interface ExternalDisk {
   /** Server-side status (services/disk_events.py), Phase 5b. */
   status?: DiskServerStatus;
   reject_reason?: "zero_size" | "too_small" | "operator" | null;
+  /** MIN_DISK_SIZE_GIB setting, shown next to a too-small disk's size. */
+  min_size_gb?: number | null;
   operator_decision?: "ignored" | "rejected" | null;
   /** Partitions seen by the host agent (null: agent too old to report them). */
   partitions?: DiskPartition[] | null;
@@ -328,6 +330,8 @@ export interface PlanningOverview {
 
 export interface ExternalBackupPreview {
   target_path: string;
+  /** API mode: the disk's own removable datastore (B48). */
+  target_datastore?: string | null;
   mode: ExternalBackupMode;
   preserves_existing_data: boolean;
   loop_image_size_gb: number | null;

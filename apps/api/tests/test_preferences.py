@@ -7,6 +7,7 @@ from app.core.timezones import InvalidTimezoneError, validate_timezone
 from app.db.migrate import run_migrations
 from app.models.scheduled_backup import ScheduledBackupEvent
 from app.models.user import User
+from app.services import stale_mounts  # noqa: F401
 from app.services import setup_wizard
 from app.services.host_agent import HostAgentError, HostAgentResult
 from app.services.settings_service import (
@@ -141,7 +142,7 @@ def test_detect_reports_a_missing_guest_agent_with_the_commands(db):
     assert result["guest_agent"] == {
         "enabled": False,
         "active": False,
-        "commands": ["apt install qemu-guest-agent", "qm set 110 --agent enabled=1", "qm shutdown 110 && qm start 110"],
+        "commands": stale_mounts.guest_agent_commands(110),
     }
 
 

@@ -370,6 +370,7 @@
     "text": "sync job found no new data to pull",
     "transferred_bytes": 0,
     "rate_bytes_per_second": null,
-    "no_new_data": true
+    "no_new_data": true,
+    "versions_copied": 0
   }
 }

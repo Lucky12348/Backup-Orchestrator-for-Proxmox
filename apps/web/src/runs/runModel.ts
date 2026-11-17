@@ -281,10 +281,61 @@ export function filterEntries(entries: JournalEntry[], filter: LogFilter): Journ
 }
 
 /** Translated PBO message ({param} placeholders), PBS lines verbatim. */
-export function entryText(entry: JournalEntry, templates: Record<string, string>): string {
+export function entryText(entry: JournalEntry, templates: Record<string, string>, lang: "fr" | "en" = "en"): string {
   const template = entry.code ? templates[entry.code] : undefined;
   if (!template) return entry.text;
-  return template.replace(/\{(\w+)\}/g, (whole, key: string) => entry.params[key] ?? whole);
+  return template.replace(/\{(\w+)\}/g, (whole, key: string) => {
+    const value = entry.params[key];
+    if (value === undefined) return whole;
+    // "…_bytes" parameters are raw byte counts: one unit convention (units.ts).
+    return key.endsWith("_bytes") && /^\d+$/.test(value) ? formatBytes(Number(value), lang) : value;
+  });
+}
+
+/** "2026-11-17T02:40:03+01:00" in `timeZone` (PBO's), whatever the stamp's own offset. */
+export function zonedStamp(at: string | null, timeZone: string | null | undefined): string {
+  if (!at) return "";
+  const date = new Date(at);
+  if (Number.isNaN(date.getTime()) || !timeZone) return at;
+  try {
+    const parts = Object.fromEntries(
+      new Intl.DateTimeFormat("en-GB", {
+        timeZone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hourCycle: "h23",
+        timeZoneName: "longOffset",
+      })
+        .formatToParts(date)
+        .map((part) => [part.type, part.value]),
+    );
+    const offset = String(parts.timeZoneName ?? "").replace("GMT", "") || "+00:00";
+    return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}${offset}`;
+  } catch {
+    return at;
+  }
+}
+
+/** B37: versions copied are not the data transferred ("4 new versions copied, 0 B transferred"). */
+export function copySummary(
+  summary: { transferred_bytes: number | null; no_new_data: boolean; versions_copied?: number | null } | null | undefined,
+  texts: { noNewData: string; copiedOne: string; copiedMany: string; copiedBytes: string; copiedNoBytes: string; transferred: string },
+  lang: "fr" | "en",
+): string | null {
+  if (!summary) return null;
+  const versions = summary.versions_copied;
+  if (versions === undefined || versions === null) {
+    if (summary.no_new_data) return texts.noNewData;
+    return summary.transferred_bytes !== null ? texts.transferred.replace("{bytes}", formatBytes(summary.transferred_bytes, lang)) : null;
+  }
+  if (versions === 0) return texts.noNewData;
+  const label = versions === 1 ? texts.copiedOne : texts.copiedMany.replace("{n}", String(versions));
+  if (summary.no_new_data || !summary.transferred_bytes) return texts.copiedNoBytes.replace("{versions}", label);
+  return texts.copiedBytes.replace("{versions}", label).replace("{bytes}", formatBytes(summary.transferred_bytes, lang));
 }
 
 export const LEVEL_LABEL = { info: "INFO", ok: "OK", warn: "WARN", err: "ERR" } as const;
@@ -298,10 +349,20 @@ export function clockTime(at: string | null): string {
 }
 
 /** Text file offered by "Download the log". */
-export function journalText(entries: JournalEntry[], templates: Record<string, string>): string {
+export function journalText(
+  entries: JournalEntry[],
+  templates: Record<string, string>,
+  timeZone?: string | null,
+  lang: "fr" | "en" = "en",
+): string {
   return entries
     .map((entry) => {
-      const parts = [entry.at ?? "", LEVEL_LABEL[entry.level].padEnd(4), entry.source === "pbs" ? "[PBS]" : "[PBO]", entryText(entry, templates)];
+      const parts = [
+        zonedStamp(entry.at, timeZone),
+        LEVEL_LABEL[entry.level].padEnd(4),
+        entry.source === "pbs" ? "[PBS]" : "[PBO]",
+        entryText(entry, templates, lang),
+      ];
       return parts.join(" ").trim() + (entry.count > 1 ? ` (×${entry.count})` : "");
     })
     .join("\n");
@@ -315,7 +376,10 @@ export { formatBytes };
 export function formatRate(rate: string | null | undefined, lang: "fr" | "en"): string | null {
   const match = rate ? /(\d+(?:\.\d+)?)\s*(B|KiB|MiB|GiB|TiB)\/s/i.exec(rate) : null;
   if (!match) return rate ?? null;
-  return `${formatBytes(Math.round(Number(match[1]) * UNIT[match[2].toLowerCase()]), lang)}/s`;
+  const bytes = Math.round(Number(match[1]) * UNIT[match[2].toLowerCase()]);
+  // B37: "0 B/s" says nothing (nothing transferred, or not measured yet).
+  if (bytes === 0) return null;
+  return `${formatBytes(bytes, lang)}/s`;
 }
 
 export function formatDuration(seconds: number | null, lang: "fr" | "en"): string | null {

@@ -5,8 +5,11 @@
 Inside the container run `update` (see [INSTALLATION.md](INSTALLATION.md#5-updates)):
 database dump, new version staged, swap, migrations, `/health` check, automatic
 rollback of code and database on failure. The host agent installed with the
-one-line command is updated by re-running that command with a new pairing
-code. The update center described below is for the **legacy** Docker app VM
+one-line command updates itself to the agent shipped with the app (pinned
+download, SHA-256 checked, atomic switch, automatic rollback; see
+[INSTALLATION.md](INSTALLATION.md#automatic-agent-update-phase-5g)); an agent
+installed before this feature needs its install command one last time. The
+update center described below is for the **legacy** Docker app VM
 and agents installed from a git checkout.
 
 ## Legacy update center

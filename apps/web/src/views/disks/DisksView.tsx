@@ -151,7 +151,7 @@ export function DisksView({ disks, runs, language, t, onBackup, onEject, isStart
 
       <div className="flex flex-wrap items-center gap-3 border-b border-solid border-border">
         <div role="tablist" aria-label={text.tabsLabel} className="-mb-px flex min-w-0 flex-1 gap-[22px] overflow-x-auto">
-          {DISK_TABS.map((key) => {
+          {DISK_TABS.filter((key) => key !== "hidden" || counts.hidden > 0 || tab === "hidden").map((key) => {
             const active = tab === key;
             return (
               <button
@@ -254,9 +254,9 @@ function capacityLine(row: DiskRow<ExternalDisk>, language: Language, t: Transla
   return "";
 }
 
-function noteText(row: DiskRow<ExternalDisk>, t: TranslationDictionary): string {
+function noteText(row: DiskRow<ExternalDisk>, t: TranslationDictionary, language: Language): string {
   const reason = rejectReason(row.disk);
-  if (row.status === "rejected" && reason) return fill(t.disksV2.rejectReason[reason as keyof typeof t.disksV2.rejectReason] ?? "", { min: 32 });
+  if (row.status === "rejected" && reason) return rejectText(row.disk, reason, t, language);
   if (row.status === "running" && row.run?.progress_percent != null) return `${t.disksV2.status.running} · ${Math.round(row.run.progress_percent)} %`;
   return t.disksV2.summary[row.status];
 }
@@ -322,7 +322,7 @@ export function DiskCard({
           {t.datastoresV2.disk[configNote]}
         </span>
       ) : (
-        <span className={cn("text-[13px]", tone.note)}>{noteText(row, t)}</span>
+        <span className={cn("text-[13px]", tone.note)}>{noteText(row, t, language)}</span>
       )}
       <AlertBadges alerts={alerts.filter((alert) => !alert.code.startsWith("pbs_"))} t={t} />
       {tags.length ? (
@@ -449,7 +449,7 @@ export function DiskDetail({
       {status === "rejected" && reason ? (
         <div className="border-b border-solid border-border p-[18px]">
           <div className="rounded-[10px] bg-danger/15 p-3 text-[13px] leading-[1.45] text-danger-text">
-            {fill(text.rejectReason[reason as keyof typeof text.rejectReason] ?? "", { min: 32 })}
+            {rejectText(disk, reason, t, language)}
           </div>
         </div>
       ) : null}
@@ -502,6 +502,12 @@ export function DiskDetail({
                 );
               case "unreject":
                 return <DecisionButton key={action} disk={disk} decision="clear" label={text.action.unreject} toastText={text.approval.unrejectedToast} t={t} onChanged={onChanged} />;
+              case "hide":
+                return <DecisionButton key={action} disk={disk} decision="hide" label={text.action.hide} toastText={text.approval.hiddenToast} t={t} onChanged={onChanged} />;
+              case "unhide":
+                return <DecisionButton key={action} disk={disk} decision="clear" label={text.action.unhide} toastText={text.approval.unhiddenToast} t={t} onChanged={onChanged} />;
+              case "approveAnyway":
+                return <ApproveAnyway key={action} disk={disk} t={t} language={language} onChanged={onChanged} />;
             }
           })}
         </div>
@@ -536,6 +542,65 @@ export function DiskDetail({
         </div>
       </details>
     </aside>
+  );
+}
+
+/** "Too small: 16 GiB, a PBS datastore needs at least 32 GiB." (size next to the minimum). */
+function rejectText(disk: ExternalDisk, reason: string, t: TranslationDictionary, language: Language): string {
+  const template = t.disksV2.rejectReason[reason as keyof typeof t.disksV2.rejectReason] ?? "";
+  return fill(template, { min: disk.min_size_gb ?? 32, size: formatSize(disk.capacity_gb, language) });
+}
+
+/** Phase 5g: a disk under the minimum size, approved after reading the risk and typing its name. */
+function ApproveAnyway({
+  disk,
+  t,
+  language,
+  onChanged,
+}: {
+  disk: ExternalDisk;
+  t: TranslationDictionary;
+  language: Language;
+  onChanged: () => Promise<void> | void;
+}) {
+  const text = t.disksV2.approval;
+  const { toast } = useToast();
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const ok = nameConfirmed(disk, typed);
+  async function approve() {
+    if (!ok) return;
+    setBusy(true);
+    try {
+      await decideDisk(disk.id, "approve_anyway", typed.trim());
+      toast({ tone: "success", title: fill(text.anywayApproved, { name: disk.display_name }) });
+      await onChanged();
+    } catch (error) {
+      toast({ tone: "danger", title: errorText(error, t) });
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="flex flex-col gap-2.5 rounded-[10px] bg-warning/15 p-3 text-[13px] leading-[1.45] text-warning-text" data-approve-anyway>
+      <b>{text.anywayTitle}</b>
+      <span>{fill(text.anywayRisk, { size: formatSize(disk.capacity_gb, language), min: disk.min_size_gb ?? 32 })}</span>
+      <label className="flex flex-col gap-1 text-fg">
+        <span className="text-xs text-muted">{fill(text.typeName, { name: disk.display_name })}</span>
+        <input
+          className="rounded-lg border border-solid border-border-strong bg-bg px-3 py-[9px] text-sm text-fg outline-none focus:border-accent"
+          aria-label={text.typeNameLabel}
+          autoComplete="off"
+          placeholder={disk.display_name}
+          value={typed}
+          onChange={(event) => setTyped(event.target.value)}
+        />
+      </label>
+      <button type="button" className={secondary} disabled={!ok || busy} onClick={() => void approve()}>
+        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <AlertTriangle className="h-4 w-4" />}
+        {t.disksV2.action.approveAnyway}
+      </button>
+    </div>
   );
 }
 

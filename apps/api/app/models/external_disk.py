@@ -115,6 +115,13 @@ class ExternalDisk(Base):
 
         return reject_reason(self)
 
+    @property
+    def min_size_gb(self) -> int:
+        """Minimum size setting (MIN_DISK_SIZE_GIB), shown next to a too-small disk's size."""
+        from app.services.disk_events import min_disk_size_gib
+
+        return min_disk_size_gib()
+
     # --- Phase 5f (derived, read by ExternalDiskRead) ------------------------------
     @property
     def kind(self) -> str:

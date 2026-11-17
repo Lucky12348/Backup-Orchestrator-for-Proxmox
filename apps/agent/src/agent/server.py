@@ -120,6 +120,9 @@ ROUTE_ROLES: dict[str, frozenset[str]] = {
     # VM, through its QEMU guest agent (`qm guest exec`).
     "/pbs-guest/agent": _HOST,
     "/pbs-guest/mounts/cleanup": _HOST,
+    # Self-update pushed by the app (agent/self_update.py).
+    "/self-update": _BOTH,
+    "/self-update/status": _BOTH,
 }
 
 
@@ -636,6 +639,39 @@ def pve_vm_addresses(
     _: None = Depends(require_agent_token),
 ) -> Response:
     return _run_endpoint("pve-vm-addresses", lambda: vm_addresses(payload.vmid))
+
+
+class SelfUpdateRequest(BaseModel):
+    build_id: str = Field(min_length=12, max_length=64, pattern=r"^[0-9a-f]+$")
+    sha256: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-fA-F]+$")
+
+
+@app.post("/self-update", response_model=None)
+def self_update_start(
+    payload: SelfUpdateRequest,
+    _: None = Depends(require_agent_token),
+    settings: AgentSettings = Depends(get_settings),
+) -> Response:
+    """Only the expected build and archive SHA-256 come from the request: the
+    archive is always fetched from this agent's own app, pinned."""
+    from agent.self_update import SelfUpdateError, start_update
+
+    try:
+        return JSONResponse(content=start_update(settings, payload.build_id, payload.sha256.lower()))
+    except SelfUpdateError as exc:
+        code = 409 if exc.code in {"update_in_progress", "not_registered"} else 422
+        return JSONResponse(status_code=code, content={"ok": False, "error_code": exc.code, "message": str(exc)})
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Agent self-update failed")
+        return JSONResponse(status_code=500, content=build_command_failure_payload("self-update", exc))
+
+
+@app.get("/self-update/status")
+def self_update_status(_: None = Depends(require_agent_token), settings: AgentSettings = Depends(get_settings)) -> dict[str, Any]:
+    from agent.main import agent_build_id
+    from agent.self_update import read_state
+
+    return {"ok": True, "build_id": agent_build_id(settings), "update": read_state()}
 
 
 def _run_endpoint(command_name: str, action) -> Response:

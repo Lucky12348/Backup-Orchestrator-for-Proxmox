@@ -78,6 +78,7 @@ def build_activity(db: Session, *, days: int = 90, now: datetime | None = None) 
                 "progress_percent": run.progress_percent,
                 "transferred_bytes": (summary or {}).get("transferred_bytes"),
                 "no_new_data": bool((summary or {}).get("no_new_data")),
+                "versions_copied": (summary or {}).get("versions_copied"),
                 "message": run.message,
             }
         )

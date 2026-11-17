@@ -77,6 +77,20 @@ run_migrations(engine)
   )
 }
 
+# Phase 5g: bring the agents to the build this version ships, when
+# "Update agents automatically" is on (Settings). Never fails the app update.
+pbo_update_agents() {
+  pbo_info "Agents: checking their version"
+  (
+    set -a
+    # shellcheck disable=SC1090
+    . "${PBO_ENV}"
+    set +a
+    cd "${PBO_DIR}/apps/api"
+    PYTHONDONTWRITEBYTECODE=1 timeout 900 "${PBO_DIR}/.venv/bin/python" -m app.agent_update_cli
+  ) || pbo_warn "agent update did not complete: see Integrations > Agents (the app itself is updated)"
+}
+
 pbo_rollback() {
   local reason="$1"
   pbo_warn "update failed (${reason}): rolling back"
@@ -150,6 +164,7 @@ pbo_update_main() {
   pbo_wait_healthy 120 || pbo_rollback "/health did not answer"
 
   pbo_ok "updated to $(cat "${PBO_DIR}/VERSION") (previous code kept in ${PREVIOUS_DIR}, database dump ${BACKUP_FILE})."
+  pbo_update_agents
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

@@ -348,9 +348,18 @@ export interface RunJournalEntry {
 export interface RunJournal {
   run_id: number;
   entries: RunJournalEntry[];
-  summary: { text: string; transferred_bytes: number | null; rate_bytes_per_second: number | null; no_new_data: boolean } | null;
+  summary: {
+    text: string;
+    transferred_bytes: number | null;
+    rate_bytes_per_second: number | null;
+    no_new_data: boolean;
+    /** B37: versions copied (PBS "sync snapshot" lines), apart from the bytes transferred. */
+    versions_copied?: number | null;
+  } | null;
   source_datastore: string | null;
   target_datastore: string | null;
+  /** PBO's time zone: every time of the exported journal is written in it. */
+  timezone?: string | null;
 }
 
 /** Readable journal (progress lines removed, duplicates collapsed, coded PBO messages). */
@@ -524,6 +533,67 @@ export interface RegisteredAgent {
   active: boolean;
 }
 
+// --- Agent self-update (Phase 5g) ------------------------------------------------
+
+export type AgentUpdateState = "up_to_date" | "outdated" | "updating" | "failed" | "too_old" | "unknown";
+
+export interface AgentUpdateRow {
+  id: number;
+  agent_id: number | null;
+  role: string;
+  trigger: "auto" | "manual" | "update_command";
+  status: "running" | "success" | "up_to_date" | "rolled_back" | "failed" | "too_old" | "busy";
+  code: string | null;
+  message: string | null;
+  from_build: string | null;
+  to_build: string;
+  from_version: string | null;
+  to_version: string | null;
+  started_at: string;
+  finished_at: string | null;
+}
+
+export interface AgentUpdatesOverview {
+  auto_update: boolean;
+  shipped: { version: string; build_id: string } | null;
+  agents: {
+    id: number;
+    role: string;
+    hostname: string;
+    version: string | null;
+    build_id: string | null;
+    version_seen_at: string | null;
+    state: AgentUpdateState;
+  }[];
+  history: AgentUpdateRow[];
+}
+
+export function getAgentUpdates() {
+  return request<AgentUpdatesOverview>("/agents/updates");
+}
+
+export function updateAgentNow(agentId: number) {
+  return request<{ id: number; status: string }>(`/agents/${agentId}/update`, { method: "POST" });
+}
+
+/** Settings › Agents and disks: AUTO_UPDATE_AGENTS (agents) and MIN_DISK_SIZE_GIB (general). */
+export async function getAgentAndDiskSettings(): Promise<{ autoUpdate: boolean; minSizeGib: number }> {
+  const [agents, general] = await Promise.all([
+    request<{ key: string; value: unknown }[]>("/settings?group=agents"),
+    request<{ key: string; value: unknown }[]>("/settings?group=general"),
+  ]);
+  const auto = agents.find((item) => item.key === "AUTO_UPDATE_AGENTS")?.value;
+  const min = general.find((item) => item.key === "MIN_DISK_SIZE_GIB")?.value;
+  return { autoUpdate: auto !== false, minSizeGib: typeof min === "number" ? min : 32 };
+}
+
+export function saveAgentAndDiskSettings(autoUpdate: boolean, minSizeGib: number) {
+  return request<unknown>("/settings", {
+    method: "PATCH",
+    body: JSON.stringify({ values: { AUTO_UPDATE_AGENTS: autoUpdate, MIN_DISK_SIZE_GIB: minSizeGib } }),
+  });
+}
+
 export interface ReadinessReason {
   code: string;
   message: string;
@@ -536,6 +606,8 @@ export interface SpaceEstimate {
   new_snapshots: number;
   new_groups: number;
   known: boolean;
+  /** B48: false = the disk's contents were never read (no estimate shown). */
+  contents_known?: boolean;
   sufficient: boolean | null;
 }
 
@@ -568,7 +640,7 @@ export function revokeRegisteredAgent(agentId: number) {
 
 // --- Disks page (Phase 5b) -------------------------------------------------------
 
-export type DiskDecision = "approve" | "ignore" | "reject" | "clear";
+export type DiskDecision = "approve" | "approve_anyway" | "ignore" | "reject" | "hide" | "clear";
 
 export function decideDisk(diskId: number, decision: DiskDecision, confirmName?: string) {
   return request<ExternalDisk>(`/disks/${diskId}/decision`, {
@@ -626,6 +698,7 @@ export interface ActivityItem {
   progress_percent: number | null;
   transferred_bytes: number | null;
   no_new_data: boolean;
+  versions_copied?: number | null;
   message: string | null;
 }
 

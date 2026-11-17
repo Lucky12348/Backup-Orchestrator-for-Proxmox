@@ -122,6 +122,7 @@ def plan_dedicated_preparation(
     recorded_name: str | None = None,
     recorded_backing_device: str | None = None,
     recorded_path: str | None = None,
+    min_size_gib: int = MIN_DISK_SIZE_GIB,
 ) -> PreparationPlan:
     """Decide between reusing a PBO datastore, re-creating its deleted PBS
     configuration (reuse-datastore) and formatting the disk — or refuse.
@@ -206,8 +207,8 @@ def plan_dedicated_preparation(
     # --- destructive path: every check must pass -----------------------------
     reasons: list[str] = []
     gib = size_gib(pbs_disk.get("size"))
-    if gib < MIN_DISK_SIZE_GIB:
-        raise GuardViolation("disk_too_small", f"Refusing to prepare `{device}`: {gib} GiB < {MIN_DISK_SIZE_GIB} GiB minimum.")
+    if gib < max(1, min_size_gib):
+        raise GuardViolation("disk_too_small", f"Refusing to prepare `{device}`: {gib} GiB < {max(1, min_size_gib)} GiB minimum.")
     usage = str(pbs_disk.get("used") or "").strip().lower()
     if usage in SYSTEM_DISK_USAGES:
         raise GuardViolation("disk_in_use", f"Refusing to format `{device}`: PBS reports it in use ({usage}).")

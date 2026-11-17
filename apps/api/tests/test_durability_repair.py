@@ -261,4 +261,4 @@ def test_repair_applies_the_disk_retention_then_verifies_what_it_copied(db, sess
     assert sorted(item["backup-time"] for item in fake.snapshots[TARGET]) == [T2, T3]  # retention, not 4 versions
     assert verified == [sorted([f"ct/101/{T2}", f"ct/101/{T3}"])]
     codes = _codes(db, run.id)
-    assert codes.index("repair_start") < codes.index("cleanup_done") < codes.index("repair_done")
+    assert codes.index("repair_start") < codes.index("cleanup_pending") < codes.index("repair_done")

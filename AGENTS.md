@@ -561,6 +561,49 @@ should reach them — and every call is additionally protected with an
   `verifyFailed` / `repairFailed`); `tests/test_journal_translated.py` fails on
   any PBO journal line without a code in a backup, verification or repair.
 
+## Agent self-update, exact messages, rejected disks (Phase 5g)
+
+- **Agent self-update**: the app ships one agent build
+  (`agent_bootstrap.agent_package`: pyproject version, `build_id` = hash of the
+  archived sources, written as `BUILD_ID` in the reproducible archive, SHA-256
+  of the archive). The agent announces `build_id` on each heartbeat and
+  `/version` (`agents.agent_version/build_id/version_seen_at`, Alembic `0014`);
+  `services/agent_updates.py` starts an update (history table
+  `agent_updates`: trigger auto | manual | update_command, status running |
+  success | up_to_date | rolled_back | failed | too_old | busy) when older and
+  `AUTO_UPDATE_AGENTS` (default on), never during a run, not retried
+  automatically for a build that failed. Agent side (`agent/self_update.py`,
+  routes `/self-update` + `/self-update/status`, capability `self-update`):
+  download from its own app only, pinned, SHA-256 checked, safe extraction to
+  `releases/<build>`, deps only if changed, then a transient `systemd-run`
+  unit writes the units/udev rule (`agent/deploy.py`, also used by
+  `install.sh`), switches the `current` symlink, restarts and health-checks
+  `/version`; rollback otherwise. Units run `venv/bin/python -m agent.main`
+  with `PYTHONPATH=/opt/pbo-agent/current/src`. Tokens never change. An agent
+  without the capability = `too_old` (install command once more).
+  UI: Integrations › Agents (`AgentUpdates.tsx`), Settings card
+  (`views/settings/AgentDiskSettings.tsx`). Tests replace
+  `agent_updates._spawn` (conftest) so heartbeats never start a thread.
+- **B37/B39**: `transfer_summary` counts `versions_copied` ("sync snapshot",
+  not "re-sync") apart from the bytes; the modal says "4 new versions copied,
+  0 B transferred (already on the disk)" (`copySummary`), never "0 B/s".
+  Retention: `cleanup_freed` (GC "Removed garbage" > 0) / `cleanup_pending`
+  (space freed by PBS after 24 h) / `cleanup_nothing`; `*_bytes` journal
+  params are formatted by the UI. The exported journal writes every time in
+  PBO's time zone (`timezone` on `/runs/{id}/log`, `zonedStamp`).
+- **B48**: preview `target_path` = `/mnt/datastore/<disk datastore>` in API
+  mode; the estimate skips source versions older than the newest on the disk
+  (PBS skips them) and says "estimate impossible" when the disk's contents
+  were never read (`contents_known`). Guest agent commands are
+  `{where, command}`, the PBS enterprise repository disabled first (.sources
+  and .list).
+- **Rejected disks**: `MIN_DISK_SIZE_GIB` setting (default 32,
+  `disk_events.min_disk_size_gib`, also the PBS guard minimum);
+  decisions `approve_anyway` (too small only, name typed, risk shown →
+  `operator_decision="approved_small"`, guard minimum 1 GiB) and `hide`
+  (status `hidden`, "Hidden" tab, no toast/notification, `clear` shows it
+  again); reasons carry `size_gb` next to `min_size_gb`.
+
 ## Disk ↔ USB port (Phase 4.4, read before touching the USB passthrough)
 
 - The host agent reports, for each USB disk, its physical USB location read
@@ -804,8 +847,10 @@ of `--ref` + temporary Node.js build) → stop → swap `/opt/pbo` ↔
 `/opt/pbo.previous` → fresh venv → `create_tables()` + Alembic → start →
 `/health`; on failure the previous code and the dump are restored. The host
 agent installed by `install.sh` is **not** a git checkout: it is updated by
-re-running its install command (it downloads the agent of the running app);
-the maintenance "Update All" button does not cover it. Releases: tag `v*` →
+its self-update (Phase 5g: the app pushes its build, see "Agent self-update"
+below; `update` ends with `python -m app.agent_update_cli`); an agent older
+than the self-update needs its install command once more. The maintenance
+"Update All" button does not cover it. Releases: tag `v*` →
 `.github/workflows/release.yml` publishes `pbo-<version>.tar.gz` (+ sha256).
 
 **Legacy Docker app VM** — what "Update All" actually does:

@@ -51,7 +51,7 @@ test("states of the list", () => {
 test("one-line summaries (FR), failure reasons translated from the step code", () => {
   assert.equal(activitySummary(entry(), FR, "fr"), "Sauvegarde réussie · 312 Gio copiés");
   assert.equal(activitySummary(entry({ auto_eject: true }), FR, "fr"), "Sauvegarde réussie · 312 Gio copiés · disque éjecté");
-  assert.equal(activitySummary(entry({ no_new_data: true }), FR, "fr"), "Sauvegarde réussie · aucune nouvelle donnée");
+  assert.equal(activitySummary(entry({ no_new_data: true }), FR, "fr"), "Sauvegarde réussie · aucune nouvelle version");
   assert.equal(activitySummary(entry({ status: "running", progress_percent: 41.6 }), FR, "fr"), "Sauvegarde en cours · 42 %");
   assert.equal(
     activitySummary(entry({ status: "failed", step: "disk_not_plugged", message: "The disk is no longer plugged" }), FR, "fr", {

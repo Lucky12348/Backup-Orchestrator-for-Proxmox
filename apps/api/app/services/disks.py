@@ -231,7 +231,7 @@ def ingest_agent_disk_report(db: Session, payload: AgentDiskReportCreate) -> lis
             added_disks.append(disk)  # rejected ones too: the UI explains why
         elif disk.id is not None and before_snapshots.get(disk.id) != disk_events.snapshot(disk):
             updated_disks.append(disk)
-        if disk.connected and previous_presence in {"never_seen", "absent"} and not _is_unusable_disk(disk):
+        if disk.connected and previous_presence in {"never_seen", "absent"} and not _is_unusable_disk(disk) and not disk_events.is_hidden(disk):
             planning_detections.append(disk)
             if _disk_detection_cooldown_elapsed(disk, observed_at):
                 detection_notifications.append(("new" if previous_presence == "never_seen" else "known", disk))
@@ -641,19 +641,25 @@ def apply_disk_decision(db: Session, disk_id: int, decision: str, confirm_name: 
     disk = db.get(ExternalDisk, disk_id)
     if disk is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Disk not found")
-    if decision == "approve":
-        if disk_events.reject_reason(disk) in {"zero_size", "too_small"}:
+    if decision in {"approve", "approve_anyway"}:
+        reason = disk_events.reject_reason(disk)
+        # A disk reporting 0 bytes cannot hold anything; a too-small one can be
+        # approved anyway, explicitly (the UI states the risk).
+        if reason == "zero_size" or (reason == "too_small" and decision != "approve_anyway"):
             raise _coded_error(400, DECISION_DISK_UNUSABLE, "This disk cannot be used for backups.")
         if (confirm_name or "").strip() != (disk.display_name or "").strip():
             raise _coded_error(400, DECISION_NAME_MISMATCH, "Type the disk name exactly to approve it.")
         disk.trusted = True
         disk.dedicated_backup_disk = True
-        disk.operator_decision = None
+        disk.operator_decision = disk_events.APPROVED_SMALL if reason == "too_small" else None
     elif decision == "ignore":
         disk.operator_decision = "ignored"
     elif decision == "reject":
         disk.trusted = False
         disk.operator_decision = "rejected"
+    elif decision == "hide":
+        disk.trusted = False
+        disk.operator_decision = disk_events.HIDDEN
     else:  # clear
         disk.operator_decision = None
     db.add(disk)

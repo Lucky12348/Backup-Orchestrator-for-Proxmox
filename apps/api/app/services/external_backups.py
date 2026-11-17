@@ -73,8 +73,18 @@ def get_external_backup_preview(db: Session, disk_id: int) -> dict[str, str | bo
     settings = get_settings()
     estimated_needed_gb = disk.usable_capacity_gb or disk.capacity_gb
     loop_size_gb = settings.external_loop_datastore_size_gb if plan.mode == ExternalBackupMode.COEXISTENCE else None
+    target_path, target_datastore = plan.target_path, None
+    if settings.pbs_mode == "api":
+        # B48: the disk's own removable datastore, mounted by PBS on
+        # /mnt/datastore/<name> (not the agent-mode "…/pbs-datastore").
+        from app.services.external_backup_execution import build_dedicated_datastore_name
+        from app.services.pbs_guards import fit_datastore_name
+
+        target_datastore = fit_datastore_name(disk.pbs_datastore_name or build_dedicated_datastore_name(disk.serial_number))
+        target_path = f"/mnt/datastore/{target_datastore}"
     return {
-        "target_path": plan.target_path,
+        "target_path": target_path,
+        "target_datastore": target_datastore,
         "mode": plan.mode.value,
         "preserves_existing_data": plan.preserves_existing_data,
         "loop_image_size_gb": loop_size_gb,

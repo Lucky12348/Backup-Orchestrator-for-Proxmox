@@ -110,6 +110,10 @@ class Settings:
     # Phase 5f: an approved disk without a successful backup for this many days
     # is listed in "To do" (forgotten rotation).
     rotation_stale_days: int = 30
+    # Agents are updated to the build this app ships (services/agent_updates.py).
+    auto_update_agents: bool = True
+    # Smaller disks are rejected automatically (approval still possible, Phase 5g).
+    min_disk_size_gib: int = 32
     pve_api_url: str = ""
     pve_api_token_id: str = ""
     pve_api_token_secret: str = ""

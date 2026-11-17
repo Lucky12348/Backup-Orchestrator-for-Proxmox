@@ -54,6 +54,7 @@ class ExternalDiskRead(UTCDateTimeModel):
     # Derived (app/services/disk_events.py): new | known | ejected | unplugged | rejected.
     status: str = "new"
     reject_reason: str | None = None
+    min_size_gb: int | None = None
     # Phase 5f: profile, hardware, guards.
     color: str | None = None
     location_note: str | None = None
@@ -75,9 +76,11 @@ class ExternalDiskRead(UTCDateTimeModel):
 
 
 class ExternalDiskDecision(BaseModel):
-    """Disks page approval flow. `approve` needs the disk name typed back."""
+    """Disks page approval flow. `approve` / `approve_anyway` (a disk smaller
+    than the minimum, Phase 5g) need the disk name typed back; `hide` keeps a
+    disk out of the list until `clear`."""
 
-    decision: Literal["approve", "ignore", "reject", "clear"]
+    decision: Literal["approve", "approve_anyway", "ignore", "reject", "hide", "clear"]
     confirm_name: str | None = Field(default=None, max_length=255)
 
 

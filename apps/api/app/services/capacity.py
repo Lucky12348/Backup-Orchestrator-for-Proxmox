@@ -51,10 +51,19 @@ def estimate_bytes(
     group_filter: list[str] | None = None,
 ) -> dict[str, int]:
     on_disk_groups = {group_of_key(key) for key in disk_keys}
+    # PBS's sync skips versions older than the newest one already on the
+    # target (B48: versions removed by the disk's retention are not "new").
+    newest_on_disk: dict[str, int] = {}
+    for key in disk_keys:
+        group, _, when = key.rpartition("/")
+        if when.isdigit():
+            newest_on_disk[group] = max(newest_on_disk.get(group, 0), int(when))
     missing: dict[str, list[dict[str, Any]]] = {}
     for snapshot in source_snapshots:
         key = snapshot_key(snapshot)
         if key is None or key in disk_keys or not _selected(snapshot, group_filter):
+            continue
+        if int(snapshot["backup-time"]) <= newest_on_disk.get(group_of_key(key), -1):
             continue
         missing.setdefault(group_of_key(key), []).append(snapshot)
     needed = 0.0
@@ -120,13 +129,15 @@ def check_space(
     keys = cached_keys(disk) if prepared else set()
     estimate = estimate_bytes(source, keys or set(), group_filter)
     free = free_bytes(disk)
-    # A prepared disk whose contents were never read: the estimate is an upper
-    # bound, shown but never used to refuse.
-    known = free is not None and (not prepared or keys is not None)
+    # A prepared disk whose contents were never read: no estimate (B48: an
+    # upper bound counting every source version misled), never a refusal.
+    contents_known = not prepared or keys is not None
+    known = free is not None and contents_known
     return {
         **estimate,
         "free_bytes": free,
         "known": known,
+        "contents_known": contents_known,
         "sufficient": (estimate["needed_bytes"] <= free) if known else None,
     }
 

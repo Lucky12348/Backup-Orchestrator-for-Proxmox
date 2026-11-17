@@ -22,6 +22,7 @@ export interface ActivityLike {
   progress_percent: number | null;
   transferred_bytes: number | null;
   no_new_data: boolean;
+  versions_copied?: number | null;
   message: string | null;
 }
 
@@ -77,6 +78,7 @@ export function durationText(seconds: number | null, lang: Lang): string | null 
 export interface SummaryTexts {
   backupOk: string;
   backupNoData: string;
+  backupVersions: string;
   backupOkPlain: string;
   backupEjected: string;
   backupFailed: string;
@@ -126,6 +128,11 @@ export function activitySummary(item: ActivityLike, texts: SummaryTexts, lang: L
   }
   if (state === "running") return texts.backupRunning.replace("{pct}", String(Math.round(item.progress_percent ?? 0)));
   if (state === "failed") return texts.backupFailed.replace("{reason}", reason);
+  // B37: versions copied without new data (chunks already on the disk).
+  if (item.versions_copied) {
+    const size = formatBytes(item.transferred_bytes ?? 0, lang);
+    return texts.backupVersions.replace("{n}", String(item.versions_copied)).replace("{size}", size);
+  }
   if (item.no_new_data) return texts.backupNoData;
   if (item.transferred_bytes !== null) {
     const size = formatBytes(item.transferred_bytes, lang);

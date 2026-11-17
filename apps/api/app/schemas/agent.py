@@ -9,6 +9,9 @@ class AgentHeartbeatCreate(BaseModel):
     hostname: str = Field(max_length=255)
     agent_version: str = Field(max_length=64)
     observed_at: datetime
+    # Build of the running agent code (BUILD_ID of its release); absent on
+    # agents older than the self-update (Phase 5g).
+    build_id: str | None = Field(default=None, max_length=64, pattern=r"^[0-9a-f]+$")
 
 
 class AgentUsbLocation(BaseModel):

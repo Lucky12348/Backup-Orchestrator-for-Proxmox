@@ -14,6 +14,7 @@ import { reasonText } from "../../readiness";
 import type { ExternalBackupPreview, ExternalDisk } from "../../types";
 import { formatBytes } from "../../units";
 import { fill } from "../format";
+import { estimateKind, type GuestCommand } from "./diskProfile";
 import { CloseButton } from "../resources/ProxmoxJobsSection";
 import { DiskAvatar } from "./DiskBits";
 import { launchState } from "./diskProfile";
@@ -106,15 +107,19 @@ export function LaunchBackupDialog({
           {estimate ? (
             <div
               className={cn("rounded-[10px] p-3", estimate.sufficient === false ? "bg-danger/15 text-danger-text" : "bg-subtle text-fg")}
-              data-estimate={estimate.sufficient === false ? "insufficient" : estimate.known ? "known" : "upper"}
+              data-estimate={estimateKind(estimate)}
             >
-              {estimate.free_bytes != null
-                ? fill(estimate.known ? text.estimate : text.estimateUpper, {
-                    needed: formatBytes(estimate.needed_bytes, language),
-                    free: formatBytes(estimate.free_bytes, language),
-                    count: estimate.new_snapshots,
-                  })
-                : fill(text.estimateNoFree, { needed: formatBytes(estimate.needed_bytes, language), count: estimate.new_snapshots })}
+              {estimateKind(estimate) === "impossible"
+                ? text.estimateImpossible
+                : estimateKind(estimate) === "nothing"
+                  ? text.nothingNew
+                  : estimate.free_bytes != null
+                    ? fill(estimate.known ? text.estimate : text.estimateUpper, {
+                        needed: formatBytes(estimate.needed_bytes, language),
+                        free: formatBytes(estimate.free_bytes, language),
+                        count: estimate.new_snapshots,
+                      })
+                    : fill(text.estimateNoFree, { needed: formatBytes(estimate.needed_bytes, language), count: estimate.new_snapshots })}
             </div>
           ) : null}
 
@@ -124,10 +129,12 @@ export function LaunchBackupDialog({
               <span className="flex min-w-0 flex-col gap-1">
                 <span>{fill((text.warning as Record<string, string>)[warning.code], { vmid: String(warning.vmid ?? "") })}</span>
                 {warning.code === "pbs_guest_agent_missing" && Array.isArray(warning.commands)
-                  ? (warning.commands as string[]).map((command, index) => (
-                      <span key={command} className="flex flex-col">
-                        <span className="text-xs opacity-80">{index === 0 ? text.guestAgentInPbs : text.guestAgentOnHost}</span>
-                        <code className="break-all font-mono text-xs">{command}</code>
+                  ? (warning.commands as GuestCommand[]).map((item, index, all) => (
+                      <span key={item.command} className="flex flex-col">
+                        {index === 0 || all[index - 1].where !== item.where ? (
+                          <span className="text-xs opacity-80">{item.where === "pbs" ? text.guestAgentInPbs : text.guestAgentOnHost}</span>
+                        ) : null}
+                        <code className="break-all font-mono text-xs">{item.command}</code>
                       </span>
                     ))
                   : null}

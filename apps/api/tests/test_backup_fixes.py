@@ -288,6 +288,8 @@ class HostWithGuest(FakeVersion):
 
 def test_missing_guest_agent_is_a_warning_with_the_commands(db):
     """5f.5: no QEMU guest agent in the PBS VM never blocks a backup."""
+    from app.services import stale_mounts
+
     _configure(db, "api")
     result = backup_readiness.external_backup_readiness(db, _ready_disk(db), host_client=HostWithGuest(False, enabled=False), pbs_client=PBS_API_OK)
     assert (result["ready"], result["reasons"]) == (True, [])
@@ -297,7 +299,7 @@ def test_missing_guest_agent_is_a_warning_with_the_commands(db):
             "message": result["warnings"][0]["message"],
             "vmid": 110,
             "enabled": False,
-            "commands": ["apt install qemu-guest-agent", "qm set 110 --agent enabled=1", "qm shutdown 110 && qm start 110"],
+            "commands": stale_mounts.guest_agent_commands(110),
         }
     ]
 
@@ -425,3 +427,14 @@ def test_readiness_codes_are_translated_by_the_ui():
 def test_handoff_error_is_an_http_exception():
     error = DiskHandoffError(USB_DEVICE_NOT_FOUND, "msg", technical="tech")
     assert isinstance(error, HTTPException) and error.status_code == 404
+
+
+def test_guest_agent_commands_start_by_disabling_the_enterprise_repository():
+    """B48: without a subscription apt fails (401) on the PBS enterprise repo."""
+    from app.services import stale_mounts
+
+    commands = stale_mounts.guest_agent_commands(110)
+    assert [item["where"] for item in commands] == ["pbs", "pbs", "host", "host"]
+    first = commands[0]["command"]
+    assert "pbs-enterprise.*" in first and "*.sources)" in first and "Enabled: no" in first and "*.list)" in first
+    assert commands[1]["command"].startswith("apt update && apt install")

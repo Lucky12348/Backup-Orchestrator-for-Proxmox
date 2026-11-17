@@ -354,9 +354,9 @@ export function PbsStep({ saved, onSaved, onBack, onNext }: PbsStepProps) {
                 <div className="flex flex-col gap-2" data-guest-agent="missing">
                   <p>{text.pbs.guestAgentHint}</p>
                   <p className="text-[13px] font-medium">{text.pbs.guestAgentInPbs}</p>
-                  <CommandBlock lines={guestAgent.commands.slice(0, 1)} />
+                  <CommandBlock lines={guestAgent.commands.filter((item) => item.where === "pbs").map((item) => item.command)} />
                   <p className="text-[13px] font-medium">{text.pbs.guestAgentOnHost}</p>
-                  <CommandBlock lines={guestAgent.commands.slice(1)} />
+                  <CommandBlock lines={guestAgent.commands.filter((item) => item.where === "host").map((item) => item.command)} />
                 </div>
               </Alert>
             ) : null}
