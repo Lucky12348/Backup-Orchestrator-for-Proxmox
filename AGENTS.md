@@ -646,7 +646,7 @@ should reach them — and every call is additionally protected with an
   `runs/runMenu.tsx`, agenda (`EventMenuContext` in PlanningView), resources
   and Proxmox jobs in their views. App commands (launch dialog, eject) come
   from `views/commands.tsx` (`CommandsProvider` in App). "Start now" for a
-  Proxmox job is listed disabled (no API: PBO never runs PVE jobs).
+  Proxmox job runs it (Phase 5h.1, below).
 - **Run modal**: `overallPercent` (B35, weighted steps, capped at 99 % until
   success; also the top-bar pill), `LogLines` follows the end only while the
   reader is at the bottom (B36, "Resume following ↓", free once the run is
@@ -661,6 +661,46 @@ should reach them — and every call is additionally protected with an
   lines already explained by an alert are not repeated; a rejected disk still
   plugged in counts in "Plugged in".
 - `prefers-reduced-motion` is honoured globally in `.pbo-ui` (`ui/ui.css`).
+
+## Disk sheet layout, eject everywhere, Proxmox "Run now" (Phase 5h.1)
+
+- **Disk sheet** (`views/disks/DiskSheetView.tsx` + `DiskSheetParts.tsx`):
+  compact full-width header (avatar `hd`, name + pencil, state, kind · model ·
+  serial · location, 4 indicators: used space, last backup, health, next
+  rotation via `diskProfile.nextRotationFor` on the plannings App passes as
+  `events`), actions right (Back up, Verify, Eject/Reactivate, ⋯). Identity
+  = side panel (`IdentityPanel`, Radix Dialog styled as a right sheet, live
+  preview; `#identity` opens it). Grid `lg:grid-cols-3`: left Contents,
+  Capacity, History; right Health, Retention, Reminder (stale days).
+- **Capacity** (`CapacityCard`, `diskProfile.capacitySummary`): used/free bar,
+  growth per successful backup between the first and last usage samples,
+  "full in ~N backups"; the chart only when `chartWorthShowing` (≥ 3 samples
+  over ≥ 2 days), Y axis in GiB (`gibScale`), 80/90 % marks only inside it.
+- **History** (`DiskHistoryList`): 5 in the Disks panel, 10 in the sheet,
+  "Show more", type filter in the sheet, link `/activity?disk=<id>`
+  (ActivityView reads `?disk=`); each row is a button → `openRunModal`.
+- **One percentage**: `runModel.runPercent(run)` (= the modal's weighted
+  `overallPercent`) for the dashboard, disk cards, pill and modal. **One
+  usage formatter**: `units.usageParts` / `formatPercent` ("184 Mio / 491 Gio
+  · < 1 %"; i18n templates hold no "%"); `formatUsage` keeps a used size
+  under 1 GiB in its own unit. During cleanup/verify/eject no VM row is
+  "running" (`resourceRows`).
+- **Eject everywhere**: `diskActions` offers eject for any plugged, non-ejected
+  disk (approved, new, ignored, rejected); disabled with a hint during a run.
+  API: `eject_dedicated_external_disk` → 409 `disk_already_ejected`; a disk
+  NOT handed to PBS is ejected on the host only (`_eject_from_host`: spin-down
+  + ejected state, own eject run, journal code `eject_host_only`), 409
+  `disk_not_connected` when absent.
+- **Proxmox "Run now"** (`services/pve_job_runs.py`): PVE has no "run job"
+  endpoint, so PBO does what the PVE button does: `POST
+  /nodes/{node}/vzdump` with the job's parameters (minus id/schedule/enabled/
+  comment/next-run/node…, `prune-backups` flattened), on the job's node or
+  `PVE_NODE_NAME`; `POST /proxmox/backup-jobs/{id}/run` (202, `{node, upid}`)
+  and `GET /proxmox/tasks/{node}/{upid}` (the node must match the UPID's).
+  Needs `VM.Backup` + `Datastore.AllocateSpace` (added to `PVE_PRIVILEGES` /
+  `PBO_PRIVILEGES`, `docs/PERMISSIONS.md`); a 403 → `pve_permission_missing`.
+  Existing installs: Reconfigure Proxmox, or `pveum role modify PBO --privs
+  "<PVE_PRIVILEGES>"` on the host. The UI polls the task every 5 s.
 
 ## Disk ↔ USB port (Phase 4.4, read before touching the USB passthrough)
 

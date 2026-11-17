@@ -224,3 +224,88 @@ export function findDisk<D extends DiskRefLike>(disks: readonly D[], ref: { id?:
 export function diskSecondary(disk: Pick<DiskRefLike, "model_name" | "serial_number" | "display_name">): string {
   return [disk.model_name, disk.serial_number].filter((value) => value && value !== disk.display_name).join(" · ");
 }
+
+// --- disk sheet: capacity, chart scale, history, next rotation (Phase 5h.1) ----------
+
+export interface CapacitySummary {
+  usedGb: number;
+  totalGb: number;
+  freeGb: number;
+  percent: number;
+  /** Average growth of the used space per successful backup (GiB), when measurable. */
+  growthPerBackupGb: number | null;
+  /** About how many backups until full, when the space grows. */
+  backupsUntilFull: number | null;
+}
+
+/** "180 MiB used of 491 GiB", growth per backup, "full in ~N backups". The
+ *  growth is (last − first sample) / backups that succeeded between them. */
+export function capacitySummary(
+  disk: { filesystem_used_gb?: number | null; filesystem_total_gb?: number | null; capacity_gb: number; usage_history?: readonly UsageSampleLike[] | null },
+  runs: readonly { status: string; started_at: string; finished_at?: string | null; verify_only?: boolean | null; repair?: boolean | null; current_step?: string | null; auto_eject_after_success?: boolean }[],
+): CapacitySummary | null {
+  const total = disk.filesystem_total_gb ?? null;
+  const used = disk.filesystem_used_gb ?? null;
+  if (!total || used === null) return null;
+  const points = usageSeries(disk.usage_history);
+  let growth: number | null = null;
+  if (points.length >= 2) {
+    const first = points[0];
+    const last = points[points.length - 1];
+    const backups = runs.filter((run) => {
+      if (run.status !== "success" || run.verify_only || run.repair) return false;
+      const end = Date.parse(run.finished_at ?? run.started_at);
+      return end > first.time && end <= last.time + 24 * 3600 * 1000;
+    }).length;
+    if (backups > 0 && last.usedGb > first.usedGb) growth = (last.usedGb - first.usedGb) / backups;
+  }
+  const free = Math.max(0, total - used);
+  return {
+    usedGb: used,
+    totalGb: total,
+    freeGb: free,
+    percent: (100 * used) / total,
+    growthPerBackupGb: growth,
+    backupsUntilFull: growth ? Math.floor(free / growth) : null,
+  };
+}
+
+/** The chart only when it says something: 3 measures over 2 days or more. */
+export function chartWorthShowing(points: readonly UsagePoint[]): boolean {
+  return points.length >= 3 && points[points.length - 1].time - points[0].time >= 2 * 24 * 3600 * 1000;
+}
+
+/** Y axis in GiB, scaled to the data (10 % margin), not 0–100 %. Thresholds
+ *  (80/90 % of the size) only when they fall inside the scale. */
+export function gibScale(points: readonly UsagePoint[]): { min: number; max: number; ticks: number[]; thresholds: { pct: 80 | 90; gb: number }[] } {
+  const used = points.map((point) => point.usedGb);
+  const low = Math.min(...used);
+  const high = Math.max(...used);
+  const pad = Math.max((high - low) * 0.1, high * 0.02, 0.01);
+  const min = Math.max(0, low - pad);
+  const max = high + pad;
+  const total = points[points.length - 1].totalGb;
+  const thresholds = ([80, 90] as const).map((pct) => ({ pct, gb: (total * pct) / 100 })).filter((line) => line.gb >= min && line.gb <= max);
+  return { min, max, ticks: [min, (min + max) / 2, max], thresholds };
+}
+
+export type HistoryKindFilter = "all" | "backup" | "verify" | "repair";
+
+/** Disk history page: newest first, optionally one run type, `shown` entries. */
+export function historyPage<I extends { kind: string }>(items: readonly I[], kind: HistoryKindFilter, shown: number): { items: I[]; more: boolean } {
+  const matching = kind === "all" ? items : items.filter((item) => item.kind === kind);
+  return { items: matching.slice(0, shown), more: matching.length > shown };
+}
+
+/** Next planned occurrence that may use this disk (first disk or in the rotation). */
+export function nextRotationFor(
+  disk: DiskRefLike,
+  events: readonly { enabled: boolean; disk_serial: string; rotation_disk_serials?: string[] | null; next_occurrence_at: string | null }[],
+): string | null {
+  const own = (serial: string) => findDisk([disk], { serial })?.id === disk.id;
+  const dates = events
+    .filter((event) => event.enabled && event.next_occurrence_at && [event.disk_serial, ...(event.rotation_disk_serials ?? [])].some(own))
+    .map((event) => event.next_occurrence_at as string)
+    .sort();
+  return dates[0] ?? null;
+}

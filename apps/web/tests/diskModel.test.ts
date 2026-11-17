@@ -70,12 +70,16 @@ test("B25: an ejected disk offers 'unplug then replug' instead of a backup", () 
 });
 
 test("actions per state", () => {
-  assert.deepEqual(diskActions(disk(), "approved"), ["backup", "rescan"]);
+  // Phase 5h.1: eject for every disk plugged in and not ejected (handed to PBS or not).
+  assert.deepEqual(diskActions(disk(), "approved"), ["backup", "eject", "rescan"]);
   assert.deepEqual(diskActions(disk({ pbs_visible: true, handoff_status: "visible_on_pbs" }), "approved"), ["backup", "eject", "rescan"]);
   assert.deepEqual(diskActions(disk(), "running"), ["follow", "eject"]);
-  assert.deepEqual(diskActions(disk({ operator_decision: "rejected" }), "rejected"), ["unreject", "hide", "rescan"]);
-  assert.deepEqual(diskActions(disk({ reject_reason: "zero_size" }), "rejected"), ["hide", "rescan"]);
-  assert.deepEqual(diskActions(disk(), "new"), []);
+  assert.deepEqual(diskActions(disk({ operator_decision: "rejected" }), "rejected"), ["unreject", "eject", "hide", "rescan"]);
+  assert.deepEqual(diskActions(disk({ reject_reason: "zero_size", connected: false }), "rejected"), ["hide", "rescan"]);
+  assert.deepEqual(diskActions(disk(), "new"), ["eject"]);
+  assert.deepEqual(diskActions(disk({ connected: false }), "new"), []);
+  assert.deepEqual(diskActions(disk(), "ignored"), ["eject", "rescan"]);
+  assert.deepEqual(diskActions(disk({ connected: false, handoff_status: "ejected" }), "ejected"), ["reactivate", "replug", "rescan"]);
 });
 
 test("tabs and counters (plugged includes an ejected disk still there)", () => {

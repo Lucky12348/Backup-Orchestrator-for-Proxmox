@@ -122,6 +122,46 @@ def replace_backup_job(job_id: str, payload: ProxmoxBackupJobUpsert, db: DbSessi
     return _job_to_read(updated, db)
 
 
+@router.post("/backup-jobs/{job_id}/run", status_code=status.HTTP_202_ACCEPTED)
+def run_backup_job_now(job_id: str, db: DbSession) -> dict[str, object]:
+    """"Run now" (PVE's button): vzdump with the job's parameters; follow the
+    task with GET /proxmox/tasks/{node}/{upid}."""
+    from datetime import datetime
+
+    from app.models import ActivityEvent
+    from app.services.pve_job_runs import JobRunError, run_job_now
+
+    settings = get_settings()
+    try:
+        started = run_job_now(ProxmoxClient(settings), job_id, settings.pve_node_name)
+    except JobRunError as exc:
+        code = status.HTTP_404_NOT_FOUND if exc.code == "job_not_found" else status.HTTP_409_CONFLICT
+        raise HTTPException(status_code=code, detail={"code": exc.code, "message": str(exc), **exc.extra}) from None
+    db.add(
+        ActivityEvent(
+            created_at=datetime.utcnow(),
+            category="proxmox",
+            action="job_run_started",
+            status="info",
+            summary=f"Proxmox backup job {job_id} started now on {started['node']}.",
+            details=started,
+        )
+    )
+    db.commit()
+    return started
+
+
+@router.get("/tasks/{node}/{upid}")
+def get_task_status(node: str, upid: str) -> dict[str, object]:
+    from app.services.pve_job_runs import JobRunError, task_status
+
+    try:
+        return task_status(ProxmoxClient(get_settings()), node, upid)
+    except JobRunError as exc:
+        code = status.HTTP_404_NOT_FOUND if exc.code == "task_unknown" else status.HTTP_409_CONFLICT
+        raise HTTPException(status_code=code, detail={"code": exc.code, "message": str(exc), **exc.extra}) from None
+
+
 @router.delete("/backup-jobs/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_backup_job(job_id: str) -> None:
     client = ProxmoxClient(get_settings())

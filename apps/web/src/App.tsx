@@ -223,7 +223,7 @@ function AuthenticatedApp() {
             path="/disks"
           />
           <Route
-            element={<DiskSheetView disks={data.disks} runs={data.externalBackupRuns} alerts={data.diskAlerts} language={language} t={t} onChanged={refresh} />}
+            element={<DiskSheetView disks={data.disks} runs={data.externalBackupRuns} alerts={data.diskAlerts} events={data.scheduledBackupEvents} language={language} t={t} onChanged={refresh} />}
             path="/disks/:id"
           />
           <Route

@@ -13,6 +13,7 @@ import {
   todoItems,
   type DashboardRun,
 } from "../src/views/dashboard/dashboardModel.ts";
+import { runPercent } from "../src/runs/runModel.ts";
 import type { DiskLike } from "../src/views/disks/diskModel.ts";
 import { fill, formatSize, formatWhen } from "../src/views/format.ts";
 
@@ -102,11 +103,13 @@ test("to do: only what needs an action", () => {
 });
 
 test("rotation disks: approved ones, the running one first, usage and last backup", () => {
-  const list = rotationDisks(disks, [run(15, { disk_id: 2 }), run(16, { status: "running", finished_at: null, progress_percent: 42 })]);
+  // Phase 5h.1: the same weighted percentage as the run modal (runModel.runPercent).
+  const running = run(16, { status: "running", finished_at: null, progress_percent: 42 });
+  const list = rotationDisks(disks, [run(15, { disk_id: 2 }), running]);
   assert.deepEqual(
     list.map((item) => [item.name, item.status, item.percent]),
     [
-      ["WD 4 To", "running", 42],
+      ["WD 4 To", "running", runPercent(running)],
       ["Toshiba 3 To", "unplugged", null],
     ],
   );

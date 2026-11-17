@@ -84,8 +84,9 @@ test("B48: the launch dialog never shows a guess as an estimate", () => {
 
 test("rejected disks: size next to the minimum, approve anyway, hide", () => {
   const base = { id: 1, serial_number: "S", display_name: "Petit", capacity_gb: 16, connected: true, trusted: false };
-  assert.deepEqual(diskActions({ ...base, reject_reason: "too_small" }, "rejected"), ["approveAnyway", "hide", "rescan"]);
-  assert.deepEqual(diskActions({ ...base, reject_reason: "zero_size" }, "rejected"), ["hide", "rescan"]);
+  // Phase 5h.1: still plugged in → it can be ejected too.
+  assert.deepEqual(diskActions({ ...base, reject_reason: "too_small" }, "rejected"), ["approveAnyway", "eject", "hide", "rescan"]);
+  assert.deepEqual(diskActions({ ...base, reject_reason: "zero_size" }, "rejected"), ["eject", "hide", "rescan"]);
   const hidden = { ...base, id: 2, status: "hidden", operator_decision: "hidden" };
   assert.deepEqual(diskActions(hidden, "hidden"), ["unhide"]);
   const rows = diskRows([{ ...base, reject_reason: "too_small" }, hidden], []);

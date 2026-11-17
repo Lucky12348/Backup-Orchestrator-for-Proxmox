@@ -3,6 +3,7 @@
 
 import { activeRunFor, diskUiStatus, type DiskLike, type DiskUiStatus, type RunLike, usagePercent } from "../disks/diskModel.ts";
 import { todoAlerts, type AlertLike } from "../disks/diskProfile.ts";
+import { runPercent } from "../../runs/runModel.ts";
 
 export interface OverviewLike {
   total_vms: number;
@@ -209,7 +210,11 @@ export function rotationDisks(disks: readonly DiskLike[], runs: readonly RunLike
         totalGb: total,
         freeGb: disk.filesystem_used_gb != null ? Math.max(0, total - disk.filesystem_used_gb) : null,
         lastBackupAt: lastSuccess?.finished_at ?? null,
-        percent: activeRunFor(disk, runs)?.progress_percent ?? null,
+        // Phase 5h.1: the same weighted percentage as the run modal.
+        percent: (() => {
+          const run = activeRunFor(disk, runs);
+          return run ? runPercent(run as Parameters<typeof runPercent>[0]) : null;
+        })(),
       };
     })
     .sort((a, b) => Number(b.status === "running") - Number(a.status === "running") || (b.lastBackupAt ?? "").localeCompare(a.lastBackupAt ?? ""))

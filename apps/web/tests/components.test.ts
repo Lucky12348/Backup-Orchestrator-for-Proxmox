@@ -29,6 +29,8 @@ before(async () => {
         'export { InfoTip } from "./src/ui/InfoTip";',
         'export { ConfirmModal } from "./src/components/ConfirmModal";',
         'export { DiskCard, DiskDetail, ApprovalFlow, StatusPill } from "./src/views/disks/DisksView";',
+        'export { diskMenuKeys } from "./src/views/disks/diskMenu";',
+        'export { CapacityCard, DiskHistoryList } from "./src/views/disks/DiskSheetParts";',
         'export { DashboardView } from "./src/views/dashboard/DashboardView";',
         'export { ToastProvider } from "./src/ui/toast";',
         'export { ConfirmProvider } from "./src/ui/confirm";',
@@ -160,7 +162,8 @@ test("DiskCard: name, status pill, capacity", () => {
   assert.ok(markup.includes("data-context-menu") && markup.includes("data-menu-button") && markup.includes('aria-label="Actions — WD 4 To"'));
   assert.ok(markup.includes('data-status="approved"') && markup.includes("Approuvé"));
   // Phase 5f: used and total in one unit.
-  assert.ok(markup.includes("0,71 / 3,57 Tio utilisés · 20 %"));
+  // Phase 5h.1: the shared formatter (units.usageParts).
+  assert.ok(markup.includes("0,71 / 3,57 Tio utilisés · 20\u202f%"));
   assert.ok(markup.includes('aria-pressed="true"'));
 });
 
@@ -184,11 +187,14 @@ function detail(disk: Record<string, unknown>, status: string, extra: Record<str
   );
 }
 
-test("B25: an ejected disk shows 'unplug then replug', no backup button", () => {
+test("B25 / 5h.1: an ejected disk: Reactivate first, 'unplug then replug' as a hint, detection discreet", () => {
   const markup = detail({ ...baseDisk, connected: false, status: "ejected", handoff_status: "ejected" }, "ejected");
-  assert.ok(markup.includes("Débranchez puis rebranchez le disque"));
+  assert.ok(markup.includes("Réactiver"));
+  assert.ok(markup.includes("data-replug-hint") && markup.includes("Ou débranchez puis rebranchez le disque."));
+  assert.doesNotMatch(markup, /<button[^>]*>[^<]*Débranchez/);
   assert.ok(!markup.includes("Lancer une sauvegarde"));
-  assert.ok(markup.includes("Relancer la détection"));
+  assert.match(markup, /<button[^>]*data-rescan[^>]*>/);
+  assert.ok(markup.indexOf("Réactiver") < markup.indexOf("Relancer la détection"));
 });
 
 test("approved disk: backup button disabled until readiness answers; technical ids folded", () => {
@@ -200,8 +206,9 @@ test("approved disk: backup button disabled until readiness answers; technical i
 
 test("running disk: follow the backup with its percentage, eject only after it", () => {
   const markup = detail(baseDisk, "running", { run: { id: 9, disk_id: 1, status: "running", progress_percent: 42 } });
-  assert.ok(markup.includes("Suivre la sauvegarde · 42 %"));
-  assert.ok(markup.includes("Éjecter (après la sauvegarde)"));
+  // Phase 5h.1: the modal's weighted percentage (runModel.runPercent), not the copy's 42 %.
+  assert.match(markup, /Suivre la sauvegarde · \d+ %/);
+  assert.match(markup, /<button[^>]*disabled=""[^>]*title="Disponible à la fin[^"]*"[^>]*>.*?Éjecter \(après la sauvegarde\)/s);
 });
 
 test("new disk: approval flow with the data warning and a disabled approve button", () => {
@@ -574,9 +581,17 @@ test("UsageChart: one series with 80/90 % lines and a table view", () => {
     { at: "2026-11-01T00:00:00Z", time: Date.parse("2026-11-01T00:00:00Z"), percent: 85, usedGb: 3111, totalGb: 3660 },
   ];
   const markup = html(createElement(ui.UsageChart, { points, name: "WD 4 To", language: "fr", t: translations.fr }));
-  assert.ok(markup.includes('role="img"') && markup.includes('aria-label="Occupation de WD 4 To dans le temps, en pourcentage"'));
-  assert.ok(markup.includes('data-threshold="80"') && markup.includes('data-threshold="90"'));
-  assert.ok(markup.includes("Afficher en tableau") && markup.includes("85 %") && markup.includes("3,04 / 3,57 Tio"));
+  assert.ok(markup.includes('role="img"') && markup.includes('aria-label="Espace utilisé de WD 4 To dans le temps, en Gio"'));
+  // Phase 5h.1: the 80/90 % marks only when inside the data's scale (1 464 → 3 111 Gio, top ≈ 3 276: 80 % = 2 928 is, 90 % = 3 294 is not).
+  assert.ok(markup.includes('data-threshold="80"') && !markup.includes('data-threshold="90"'));
+  assert.ok(markup.includes("Afficher en tableau") && markup.includes("3,04 / 3,57 Tio"));
+  // Y axis in GiB, not 0–100 %.
+  assert.ok(markup.includes("data-tick") && !/data-tick[^>]*>\d+ %/.test(markup));
+  const low = [
+    { at: "2026-10-01T00:00:00Z", time: Date.parse("2026-10-01T00:00:00Z"), percent: 0.03, usedGb: 0.15, totalGb: 491 },
+    { at: "2026-10-03T00:00:00Z", time: Date.parse("2026-10-03T00:00:00Z"), percent: 0.04, usedGb: 0.18, totalGb: 491 },
+  ];
+  assert.ok(!html(createElement(ui.UsageChart, { points: low, name: "x", language: "fr", t: translations.fr })).includes("data-threshold"));
   const empty = html(createElement(ui.UsageChart, { points: [], name: "x", language: "en", t: translations.en }));
   assert.ok(empty.includes("No usage measured yet"));
 });
@@ -646,8 +661,15 @@ test("ActionMenuArea / ActionMenuButton: same actions, focusable for Shift+F10, 
   assert.equal(html(createElement(ui.ActionMenuButton, { actions: [], label: "x" })), ""); // nothing to offer: no button
 });
 
-test("DiskSheetView: the identity comes first, with the menu; usage chart text is HTML", () => {
-  const disk = { ...baseDisk, usage_history: [{ at: "2026-11-01T00:00:00Z", used_gb: 700, total_gb: 3660 }, { at: "2026-11-10T00:00:00Z", used_gb: 900, total_gb: 3660 }] };
+test("DiskSheetView (5h.1): compact header, 4 indicators, actions, 2/3 – 1/3 grid; capacity before the chart", () => {
+  const disk = {
+    ...baseDisk,
+    usage_history: [
+      { at: "2026-11-01T00:00:00Z", used_gb: 700, total_gb: 3660 },
+      { at: "2026-11-05T00:00:00Z", used_gb: 800, total_gb: 3660 },
+      { at: "2026-11-10T00:00:00Z", used_gb: 900, total_gb: 3660 },
+    ],
+  };
   const markup = html(
     createElement(
       ui.MemoryRouter,
@@ -660,11 +682,21 @@ test("DiskSheetView: the identity comes first, with the menu; usage chart text i
           })))),
     ),
   );
-  assert.ok(markup.includes('id="identity"') && markup.includes("data-preview-name") && markup.includes("data-menu-button"));
-  assert.ok(markup.indexOf("data-identity") < markup.indexOf("data-usage-chart"));
-  // B38: no SVG <text> (it scaled with the width); labels and thresholds are HTML.
+  assert.ok(markup.includes("data-identity") && markup.includes("data-edit-identity") && markup.includes("data-menu-button"));
+  // The identity is no permanent form any more: the side panel is closed.
+  assert.ok(!markup.includes("data-preview-name") && !markup.includes("data-identity-panel"));
+  for (const key of ["used", "last", "health", "next"]) assert.ok(markup.includes(`data-indicator="${key}"`), key);
+  assert.ok(markup.includes("Espace utilisé") && markup.includes("Dernière sauvegarde") && markup.includes("Prochaine rotation") && markup.includes("Non planifiée"));
+  const actions = markup.slice(markup.indexOf("data-sheet-actions"));
+  assert.ok(actions.indexOf("Sauvegarder") >= 0 && actions.indexOf("Vérifier") >= 0 && actions.indexOf("Éjecter") >= 0);
+  assert.ok(markup.includes("lg:grid-cols-3") && markup.includes("lg:col-span-2"));
+  // Left: Contents, Capacity, History; right: Health, Retention, Reminder.
+  const order = ["data-capacity", "data-history", "Rétention", "Rappel"].map((needle) => markup.indexOf(needle));
+  assert.ok(order.every((index, i) => index > 0 && (i === 0 || index > order[i - 1])), String(order));
+  assert.ok(markup.indexOf("data-capacity") < markup.indexOf("data-usage-chart"));
+  // B38: no SVG <text> (it scaled with the width); labels are HTML, in Gio.
   const chart = markup.slice(markup.indexOf("data-usage-chart"));
-  assert.ok(!chart.includes("<text") && chart.includes('data-threshold="80"') && chart.includes("50 %"));
+  assert.ok(!chart.includes("<text") && chart.includes("Gio"));
 });
 
 test("LogLines: follows the end while running; no resume button at the bottom", () => {
@@ -673,4 +705,44 @@ test("LogLines: follows the end while running; no resume button at the bottom", 
   assert.ok(running.includes("data-following") && !running.includes("data-resume"));
   const ended = html(createElement(ui.LogLines, { entries, templates: {}, empty: "-", follow: false, resumeLabel: "Reprendre le suivi" }));
   assert.ok(!ended.includes("data-following"));
+});
+
+// --- Phase 5h.1 ----------------------------------------------------------------------------------
+
+test("eject everywhere: offered for any plugged disk, disabled during a run, absent once ejected", () => {
+  const base = { ...baseDisk, connected: true };
+  assert.deepEqual(ui.diskMenuKeys(base).find((item: { key: string }) => item.key === "eject"), { key: "eject", disabled: false });
+  const busy = ui.diskMenuKeys(base, [{ id: 2, disk_id: base.id, status: "running", started_at: "2026-11-18T01:00:00Z" }]);
+  assert.deepEqual(busy.find((item: { key: string }) => item.key === "eject"), { key: "eject", disabled: true });
+  const ejected = ui.diskMenuKeys({ ...base, connected: false, handoff_status: "ejected", status: "ejected" });
+  assert.ok(!ejected.some((item: { key: string }) => item.key === "eject") && ejected.some((item: { key: string }) => item.key === "reactivate"));
+  for (const lang of ["fr", "en"] as const) {
+    const t = translations[lang];
+    assert.ok(t.menu.disk.ejectRunningHint && t.disksV2.action.replugHint && t.menu.job.runNowTitle && t.diskSheet.indicator.nextRotation);
+  }
+});
+
+test("DiskHistoryList: rows open the run (buttons), 'Show more', 'See all in Activity' filtered on the disk", () => {
+  const runs = Array.from({ length: 7 }, (_, index) => ({
+    id: 100 + index,
+    disk_id: baseDisk.id,
+    status: "success",
+    started_at: `2026-11-1${index}T01:00:00Z`,
+    finished_at: `2026-11-1${index}T02:00:00Z`,
+    verify_only: index === 2,
+  }));
+  const panel = html(inApp(createElement(ui.DiskHistoryList, { disk: baseDisk, runs, language: "fr", t: translations.fr, pageSize: 5 })));
+  assert.equal((panel.match(/<button[^>]*data-history-run=/g) ?? []).length, 5);
+  assert.ok(panel.includes("Afficher plus") && panel.includes(`href="/activity?disk=${baseDisk.id}"`) && panel.includes("Tout voir dans Activité"));
+  assert.ok(!panel.includes('aria-pressed="true"'), "no type filter in the panel");
+  const sheet = html(inApp(createElement(ui.DiskHistoryList, { disk: baseDisk, runs, language: "fr", t: translations.fr, pageSize: 10, filterable: true })));
+  assert.equal((sheet.match(/data-history-run=/g) ?? []).length, 7);
+  assert.ok(!sheet.includes("Afficher plus") && sheet.includes("Filtrer par type") && sheet.includes("Vérification"));
+});
+
+test("CapacityCard: real values, '< 1 %', no chart below 3 measures over 2 days", () => {
+  const disk = { ...baseDisk, filesystem_used_gb: 0.18, filesystem_total_gb: 491, usage_history: [{ at: "2026-11-01T00:00:00Z", used_gb: 0.18, total_gb: 491 }] };
+  const markup = html(inApp(createElement(ui.CapacityCard, { disk, runs: [], language: "fr", t: translations.fr })));
+  assert.ok(markup.includes("Capacité") && markup.includes("184 Mio utilisés sur 491 Gio") && markup.includes("&lt; 1\u202f%"));
+  assert.ok(markup.includes("Pas encore estimable") && !markup.includes("data-capacity-chart"));
 });

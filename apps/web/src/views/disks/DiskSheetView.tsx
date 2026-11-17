@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Camera, Loader2, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
+import { ArrowLeft, Camera, Loader2, Pencil, Play, RefreshCw, ShieldCheck, Trash2, Unplug, X } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 
 import {
@@ -7,6 +7,7 @@ import {
   dismissDiskVerify,
   getDiskContents,
   getRotationStaleDays,
+  reactivateDisk,
   refreshDiskContents,
   setRotationStaleDays,
   startDiskVerify,
@@ -19,36 +20,37 @@ import { cn } from "../../components/ui/utils";
 import type { Language, TranslationDictionary } from "../../i18n";
 import { ApiError } from "../../notices";
 import { openRunModal } from "../../runs/openRun";
-import type { ExternalBackupRun, ExternalDisk } from "../../types";
+import type { ExternalBackupRun, ExternalDisk, ScheduledBackupEvent } from "../../types";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../../components/ui/dialog";
+import { useNow } from "../../ui/useNow";
+import { useCommands } from "../commands";
+import { CapacityCard, DiskHistoryList } from "./DiskSheetParts";
 import { useToast } from "../../ui/toast";
-import { formatBytes, formatUsage } from "../../units";
-import { fill, formatReadAt, formatWhen } from "../format";
+import { formatBytes, usageParts } from "../../units";
+import { fill, formatDay, formatReadAt, formatTime, formatWhen } from "../format";
 import { ActionMenuButton } from "../../ui/ActionMenu";
 import { useDiskMenu } from "./diskMenu";
 import { AlertBadges, CONFIG_ALERT_NOTE, DamagedVersions, DiskAvatar, PbsConfigNotice } from "./DiskBits";
-import { diskHistory, diskRows, usagePercent, type DiskRow, type Tone } from "./diskModel";
+import { diskActions, diskRows, runKind, type DiskRow } from "./diskModel";
 import {
   alertsFor,
   COLOR_CLASS,
   DISK_COLORS,
   diskColor,
   diskKind,
+  nextRotationFor,
   retentionForm,
   retentionPayload,
-  usageLevel,
-  usageSeries,
   type DiskColor,
   type RetentionForm,
 } from "./diskProfile";
 import { StatusPill } from "./DisksView";
-import { UsageChart } from "./UsageChart";
 
 const card = "flex flex-col gap-3 rounded-[14px] border border-solid border-border bg-surface p-[18px]";
 const input = "rounded-lg border border-solid border-border-strong bg-bg px-3 py-[9px] text-sm text-fg outline-none focus:border-accent";
 const secondary =
   "flex items-center justify-center gap-2 rounded-lg border border-solid border-border bg-subtle px-3 py-[9px] text-[13px] font-medium text-fg hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50";
 const primary = "flex items-center justify-center gap-2 rounded-lg border-0 bg-accent px-3.5 py-[9px] text-[13px] font-medium text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50";
-const DOT: Record<Tone, string> = { ok: "bg-success", run: "bg-accent", warn: "bg-warning", err: "bg-danger", off: "bg-faint" };
 const SMART_TONE: Record<string, string> = {
   ok: "bg-success/15 text-success-text",
   warning: "bg-warning/15 text-warning-text",
@@ -60,6 +62,8 @@ export interface DiskSheetViewProps {
   disks: ExternalDisk[];
   runs: ExternalBackupRun[];
   alerts: DiskAlert[];
+  /** Plannings: the header's "Next rotation" (Phase 5h.1). */
+  events?: ScheduledBackupEvent[];
   language: Language;
   t: TranslationDictionary;
   onChanged: () => Promise<void> | void;
@@ -71,10 +75,12 @@ export function errorMessage(error: unknown, t: TranslationDictionary): string {
   return error instanceof Error ? error.message : t.error;
 }
 
-export function DiskSheetView({ disks, runs, alerts, language, t, onChanged }: DiskSheetViewProps) {
+export function DiskSheetView({ disks, runs, alerts, events = [], language, t, onChanged }: DiskSheetViewProps) {
   const { id } = useParams();
   const disk = disks.find((item) => String(item.id) === id);
   const text = t.diskSheet;
+  // "Rename / colour…" from a disk menu lands on /disks/:id#identity: the panel opens.
+  const [editing, setEditing] = useState(() => typeof window !== "undefined" && window.location.hash === "#identity");
   if (!disk) {
     return (
       <div className="flex flex-col gap-4">
@@ -88,8 +94,8 @@ export function DiskSheetView({ disks, runs, alerts, language, t, onChanged }: D
   return (
     <div className="flex flex-col gap-[18px]" data-disk-sheet={disk.id}>
       <BackLink t={t} />
-      {/* Phase 5h: the identity first, with a live preview of what is being edited. */}
-      <IdentityCard disk={disk} row={row} alerts={diskAlerts} runs={runs} t={t} onChanged={onChanged} />
+      {/* Phase 5h.1: a compact header on the whole width, the identity edited in a side panel. */}
+      <SheetHeader disk={disk} row={row} alerts={diskAlerts} runs={runs} events={events} language={language} t={t} onEdit={() => setEditing(true)} onChanged={onChanged} />
 
       {diskAlerts
         .filter((alert) => alert.code in CONFIG_ALERT_NOTE)
@@ -109,37 +115,144 @@ export function DiskSheetView({ disks, runs, alerts, language, t, onChanged }: D
         <VerifyBanner disk={disk} t={t} language={language} onChanged={onChanged} failed={diskAlerts.some((alert) => alert.code === "verify_failed")} />
       ) : null}
 
-      <div className="grid items-start gap-[18px] xl:grid-cols-[minmax(0,1fr)_400px]">
-        <div className="flex min-w-0 flex-col gap-[18px]">
+      {/* 2/3 – 1/3; one column on mobile. */}
+      <div className="grid items-start gap-[18px] lg:grid-cols-3">
+        <div className="flex min-w-0 flex-col gap-[18px] lg:col-span-2">
           <ContentsCard disk={disk} t={t} language={language} />
-          <section className={card} aria-labelledby="usage-title">
-            <div className="flex flex-wrap items-baseline gap-2">
-              <h2 id="usage-title" className="m-0 text-[15px] font-semibold">{text.usage}</h2>
-              <span className="flex-1" />
-              {usagePercent(disk) !== null ? (
-                <span
-                  className={cn(
-                    "text-[13px] font-medium",
-                    { ok: "text-muted", warning: "text-warning-text", danger: "text-danger-text" }[usageLevel(usagePercent(disk))],
-                  )}
-                >
-                  {fill(text.usageNow, { usage: formatUsage(disk.filesystem_used_gb, disk.filesystem_total_gb, language), pct: usagePercent(disk) ?? 0 })}
-                </span>
-              ) : null}
-            </div>
-            <UsageChart points={usageSeries(disk.usage_history)} name={disk.display_name} language={language} t={t} />
-          </section>
-          <section className={card}>
-            <h2 className="m-0 text-[15px] font-semibold">{text.history}</h2>
-            <History disk={disk} runs={runs} language={language} t={t} />
+          <CapacityCard disk={disk} runs={runs} language={language} t={t} className={card} />
+          <section className={card} aria-labelledby="history-title">
+            <h2 id="history-title" className="m-0 text-[15px] font-semibold">{text.history}</h2>
+            <DiskHistoryList disk={disk} runs={runs} language={language} t={t} pageSize={10} filterable />
           </section>
         </div>
         <div className="flex min-w-0 flex-col gap-[18px]">
           <HealthCard disk={disk} t={t} language={language} />
           <RetentionCard disk={disk} t={t} onChanged={onChanged} />
+          <ReminderCard t={t} />
         </div>
       </div>
+      <IdentityPanel open={editing} disk={disk} t={t} onClose={() => setEditing(false)} onChanged={onChanged} />
     </div>
+  );
+}
+
+const SMART_LABEL_TONE: Record<string, string> = { ok: "text-success-text", warning: "text-warning-text", danger: "text-danger-text", unknown: "text-muted" };
+
+/** Name, state, model · serial · location, four indicators, the main actions. */
+function SheetHeader({
+  disk,
+  row,
+  alerts,
+  runs,
+  events,
+  language,
+  t,
+  onEdit,
+  onChanged,
+}: {
+  disk: ExternalDisk;
+  row: DiskRow<ExternalDisk>;
+  alerts: DiskAlert[];
+  runs: ExternalBackupRun[];
+  events: ScheduledBackupEvent[];
+  language: Language;
+  t: TranslationDictionary;
+  onEdit: () => void;
+  onChanged: () => Promise<void> | void;
+}) {
+  const text = t.diskSheet;
+  const now = useNow();
+  const commands = useCommands();
+  const { toast } = useToast();
+  const actions = useDiskMenu(disk, t, runs);
+  const panel = diskActions(disk, row.status);
+  const usage = usageParts(disk.filesystem_used_gb, disk.filesystem_total_gb, language);
+  const lastBackup = runs
+    .filter((run) => run.disk_id === disk.id && run.status === "success" && runKind(run) === "backup")
+    .sort((a, b) => (b.finished_at ?? b.started_at).localeCompare(a.finished_at ?? a.started_at))[0];
+  const next = nextRotationFor(disk, events);
+  const smart = disk.smart_status ?? null;
+  const ready = row.status === "approved";
+  const verifiable = ready && Boolean(disk.prepared_as_pbs_datastore && disk.pbs_datastore_name);
+  async function verify() {
+    try {
+      const result = await startDiskVerify(disk.id, false);
+      openRunModal(result.run_id);
+      await onChanged();
+    } catch (error) {
+      toast({ tone: "danger", title: errorMessage(error, t), diskId: disk.id });
+    }
+  }
+  async function reactivate() {
+    try {
+      await reactivateDisk(disk.id);
+      toast({ tone: "success", title: fill(t.disksV2.action.reactivated, { name: disk.display_name }), diskId: disk.id });
+      await onChanged();
+    } catch (error) {
+      toast({ tone: "danger", title: errorMessage(error, t), diskId: disk.id });
+    }
+  }
+  const indicators: { key: string; label: string; value: string; tone?: string }[] = [
+    { key: "used", label: text.indicator.used, value: usage ? `${usage.usage} · ${usage.pct}` : "—" },
+    { key: "last", label: text.indicator.lastBackup, value: formatWhen(lastBackup?.finished_at ?? null, language, now, t.dashboardV2) },
+    { key: "health", label: text.indicator.health, value: smart ? text.smart[smart as keyof typeof text.smart] : text.smart.none, tone: SMART_LABEL_TONE[smart ?? "unknown"] },
+    { key: "next", label: text.indicator.nextRotation, value: next ? `${formatDay(next, language)} · ${formatTime(next, language)}` : text.indicator.notPlanned },
+  ];
+  return (
+    <section className={cn(card, "gap-4")} aria-labelledby="disk-name" data-identity>
+      <div className="flex flex-wrap items-start gap-4">
+        <DiskAvatar disk={disk} t={t} size="hd" />
+        <div className="flex min-w-[220px] flex-1 flex-col gap-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 id="disk-name" className="m-0 min-w-0 truncate text-[24px] font-semibold tracking-[-0.02em]">{disk.display_name}</h1>
+            <button type="button" onClick={onEdit} aria-label={text.edit} title={text.edit} className="flex h-8 w-8 items-center justify-center rounded-lg border-0 bg-transparent text-faint hover:bg-hover hover:text-fg" data-edit-identity>
+              <Pencil className="h-4 w-4" />
+            </button>
+            <StatusPill status={row.status} label={t.disksV2.status[row.status]} />
+          </div>
+          <span className="text-[13px] text-muted">
+            {[text.kind[diskKind(disk.kind)], disk.model_name, disk.serial_number, disk.location_note].filter(Boolean).join(" · ")}
+          </span>
+          <AlertBadges alerts={alerts} t={t} />
+        </div>
+        <div className="flex flex-wrap items-center gap-2" data-sheet-actions>
+          <button type="button" className={primary} disabled={!ready} onClick={() => commands.backup(disk)}>
+            <Play className="h-4 w-4" />
+            {t.menu.disk.backup}
+          </button>
+          <button type="button" className={secondary} disabled={!verifiable} onClick={() => void verify()}>
+            <ShieldCheck className="h-4 w-4" />
+            {t.menu.disk.verify}
+          </button>
+          {panel.includes("reactivate") ? (
+            <button type="button" className={secondary} onClick={() => void reactivate()}>
+              <RefreshCw className="h-4 w-4" />
+              {t.disksV2.action.reactivate}
+            </button>
+          ) : panel.includes("eject") ? (
+            <button
+              type="button"
+              className={secondary}
+              disabled={row.status === "running"}
+              title={row.status === "running" ? t.menu.disk.ejectRunningHint : undefined}
+              onClick={() => commands.eject(disk)}
+            >
+              <Unplug className="h-4 w-4" />
+              {t.menu.disk.eject}
+            </button>
+          ) : null}
+          <ActionMenuButton actions={actions} label={fill(t.menu.label, { name: disk.display_name })} />
+        </div>
+      </div>
+      <dl className="m-0 grid grid-cols-2 gap-3 border-0 border-t border-solid border-border pt-4 md:grid-cols-4" data-indicators>
+        {indicators.map((item) => (
+          <div key={item.key} className="flex min-w-0 flex-col gap-0.5" data-indicator={item.key}>
+            <dt className="text-xs text-faint">{item.label}</dt>
+            <dd className={cn("m-0 truncate text-[14px] font-medium", item.tone ?? "text-fg")}>{item.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
   );
 }
 
@@ -289,51 +402,21 @@ export function ContentsCard({ disk, t, language, initial }: { disk: ExternalDis
   );
 }
 
-function History({ disk, runs, language, t }: { disk: ExternalDisk; runs: ExternalBackupRun[]; language: Language; t: TranslationDictionary }) {
-  const items = diskHistory(disk, runs, 20);
-  if (!items.length) return <p className="m-0 text-[13px] text-faint">{t.disksV2.noHistory}</p>;
-  return (
-    <div className="flex flex-col">
-      {items.map((item) => (
-        <button
-          key={item.id}
-          type="button"
-          onClick={() => openRunModal(item.id)}
-          className="flex items-center gap-2.5 rounded-md border-0 bg-transparent px-1 py-1.5 text-left text-[13px] text-fg hover:bg-hover"
-        >
-          <span className={cn("h-[7px] w-[7px] flex-none rounded-full", DOT[item.tone])} />
-          <span className="flex-1 text-muted">
-            {(t.disksV2.historyKind as Record<string, string>)[item.kind] ?? item.kind} ·{" "}
-            {(t.disksV2.historyStatus as Record<string, string>)[item.status] ?? item.status}
-          </span>
-          <span className="text-xs text-faint">{when(item.at, language, t)}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function IdentityCard({
+/** Phase 5h.1: the identity is edited in a side panel (not a permanent form),
+ *  with a live preview of the name, colour and photo. */
+function IdentityPanel({
+  open,
   disk,
-  row,
-  alerts,
-  runs,
   t,
+  onClose,
   onChanged,
 }: {
+  open: boolean;
   disk: ExternalDisk;
-  row: DiskRow<ExternalDisk>;
-  alerts: DiskAlert[];
-  runs: ExternalBackupRun[];
   t: TranslationDictionary;
+  onClose: () => void;
   onChanged: () => Promise<void> | void;
 }) {
-  const actions = useDiskMenu(disk, t, runs);
-  const anchor = useRef<HTMLElement | null>(null);
-  useEffect(() => {
-    // "Rename / colour…" from a context menu lands here.
-    if (window.location.hash === "#identity") anchor.current?.querySelector("input")?.focus();
-  }, []);
   const text = t.diskSheet;
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -341,6 +424,12 @@ function IdentityCard({
   const [color, setColor] = useState<DiskColor | null>(diskColor(disk.color));
   const [location, setLocation] = useState(disk.location_note ?? "");
   const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    setName(disk.display_name);
+    setColor(diskColor(disk.color));
+    setLocation(disk.location_note ?? "");
+  }, [open, disk.display_name, disk.color, disk.location_note]);
   const dirty = name.trim() !== disk.display_name || color !== diskColor(disk.color) || location.trim() !== (disk.location_note ?? "");
 
   async function save() {
@@ -351,8 +440,9 @@ function IdentityCard({
     setBusy(true);
     try {
       await updateDiskProfile(disk.id, { display_name: name.trim(), color, location_note: location.trim() || null });
-      toast({ tone: "success", title: text.saved });
+      toast({ tone: "success", title: text.saved, diskId: disk.id });
       await onChanged();
+      onClose();
     } catch (error) {
       toast({ tone: "danger", title: errorMessage(error, t) });
     } finally {
@@ -390,83 +480,83 @@ function IdentityCard({
     }
   }
 
-  // Live preview: the avatar and the title follow the draft (name, colour) before saving.
+  // Live preview: what the disk will look like everywhere once saved.
   const preview = { ...disk, display_name: name.trim() || disk.display_name, color };
   return (
-    <section ref={anchor} id="identity" className={cn(card, "grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(300px,420px)]")} aria-labelledby="identity-title" data-identity>
-      <div className="flex min-w-0 flex-col gap-3">
-        <div className="flex flex-wrap items-start gap-4">
-          <DiskAvatar disk={preview} t={t} size="lg" />
-          <div className="flex min-w-0 flex-1 flex-col gap-1">
-            <div className="flex flex-wrap items-center gap-2.5">
-              <h1 className="m-0 min-w-0 truncate text-[26px] font-semibold tracking-[-0.02em]" data-preview-name>{preview.display_name}</h1>
-              <StatusPill status={row.status} label={t.disksV2.status[row.status]} />
-              <span className="flex-1" />
-              <ActionMenuButton actions={actions} label={fill(t.menu.label, { name: disk.display_name })} />
+    <Dialog open={open} onOpenChange={(value) => !value && onClose()}>
+      <DialogContent
+        aria-describedby="identity-help"
+        className="bottom-0 left-auto right-0 top-0 h-full max-h-none w-[min(440px,100vw)] max-w-none translate-x-0 overflow-y-auto rounded-none border-0 border-l border-solid"
+        data-identity-panel
+      >
+        <div className="flex items-center gap-3 border-0 border-b border-solid border-border px-5 py-4">
+          <DialogTitle className="m-0 flex-1 text-[17px] font-semibold">{text.identity}</DialogTitle>
+          <button type="button" aria-label={t.shell.close} title={t.shell.close} onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-lg border-0 bg-transparent text-faint outline-none hover:bg-subtle hover:text-fg focus-visible:bg-subtle">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="flex flex-col gap-4 px-5 py-4">
+          <DialogDescription id="identity-help" className="m-0 text-[13px] text-muted">{text.identityHelp}</DialogDescription>
+          <div className="flex items-center gap-3 rounded-[12px] bg-subtle p-3" data-preview>
+            <DiskAvatar disk={preview} t={t} size="hd" />
+            <div className="flex min-w-0 flex-col">
+              <span className="truncate text-[17px] font-semibold" data-preview-name>{preview.display_name}</span>
+              <span className="truncate text-xs text-faint">{[disk.model_name, disk.serial_number, location.trim()].filter(Boolean).join(" · ")}</span>
             </div>
-            <span className="text-[13px] text-muted">{[text.kind[diskKind(disk.kind)], disk.model_name, disk.serial_number].filter(Boolean).join(" · ")}</span>
-            {location.trim() ? <span className="text-[13px] text-faint">{fill(text.locationShown, { location: location.trim() })}</span> : null}
-            <AlertBadges alerts={alerts} t={t} />
+          </div>
+          <label className="flex flex-col gap-1.5 text-[13px] text-muted">
+            {text.name}
+            <input className={input} value={name} maxLength={255} onChange={(event) => setName(event.target.value)} />
+          </label>
+          <div className="flex flex-col gap-1.5 text-[13px] text-muted">
+            <span id="color-label">{text.color}</span>
+            <div role="radiogroup" aria-labelledby="color-label" className="flex gap-2">
+              {DISK_COLORS.map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={color === value}
+                  aria-label={text.colors[value]}
+                  title={text.colors[value]}
+                  onClick={() => setColor(color === value ? null : value)}
+                  className={cn("h-7 w-7 rounded-full border-2 border-solid", COLOR_CLASS[value].swatch, color === value ? "border-fg" : "border-transparent hover:border-border-strong")}
+                />
+              ))}
+            </div>
+          </div>
+          <label className="flex flex-col gap-1.5 text-[13px] text-muted">
+            {text.location}
+            <input className={input} value={location} maxLength={500} placeholder={text.locationPlaceholder} onChange={(event) => setLocation(event.target.value)} />
+          </label>
+          <div className="flex flex-col gap-2 border-0 border-t border-solid border-border pt-3">
+            <span className="text-[13px] text-muted">{text.photo}</span>
+            <div className="flex flex-wrap items-center gap-2">
+              <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" aria-label={text.addPhoto} onChange={(event) => void upload(event.target.files?.[0])} />
+              <button type="button" className={secondary} disabled={busy} onClick={() => fileRef.current?.click()}>
+                <Camera className="h-4 w-4" />
+                {disk.photo_version ? text.changePhoto : text.addPhoto}
+              </button>
+              {disk.photo_version ? (
+                <button type="button" className={secondary} disabled={busy} onClick={() => void removePhoto()} aria-label={text.removePhoto}>
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              ) : null}
+            </div>
+            <span className="text-xs text-faint">{text.photoHint}</span>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            className="hidden"
-            aria-label={text.addPhoto}
-            onChange={(event) => void upload(event.target.files?.[0])}
-          />
-          <button type="button" className={secondary} disabled={busy} onClick={() => fileRef.current?.click()}>
-            <Camera className="h-4 w-4" />
-            {disk.photo_version ? text.changePhoto : text.addPhoto}
+        <div className="mt-auto flex justify-end gap-2 border-0 border-t border-solid border-border px-5 py-3.5">
+          <button type="button" className={secondary} onClick={onClose}>
+            {t.confirmDialogs.cancel}
           </button>
-          {disk.photo_version ? (
-            <button type="button" className={secondary} disabled={busy} onClick={() => void removePhoto()} aria-label={text.removePhoto}>
-              <Trash2 className="h-4 w-4" />
-            </button>
-          ) : null}
-          <span className="text-xs text-faint">{text.photoHint}</span>
+          <button type="button" className={primary} disabled={!dirty || busy} onClick={() => void save()}>
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {text.save}
+          </button>
         </div>
-      </div>
-      <div className="flex flex-col gap-3">
-      <h2 id="identity-title" className="m-0 text-[15px] font-semibold">{text.identity}</h2>
-      <label className="flex flex-col gap-1.5 text-[13px] text-muted">
-        {text.name}
-        <input className={input} value={name} maxLength={255} onChange={(event) => setName(event.target.value)} />
-      </label>
-      <div className="flex flex-col gap-1.5 text-[13px] text-muted">
-        <span id="color-label">{text.color}</span>
-        <div role="radiogroup" aria-labelledby="color-label" className="flex gap-2">
-          {DISK_COLORS.map((value) => (
-            <button
-              key={value}
-              type="button"
-              role="radio"
-              aria-checked={color === value}
-              aria-label={text.colors[value]}
-              title={text.colors[value]}
-              onClick={() => setColor(color === value ? null : value)}
-              className={cn(
-                "h-7 w-7 rounded-full border-2 border-solid",
-                COLOR_CLASS[value].swatch,
-                color === value ? "border-fg" : "border-transparent hover:border-border-strong",
-              )}
-            />
-          ))}
-        </div>
-      </div>
-      <label className="flex flex-col gap-1.5 text-[13px] text-muted">
-        {text.location}
-        <input className={input} value={location} maxLength={500} placeholder={text.locationPlaceholder} onChange={(event) => setLocation(event.target.value)} />
-      </label>
-      <button type="button" className={primary} disabled={!dirty || busy} onClick={() => void save()}>
-        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-        {text.save}
-      </button>
-      </div>
-    </section>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -513,21 +603,14 @@ function RetentionCard({ disk, t, onChanged }: { disk: ExternalDisk; t: Translat
   const text = t.diskSheet;
   const { toast } = useToast();
   const [form, setForm] = useState<RetentionForm>(() => retentionForm(disk.effective_retention));
-  const [days, setDays] = useState<string>("");
   const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    getRotationStaleDays().then((value) => setDays(String(value)), () => setDays("30"));
-  }, []);
   const payload = retentionPayload(form);
-  const daysValue = Number(days);
-  const daysValid = /^\d+$/.test(days) && daysValue >= 1 && daysValue <= 365;
 
   async function save() {
-    if (!payload || !daysValid) return;
+    if (!payload) return;
     setBusy(true);
     try {
       await updateDiskProfile(disk.id, { retention: payload });
-      await setRotationStaleDays(daysValue);
       toast({ tone: "success", title: text.saved });
       await onChanged();
     } catch (error) {
@@ -539,12 +622,7 @@ function RetentionCard({ disk, t, onChanged }: { disk: ExternalDisk; t: Translat
   const field = (key: keyof RetentionForm, label: string) => (
     <label className="flex items-center gap-2 text-[13px] text-muted">
       <span className="flex-1">{label}</span>
-      <input
-        className={cn(input, "w-20 text-right")}
-        inputMode="numeric"
-        value={form[key]}
-        onChange={(event) => setForm({ ...form, [key]: event.target.value })}
-      />
+      <input className={cn(input, "w-20 text-right")} inputMode="numeric" value={form[key]} onChange={(event) => setForm({ ...form, [key]: event.target.value })} />
     </label>
   );
   return (
@@ -555,12 +633,45 @@ function RetentionCard({ disk, t, onChanged }: { disk: ExternalDisk; t: Translat
       {field("keepWeekly", text.keepWeekly)}
       {field("keepMonthly", text.keepMonthly)}
       {payload ? null : <span className="text-xs text-danger-text">{text.retentionInvalid}</span>}
-      <label className="flex items-center gap-2 border-0 border-t border-solid border-border pt-3 text-[13px] text-muted">
+      <button type="button" className={primary} disabled={!payload || busy} onClick={() => void save()}>
+        {text.save}
+      </button>
+    </section>
+  );
+}
+
+/** Forgotten-rotation reminder (ROTATION_STALE_DAYS, every disk): its own card. */
+function ReminderCard({ t }: { t: TranslationDictionary }) {
+  const text = t.diskSheet;
+  const { toast } = useToast();
+  const [days, setDays] = useState<string>("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    getRotationStaleDays().then((value) => setDays(String(value)), () => setDays("30"));
+  }, []);
+  const value = Number(days);
+  const valid = /^\d+$/.test(days) && value >= 1 && value <= 365;
+  async function save() {
+    if (!valid) return;
+    setBusy(true);
+    try {
+      await setRotationStaleDays(value);
+      toast({ tone: "success", title: text.saved });
+    } catch (error) {
+      toast({ tone: "danger", title: errorMessage(error, t) });
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <section className={card} aria-labelledby="reminder-title">
+      <h2 id="reminder-title" className="m-0 text-[15px] font-semibold">{text.reminder}</h2>
+      <label className="flex items-center gap-2 text-[13px] text-muted">
         <span className="flex-1">{text.staleDays}</span>
         <input className={cn(input, "w-20 text-right")} inputMode="numeric" value={days} onChange={(event) => setDays(event.target.value)} />
       </label>
-      {daysValid || days === "" ? null : <span className="text-xs text-danger-text">{text.staleDaysInvalid}</span>}
-      <button type="button" className={primary} disabled={!payload || !daysValid || busy} onClick={() => void save()}>
+      {valid || days === "" ? null : <span className="text-xs text-danger-text">{text.staleDaysInvalid}</span>}
+      <button type="button" className={secondary} disabled={!valid || busy} onClick={() => void save()}>
         {text.save}
       </button>
     </section>

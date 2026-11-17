@@ -50,7 +50,8 @@ _SECRET_MARKERS = ("secret", "password", "passwd", "ticket")
 PVE_USER = "pbo@pve"
 PVE_TOKEN_NAME = "pbo"
 PVE_ROLE = "PBO"
-PVE_PRIVILEGES = ("Sys.Audit", "Sys.Modify", "VM.Audit", "Datastore.Allocate")
+# Phase 5h.1: VM.Backup + Datastore.AllocateSpace for "Run now" on a Proxmox job (vzdump).
+PVE_PRIVILEGES = ("Sys.Audit", "Sys.Modify", "VM.Audit", "Datastore.Allocate", "VM.Backup", "Datastore.AllocateSpace")
 
 
 class SetupError(RuntimeError):

@@ -22,7 +22,7 @@ export function diskMenuKeys(disk: ExternalDisk, runs: readonly RunLike[] = []):
     { key: "verify", disabled: !(ready && disk.prepared_as_pbs_datastore && disk.pbs_datastore_name) },
   ];
   if (panel.includes("reactivate")) keys.push({ key: "reactivate", disabled: false });
-  else if (panel.includes("eject") || status === "running") keys.push({ key: "eject", disabled: status === "running" });
+  else if (panel.includes("eject")) keys.push({ key: "eject", disabled: status === "running" });
   keys.push({ key: "open", disabled: false }, { key: "rename", disabled: false }, { key: "copySerial", disabled: false });
   if (status !== "hidden") keys.push({ key: "hide", disabled: status === "running" });
   return keys;
@@ -95,5 +95,11 @@ export function useDiskMenu(disk: ExternalDisk | undefined, t: TranslationDictio
         }),
     },
   };
-  return diskMenuKeys(disk, runs).map(({ key, disabled }) => ({ key, disabled, ...build[key] }));
+  return diskMenuKeys(disk, runs).map(({ key, disabled }) => ({
+    key,
+    disabled,
+    ...build[key],
+    // Why it is greyed out (Phase 5h.1): ejected at the end of the run, or after it.
+    hint: key === "eject" && disabled ? text.ejectRunningHint : undefined,
+  }));
 }

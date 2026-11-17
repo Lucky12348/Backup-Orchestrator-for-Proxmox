@@ -24,9 +24,11 @@ import type { ExternalBackupRun, ExternalDisk } from "../../types";
 import { useConfirm } from "../../ui/confirm";
 import { InfoTip } from "../../ui/InfoTip";
 import { useToast } from "../../ui/toast";
-import { formatUsage } from "../../units";
+import { usageParts } from "../../units";
+import { runPercent } from "../../runs/runModel";
 import { fill, formatSize, formatWhen } from "../format";
 import { DiskAvatar, PbsConfigNotice, VerifyNowButton } from "./DiskBits";
+import { DiskHistoryList } from "./DiskSheetParts";
 import { alertsFor, COLOR_CLASS, diskColor, diskSecondary, launchState } from "./diskProfile";
 import { useDiskMenu } from "./diskMenu";
 import { ActionMenuArea, ActionMenuButton } from "../../ui/ActionMenu";
@@ -34,7 +36,6 @@ import {
   DISK_TABS,
   dataWarning,
   diskActions,
-  diskHistory,
   diskRows,
   nameConfirmed,
   rejectReason,
@@ -58,7 +59,6 @@ const TONE: Record<Tone, { pill: string; dot: string; icon: string; bar: string;
   off: { pill: "bg-subtle text-muted", dot: "bg-faint", icon: "bg-subtle text-muted", bar: "bg-accent", note: "text-muted" },
 };
 
-const HISTORY_DOT: Record<Tone, string> = { ok: "bg-success", run: "bg-accent", warn: "bg-warning", err: "bg-danger", off: "bg-faint" };
 
 export interface DisksViewProps {
   disks: ExternalDisk[];
@@ -250,7 +250,7 @@ function capacityLine(row: DiskRow<ExternalDisk>, language: Language, t: Transla
   const disk = row.disk;
   if (disk.filesystem_used_gb != null && disk.filesystem_total_gb) {
     // Phase 5f: used and total in one unit ("820 / 931 Gio").
-    return fill(t.disksV2.usage, { usage: formatUsage(disk.filesystem_used_gb, disk.filesystem_total_gb, language), pct: usagePercent(disk) ?? 0 });
+    return fill(t.disksV2.usage, usageParts(disk.filesystem_used_gb, disk.filesystem_total_gb, language) ?? { usage: "—", pct: "—" });
   }
   if (row.status === "new") {
     const warning = dataWarning(disk);
@@ -262,7 +262,7 @@ function capacityLine(row: DiskRow<ExternalDisk>, language: Language, t: Transla
 function noteText(row: DiskRow<ExternalDisk>, t: TranslationDictionary, language: Language): string {
   const reason = rejectReason(row.disk);
   if (row.status === "rejected" && reason) return rejectText(row.disk, reason, t, language);
-  if (row.status === "running" && row.run?.progress_percent != null) return `${t.disksV2.status.running} · ${Math.round(row.run.progress_percent)} %`;
+  if (row.status === "running" && row.run) return `${t.disksV2.status.running} · ${Math.floor(runPercent(row.run as never))} %`;
   return t.disksV2.summary[row.status];
 }
 
@@ -291,7 +291,7 @@ export function DiskCard({
   const color = diskColor(disk.color);
   const usageBar = usage !== null && usage >= 90 ? "bg-danger" : usage !== null && usage >= 80 ? "bg-warning" : tone.bar;
   const tags = [
-    status === "new" || status === "approved" || status === "running" || status === "ejected" ? t.disksV2.tagPlugged : null,
+    status === "new" || status === "approved" || status === "running" ? t.disksV2.tagPlugged : null,
     disk.trusted ? t.disksV2.status.approved : null,
     disk.pbs_datastore_name ?? null,
   ].filter((tag): tag is string => Boolean(tag));
@@ -406,6 +406,8 @@ function useReadiness(disk: ExternalDisk, status: DiskUiStatus, runs: ExternalBa
 }
 
 const primary = "flex items-center justify-center gap-2 rounded-lg border-0 bg-accent px-3.5 py-2.5 text-sm font-medium text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50";
+/** Discreet text button (Phase 5h.1: "Run detection again" next to "Reactivate"). */
+const quiet = "flex w-fit items-center gap-1.5 self-start rounded-md border-0 bg-transparent px-1 py-1 text-[13px] font-medium text-muted hover:text-fg disabled:opacity-50";
 const secondary = "flex items-center justify-center gap-2 rounded-lg border border-solid border-border bg-subtle px-3 py-[9px] text-[13px] font-medium text-fg hover:brightness-110 disabled:cursor-not-allowed disabled:text-muted disabled:hover:brightness-100";
 
 export function DiskDetail({
@@ -445,7 +447,6 @@ export function DiskDetail({
   const when = (iso: string | null) => formatWhen(iso, language, now, t.dashboardV2);
   const actions = diskActions(disk, status);
   const readiness = useReadiness(disk, status, runs);
-  const history = diskHistory(disk, runs);
   const reason = rejectReason(disk);
   const location = disk.usb_location;
   const technical: [string, string | null | undefined][] = [
@@ -549,26 +550,41 @@ export function DiskDetail({
                 return (
                   <button key={action} type="button" className={primary} onClick={() => row.run && openRunModal(row.run.id)}>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    {row.run?.progress_percent != null ? fill(text.action.followPct, { pct: Math.round(row.run.progress_percent) }) : text.action.follow}
+                    {row.run ? fill(text.action.followPct, { pct: Math.floor(runPercent(row.run as never)) }) : text.action.follow}
                   </button>
                 );
               case "eject":
                 return (
-                  <button key={action} type="button" className={secondary} disabled={status === "running" || ejecting} onClick={() => onEject(disk)}>
+                  <button
+                    key={action}
+                    type="button"
+                    className={secondary}
+                    disabled={status === "running" || ejecting}
+                    title={status === "running" ? t.menu.disk.ejectRunningHint : undefined}
+                    onClick={() => onEject(disk)}
+                  >
                     <Unplug className="h-4 w-4" />
                     {status === "running" ? text.action.ejectAfter : text.action.eject}
                   </button>
                 );
               case "replug":
+                // Phase 5h.1: a hint, not a button ("Reactivate" above does it without unplugging).
                 return (
-                  <div key={action} role="status" className="flex items-center gap-2.5 rounded-[10px] bg-subtle p-3 text-[13px] font-medium text-fg">
-                    <Unplug className="h-4 w-4 flex-none text-muted" />
-                    {text.action.replug}
-                  </div>
+                  <p key={action} className="m-0 flex items-start gap-2 text-[13px] leading-[1.45] text-muted" data-replug-hint>
+                    <Unplug className="mt-0.5 h-4 w-4 flex-none text-faint" />
+                    {text.action.replugHint}
+                  </p>
                 );
               case "rescan":
                 return (
-                  <button key={action} type="button" className={secondary} disabled={rescanning} onClick={onRescan}>
+                  <button
+                    key={action}
+                    type="button"
+                    className={status === "ejected" ? quiet : secondary}
+                    disabled={rescanning}
+                    onClick={onRescan}
+                    data-rescan
+                  >
                     <RefreshCw className={cn("h-4 w-4", rescanning && "animate-spin")} />
                     {text.action.rescan}
                   </button>
@@ -589,19 +605,9 @@ export function DiskDetail({
       ) : null}
 
       <div className="px-[18px] pb-1.5 pt-3.5 text-[13px] font-semibold">{text.history}</div>
-      {history.length === 0 ? (
-        <div className="px-[18px] py-1.5 text-[13px] text-faint">{text.noHistory}</div>
-      ) : (
-        history.map((item) => (
-          <div key={item.id} className="flex items-center gap-2.5 px-[18px] py-1.5 text-[13px]">
-            <span className={cn("h-[7px] w-[7px] flex-none rounded-full", HISTORY_DOT[item.tone])} />
-            <span className="flex-1 text-muted">
-              {text.historyKind[item.kind]} · {(text.historyStatus as Record<string, string>)[item.status] ?? item.status}
-            </span>
-            <span className="text-xs text-faint">{when(item.at)}</span>
-          </div>
-        ))
-      )}
+      <div className="px-[14px]">
+        <DiskHistoryList disk={disk} runs={runs} language={language} t={t} pageSize={5} />
+      </div>
 
       <details className="mt-2.5 border-t border-solid border-border">
         <summary className="cursor-pointer px-[18px] py-3.5 text-[13px] font-medium text-muted">{text.technical}</summary>

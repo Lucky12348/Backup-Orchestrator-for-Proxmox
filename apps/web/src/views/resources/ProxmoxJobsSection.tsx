@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CalendarClock, ListChecks, Pencil, Play, Plus, Trash2, X } from "lucide-react";
+import { ApiError } from "../../notices";
 import { ActionMenuArea, ActionMenuButton, type MenuAction } from "../../ui/ActionMenu";
 
-import { createProxmoxBackupJob, deleteProxmoxBackupJob, replaceProxmoxBackupJob } from "../../api";
+import { createProxmoxBackupJob, deleteProxmoxBackupJob, replaceProxmoxBackupJob, getProxmoxTask, runProxmoxJobNow } from "../../api";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../../components/ui/dialog";
 import { cn } from "../../components/ui/utils";
 import type { Language, TranslationDictionary } from "../../i18n";
@@ -59,11 +60,39 @@ export function ProxmoxJobsSection({
     }
   }
 
+  /** Phase 5h.1: "Run now" = vzdump with the job's parameters; the task is followed until it ends. */
+  async function runNow(job: ProxmoxBackupJob) {
+    const menu = t.menu.job;
+    const label = jobLabel(job, text.name, language);
+    try {
+      const started = await runProxmoxJobNow(job.job_id);
+      toast({ tone: "info", title: fill(menu.started, { job: label }) });
+      for (let attempt = 0; attempt < 1440; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 5000));
+        const state = await getProxmoxTask(started.node, started.upid);
+        if (state.running) continue;
+        if (state.ok) toast({ tone: "success", title: fill(menu.finished, { job: label }) });
+        else toast({ tone: "danger", title: fill(menu.failed, { job: label }), description: state.exitstatus ?? undefined });
+        return;
+      }
+    } catch (error) {
+      const code = error instanceof ApiError ? error.code : undefined;
+      const known = code ? (menu.errors as Record<string, string>)[code] : undefined;
+      toast({ tone: "danger", title: known ?? (error instanceof Error ? error.message : t.error), description: code === "job_run_failed" && error instanceof Error ? error.message : undefined });
+    }
+  }
+
   /** Phase 5h: the same actions on a right click, the ⋯ button, a long press, Shift+F10. */
   function jobMenu(job: ProxmoxBackupJob): MenuAction[] {
     const menu = t.menu.job;
     return [
-      { key: "run_now", label: menu.runNow, icon: Play, disabled: true, hint: menu.runNowHint, onSelect: () => undefined },
+      {
+        key: "run_now",
+        label: menu.runNow,
+        icon: Play,
+        confirm: { title: fill(menu.runNowTitle, { job: jobLabel(job, text.name, language) }), description: menu.runNowText, confirmLabel: menu.runNow },
+        onSelect: () => runNow(job),
+      },
       { key: "edit", label: text.edit, icon: Pencil, disabled: !job.supported, onSelect: () => setEditing({ mode: "edit", job }) },
       { key: "selection", label: text.manage, icon: ListChecks, disabled: !job.supported, onSelect: () => setEditing({ mode: "selection", job }) },
       { key: "delete", label: text.delete, icon: Trash2, danger: true, onSelect: () => remove(job) },

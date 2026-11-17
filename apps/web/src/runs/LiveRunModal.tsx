@@ -14,7 +14,7 @@ import {
   copySummary,
   currentActivity,
   isAtBottom,
-  overallPercent,
+  runPercent,
   entryText,
   filterEntries,
   formatBytes,
@@ -81,7 +81,7 @@ export function RunView({ run, t, language }: { run: RunLike; t: TranslationDict
   const stats = runStats(run, now);
   const steps = runSteps(run);
   // B35: the whole run, weighted by step (the copy's own % inside its step).
-  const percent = overallPercent(run, states, steps);
+  const percent = runPercent(run, entries);
   const resources = resourceRows(run, entries);
   const summary = monitor.journal?.summary ?? null;
   const source = monitor.journal?.source_datastore ?? run.source_datastore;

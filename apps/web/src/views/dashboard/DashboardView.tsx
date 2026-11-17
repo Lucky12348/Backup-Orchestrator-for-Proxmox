@@ -19,7 +19,8 @@ import { DiskMark, DiskTag, useDisk, withDisk } from "../disks/DiskTag";
 import { useDiskMenu } from "../disks/diskMenu";
 import { useRunMenu } from "../../runs/runMenu";
 import { ActionMenuArea, ActionMenuButton } from "../../ui/ActionMenu";
-import { formatUsage } from "../../units";
+import { usageParts } from "../../units";
+import { runPercent } from "../../runs/runModel";
 import { fill, formatDay, formatSize, formatTime, formatWhen } from "../format";
 import {
   currentOrLastRun,
@@ -211,9 +212,9 @@ export function DashboardView(props: DashboardViewProps) {
                     )}
                   </span>
                   <span className="block h-1.5 flex-[1_1_120px] overflow-hidden rounded-full bg-subtle">
-                    <span className="block h-full rounded-full bg-accent" style={{ width: `${current.run.progress_percent ?? 0}%` }} />
+                    <span className="block h-full rounded-full bg-accent" style={{ width: `${runPercent(current.run as never)}%` }} />
                   </span>
-                  <span className="font-mono text-[13px] text-muted">{Math.round(current.run.progress_percent ?? 0)} %</span>
+                  <span className="font-mono text-[13px] text-muted" data-run-percent>{Math.floor(runPercent(current.run as never))} %</span>
                   <span className="text-[13px] font-medium text-accent-text">{text.follow}</span>
                 </>
               ) : (
@@ -378,7 +379,7 @@ export function DashboardView(props: DashboardViewProps) {
                     )}
                   >
                     {disk.status === "running"
-                      ? fill(text.diskRunning, { pct: Math.round(disk.percent ?? 0) })
+                      ? fill(text.diskRunning, { pct: Math.floor(disk.percent ?? 0) })
                       : t.disksV2.status[disk.status]}
                   </span>
                 </div>
@@ -389,7 +390,7 @@ export function DashboardView(props: DashboardViewProps) {
                   <span className="text-xs text-faint">
                     {/* Phase 5f: used and total in one unit, like the disk cards. */}
                     {disk.usedGb != null
-                      ? fill(t.disksV2.usage, { usage: formatUsage(disk.usedGb, disk.totalGb, language), pct: disk.usage ?? 0 })
+                      ? fill(t.disksV2.usage, usageParts(disk.usedGb, disk.totalGb, language) ?? { usage: "—", pct: "—" })
                       : formatSize(disk.totalGb, language)}
                   </span>
                 </div>

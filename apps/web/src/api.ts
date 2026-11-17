@@ -216,6 +216,17 @@ export function replaceProxmoxBackupJob(jobId: string, payload: ProxmoxBackupJob
   });
 }
 
+/** "Run now" (Phase 5h.1): vzdump with the job's parameters, like PVE's button. */
+export function runProxmoxJobNow(jobId: string) {
+  return request<{ job_id: string; node: string; upid: string }>(`/proxmox/backup-jobs/${encodeURIComponent(jobId)}/run`, { method: "POST" });
+}
+
+export function getProxmoxTask(node: string, upid: string) {
+  return request<{ node: string; upid: string; running: boolean; ok: boolean | null; exitstatus: string | null }>(
+    `/proxmox/tasks/${encodeURIComponent(node)}/${encodeURIComponent(upid)}`,
+  );
+}
+
 export function deleteProxmoxBackupJob(jobId: string) {
   return request<void>(`/proxmox/backup-jobs/${encodeURIComponent(jobId)}`, {
     method: "DELETE",

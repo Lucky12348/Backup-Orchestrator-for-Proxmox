@@ -262,11 +262,14 @@ export function resourceRows(run: RunLike, entries: JournalEntry[]): { rows: Res
   }
   const failed = new Set((run.failed_groups ?? []).map((item) => item.group).filter(Boolean) as string[]);
   const currentIndex = run.current_group ? order.indexOf(run.current_group) : order.length - 1;
+  // Phase 5h.1: cleanup, verification and eject concern the whole disk: once
+  // the copy is over, no VM/CT is "in progress" any more.
+  const copying = stepIndex(run.current_step) === RUN_STEPS.indexOf("sync");
   order.forEach((group, index) => {
     const row = rows.get(group)!;
     if (failed.has(group)) row.state = "failed";
     else if (run.status === "success" || index < currentIndex) row.state = "done";
-    else if (index === currentIndex) row.state = isRunning(run) ? "running" : run.status === "failed" ? "failed" : "done";
+    else if (index === currentIndex) row.state = isRunning(run) ? (copying ? "running" : "done") : run.status === "failed" ? "failed" : "done";
   });
   const pending = Math.max(0, (run.total_groups ?? order.length) - order.length);
   return { rows: order.map((group) => rows.get(group)!), pending };
@@ -530,4 +533,10 @@ export function currentActivity(steps: readonly RunStepKey[], states: readonly S
   const ofStep = step ? entries.filter((entry) => entry.step && (STEP_OF[entry.step] ?? null) === (step === "release" ? "eject" : step)) : [];
   const lines = (ofStep.length ? ofStep : entries).slice(-limit);
   return { step, lines };
+}
+
+/** Phase 5h.1: THE progress of a run, everywhere (modal, top-bar pill,
+ *  dashboard, disk cards): weighted steps, from the journal when known. */
+export function runPercent(run: RunLike, entries: readonly JournalEntry[] = []): number {
+  return overallPercent(run, stepStates(run, [...entries]), runSteps(run));
 }

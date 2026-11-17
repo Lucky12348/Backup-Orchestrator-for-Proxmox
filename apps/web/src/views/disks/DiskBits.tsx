@@ -26,8 +26,9 @@ const AVATAR_BOX = {
   sm: "h-7 w-7 rounded-[7px]",
   md: "h-[38px] w-[38px] rounded-[10px]",
   lg: "h-[88px] w-[88px] rounded-[14px]",
+  hd: "h-16 w-16 rounded-[12px]",
 } as const;
-const AVATAR_ICON = { xs: "h-3 w-3", sm: "h-4 w-4", md: "h-[18px] w-[18px]", lg: "h-9 w-9" } as const;
+const AVATAR_ICON = { xs: "h-3 w-3", sm: "h-4 w-4", md: "h-[18px] w-[18px]", lg: "h-9 w-9", hd: "h-7 w-7" } as const;
 
 /** Photo of the disk when there is one, else the icon of its kind, in its colour. */
 export function DiskAvatar({
@@ -38,7 +39,7 @@ export function DiskAvatar({
 }: {
   disk: ExternalDisk;
   t: TranslationDictionary;
-  size?: "xs" | "sm" | "md" | "lg";
+  size?: "xs" | "sm" | "md" | "lg" | "hd";
   toneClass?: string;
 }) {
   const photo = diskPhotoUrl(disk);

@@ -46,6 +46,12 @@ def eject_dedicated_external_disk(db: Session, disk_id: int) -> ExternalDisk:
     disk = db.get(ExternalDisk, disk_id)
     if disk is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Disk not found")
+    if (disk.handoff_status or "").casefold() == EJECTED_HANDOFF_STATUS:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": "disk_already_ejected", "message": "The disk is already ejected."})
+    if not _is_handed_to_pbs(disk):
+        # Phase 5h.1: plugged into the host only (after a release, a failed
+        # run, or never backed up): put it to sleep and mark it ejected.
+        return _eject_from_host(db, disk)
     if not is_disk_auto_eject_eligible(disk):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -244,6 +250,49 @@ def _eject_steps(db: Session, disk: ExternalDisk, run: ExternalBackupRun, datast
     db.refresh(disk)
     disk_events.publish_report_events([], [], [disk])  # the card turns "Ejected" live
     return result, detach_message
+
+
+def _is_handed_to_pbs(disk: ExternalDisk) -> bool:
+    status_text = (disk.handoff_status or "").casefold()
+    return bool(disk.pbs_handoff_slot or disk.pbs_visible or status_text in {"attached_to_pbs", "visible_on_pbs"})
+
+
+HOST_EJECT_MESSAGE = "Disk not handed to PBS: spinning it down on the Proxmox host."
+
+
+def _eject_from_host(db: Session, disk: ExternalDisk) -> ExternalDisk:
+    """Eject of a disk only plugged into the Proxmox host: nothing to unmount
+    on PBS nor to detach; spin it down, then "Ejected" (same run and modal)."""
+    # A run first: the disk may be in the PBS VM (not seen by the host) during it.
+    active_run = db.scalar(
+        select(ExternalBackupRun)
+        .where(ExternalBackupRun.disk_id == disk.id, ExternalBackupRun.status.in_([BackupRunStatus.PENDING, BackupRunStatus.RUNNING]))
+        .limit(1)
+    )
+    if active_run is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=RUNNING_EJECT_REFUSAL)
+    if not disk.connected:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": "disk_not_connected", "message": "The disk is not plugged in."})
+    datastore_name, mount_path = _eject_target(disk)
+    run = _create_eject_activity(db, disk, datastore_name, mount_path)
+    append_external_backup_run_log(db, run.id, step="eject", message=HOST_EJECT_MESSAGE)
+    spin_down_message = _attempt_disk_spin_down(disk)
+    if spin_down_message:
+        append_external_backup_run_log(db, run.id, step="eject", message=spin_down_message)
+    mark_disk_ejected(disk)
+    db.refresh(run)
+    run.status = BackupRunStatus.SUCCESS
+    run.finished_at = datetime.utcnow()
+    run.message = EJECT_SUCCESS_MESSAGE
+    run.current_step = "ejected"
+    run.progress_message = run.message
+    run.last_log_at = datetime.utcnow()
+    db.add_all([disk, run])
+    db.commit()
+    db.refresh(disk)
+    disk_events.publish_report_events([], [], [disk])
+    notify_disk_eject_ready(_label(disk))
+    return disk
 
 
 def mark_disk_ejected(disk: ExternalDisk) -> None:

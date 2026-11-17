@@ -167,29 +167,33 @@ export function isAttachedToPbs(disk: DiskLike): boolean {
 
 /** Buttons of the detail panel, in order. The approval flow (new disk) is separate. */
 export function diskActions(disk: DiskLike, status: DiskUiStatus): DiskAction[] {
-  const ejectable = Boolean(disk.dedicated_backup_disk || disk.prepared_as_pbs_datastore);
+  // Phase 5h.1: any disk plugged in and not ejected can be ejected (handed to
+  // PBS: unmount + off the VM + sleep; on the host only: sleep).
+  const plugged = Boolean(disk.connected);
   switch (status) {
     case "running":
       return ["follow", "eject"];
     case "approved":
-      return ejectable && isAttachedToPbs(disk) ? ["backup", "eject", "rescan"] : ["backup", "rescan"];
+      return ["backup", "eject", "rescan"];
     case "ejected":
       // B49: re-enumerated by the host agent instead of a physical unplug.
       return ["reactivate", "replug", "rescan"];
     case "rejected": {
       // Phase 5g: a too-small disk can be approved anyway (risk confirmed); any rejected disk can be hidden.
       const reason = rejectReason(disk);
-      if (disk.operator_decision === "rejected") return ["unreject", "hide", "rescan"];
-      return reason === "too_small" ? ["approveAnyway", "hide", "rescan"] : ["hide", "rescan"];
+      const eject: DiskAction[] = plugged ? ["eject"] : [];
+      if (disk.operator_decision === "rejected") return ["unreject", ...eject, "hide", "rescan"];
+      return reason === "too_small" ? ["approveAnyway", ...eject, "hide", "rescan"] : [...eject, "hide", "rescan"];
     }
     case "hidden":
       return ["unhide"];
+    case "ignored":
+      return plugged ? ["eject", "rescan"] : ["rescan"];
     case "unplugged":
     case "pulled":
-    case "ignored":
       return ["rescan"];
     case "new":
-      return [];
+      return plugged ? ["eject"] : [];
   }
 }
 

@@ -45,6 +45,8 @@ PBO_PRIVILEGES = (
     "Sys.Modify",  # GET /nodes/{node}/hardware/usb, POST/PUT/DELETE /cluster/backup
     "VM.Audit",  # GET /nodes/{node}/qemu, /lxc (filtered per guest), qemu config
     "Datastore.Allocate",  # backup jobs: checked on /storage/<job storage>
+    "VM.Backup",  # "Run now" on a backup job: POST /nodes/{node}/vzdump (per guest)
+    "Datastore.AllocateSpace",  # the same vzdump writes to the job's storage
 )
 PVE_CERT_FILES = (Path("/etc/pve/local/pveproxy-ssl.pem"), Path("/etc/pve/local/pve-ssl.pem"))
 PVE_NODES_DIR = Path("/etc/pve/nodes")

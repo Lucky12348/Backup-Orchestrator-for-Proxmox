@@ -27,6 +27,13 @@ against the PVE source (`PVE/API2/Backup.pm`, `PVE/API2/Hardware/USB.pm`,
 | `Sys.Modify` | `GET /nodes/{node}/hardware/usb` (find the USB disk before passthrough, `disk_handoff.py`); `POST /cluster/backup`, `PUT/DELETE /cluster/backup/{id}` (create / edit / delete vzdump jobs from the UI) | `perm / Sys.Modify` |
 | `VM.Audit` | `GET /nodes/{node}/qemu`, `GET /nodes/{node}/lxc` (inventory sync; PVE only lists guests with `VM.Audit`), `GET /nodes/{node}/qemu/{vmid}/config` | `perm /vms/{vmid} VM.Audit` |
 | `Datastore.Allocate` | vzdump jobs: PVE checks it on `/storage/<job storage>` when a job is created or its storage changed | `Backup.pm: assert_param_permission_create/update` |
+| `VM.Backup` | `POST /nodes/{node}/vzdump` with a job's parameters: "Run now" on a Proxmox backup job (`services/pve_job_runs.py`, same call as PVE's own "Run now" button); followed with `GET /nodes/{node}/tasks/{upid}/status` (the token reads its own tasks) | `perm /vms/{vmid} VM.Backup` (checked per guest) |
+| `Datastore.AllocateSpace` | the same vzdump writes its archive to the job's storage | `perm /storage/<job storage> Datastore.AllocateSpace` |
+
+A token provisioned before Phase 5h.1 lacks the last two: "Run now" answers
+`pve_permission_missing` with the command that adds them without re-creating
+the token: `pveum role modify PBO --privs "Sys.Audit,Sys.Modify,VM.Audit,Datastore.Allocate,VM.Backup,Datastore.AllocateSpace"`
+(or Integrations › Proxmox › Reconfigure, which re-creates the token).
 
 Not granted, on purpose:
 

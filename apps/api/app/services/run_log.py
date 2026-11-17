@@ -83,6 +83,7 @@ PBO_MESSAGES: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
         ("handoff_usb_location_missing", r"^The disk's USB port is not in the Proxmox USB device list\.$"),
         ("handoff_usb_ambiguous", r"^Several USB devices could be this disk\."),
         ("eject_unmount", r"^Unmounting dedicated PBS datastore on PBS\.$"),
+        ("eject_host_only", r"^Disk not handed to PBS: spinning it down on the Proxmox host\.$"),
         ("eject_unmount_store", r"^Unmounting removable datastore `(?P<store>[^`]+)`"),
         ("eject_already_unmounted", r"^Datastore `(?P<store>[^`]+)` is already unmounted\.$"),
         ("eject_detach", r"^Detaching USB disk from PBS VM\.$"),

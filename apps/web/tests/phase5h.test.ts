@@ -59,7 +59,7 @@ test("context menus: Shift+F10 / Menu key, kept in the viewport, arrows skip dis
     for (const key of ["backup", "verify", "eject", "open", "rename", "copySerial"] as const) assert.ok(menu.disk[key], `${lang} disk.${key}`);
     for (const key of ["runNow", "edit", "duplicate", "disable", "enable", "delete"] as const) assert.ok(menu.event[key], `${lang} event.${key}`);
     for (const key of ["copies", "openPve", "protect", "unprotect"] as const) assert.ok(menu.resource[key], `${lang} resource.${key}`);
-    assert.ok(menu.run.open && menu.run.download && menu.run.relaunch.backup && menu.job.runNowHint);
+    assert.ok(menu.run.open && menu.run.download && menu.run.relaunch.backup && menu.job.runNowTitle && menu.job.errors.pve_permission_missing);
   }
 });
 
@@ -123,7 +123,7 @@ test("B38: small sizes stay readable, never 0 / 491 GiB", () => {
   assert.equal(formatGib(0.18, "fr"), "184 Mio");
   assert.equal(formatGib(2.345, "en"), "2.35 GiB");
   assert.equal(formatGib(931, "fr"), "931 Gio");
-  assert.equal(formatUsage(0.18, 491, "fr"), "0,18 / 491 Gio");
+  assert.equal(formatUsage(0.18, 491, "fr"), "184 Mio / 491 Gio");
   assert.equal(formatUsage(0.001, 491, "fr"), "1 Mio / 491 Gio");
   assert.equal(formatUsage(0, 491, "fr"), "0 / 491 Gio");
   assert.equal(formatUsage(820, 931, "fr"), "820 / 931 Gio");

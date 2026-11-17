@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNow } from "../../ui/useNow";
 import { CalendarClock, ChevronDown, CheckCircle2, HardDrive, Loader2, Search, ShieldCheck, Trash2, Unplug, Wrench, XCircle } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 
 import { getActivityFeed, type ActivityItem } from "../../api";
 import { cn } from "../../components/ui/utils";
@@ -63,7 +63,9 @@ export function ActivityView({ language, t, refreshKey, onCleanup, cleaning, fet
   const confirm = useConfirm();
   const [items, setItems] = useState<ActivityItem[] | null>(null);
   const [failed, setFailed] = useState(false);
-  const [filters, setFilters] = useState<ActivityFilters>({ type: "runs", state: "", diskId: null, days: 30, query: "" });
+  // Phase 5h.1: "See all in Activity" from a disk opens the list filtered on it (?disk=<id>).
+  const diskParam = Number(new URLSearchParams(useLocation().search).get("disk")) || null;
+  const [filters, setFilters] = useState<ActivityFilters>({ type: "runs", state: "", diskId: diskParam, days: diskParam ? 365 : 30, query: "" });
   const now = useNow(fixedNow);
   const fetchDays = Math.max(90, filters.days);
 
