@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CalendarClock, ListChecks, Pencil, Plus, Trash2, X } from "lucide-react";
+import { CalendarClock, ListChecks, Pencil, Play, Plus, Trash2, X } from "lucide-react";
+import { ActionMenuArea, ActionMenuButton, type MenuAction } from "../../ui/ActionMenu";
 
 import { createProxmoxBackupJob, deleteProxmoxBackupJob, replaceProxmoxBackupJob } from "../../api";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../../components/ui/dialog";
@@ -58,8 +59,19 @@ export function ProxmoxJobsSection({
     }
   }
 
+  /** Phase 5h: the same actions on a right click, the ⋯ button, a long press, Shift+F10. */
+  function jobMenu(job: ProxmoxBackupJob): MenuAction[] {
+    const menu = t.menu.job;
+    return [
+      { key: "run_now", label: menu.runNow, icon: Play, disabled: true, hint: menu.runNowHint, onSelect: () => undefined },
+      { key: "edit", label: text.edit, icon: Pencil, disabled: !job.supported, onSelect: () => setEditing({ mode: "edit", job }) },
+      { key: "selection", label: text.manage, icon: ListChecks, disabled: !job.supported, onSelect: () => setEditing({ mode: "selection", job }) },
+      { key: "delete", label: text.delete, icon: Trash2, danger: true, onSelect: () => remove(job) },
+    ];
+  }
+
   return (
-    <section aria-label={text.title} className="flex flex-col gap-4 rounded-2xl border border-solid border-border bg-surface p-[22px]">
+    <section id="proxmox-jobs" aria-label={text.title} className="flex flex-col gap-4 rounded-2xl border border-solid border-border bg-surface p-[22px]">
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="m-0 flex-1 text-[15px] font-semibold">{text.title}</h2>
         <button type="button" className={ghost} onClick={() => setEditing({ mode: "create" })}>
@@ -70,7 +82,14 @@ export function ProxmoxJobsSection({
       {jobs.length === 0 ? <p className="m-0 text-[13px] text-faint">{text.empty}</p> : null}
       <ul className="m-0 grid list-none gap-3 p-0 xl:grid-cols-2">
         {jobs.map((job) => (
-          <li key={job.job_id} className="flex flex-col gap-2 rounded-xl border border-solid border-border bg-subtle/40 p-4" data-job={job.job_id}>
+          <ActionMenuArea
+            as="li"
+            key={job.job_id}
+            actions={jobMenu(job)}
+            label={fill(t.menu.label, { name: jobLabel(job, text.name, language) })}
+            className="flex flex-col gap-2 rounded-xl border border-solid border-border bg-subtle/40 p-4 outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            data-job={job.job_id}
+          >
             <div className="flex items-start gap-3">
               <CalendarClock className="mt-0.5 h-4 w-4 flex-none text-muted" />
               <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -79,6 +98,7 @@ export function ProxmoxJobsSection({
                   {[job.comment, fill(text.guests, { n: job.selected_vmids.length }), job.enabled ? null : text.disabled].filter(Boolean).join(" · ")}
                 </span>
               </div>
+              <ActionMenuButton actions={jobMenu(job)} label={fill(t.menu.label, { name: jobLabel(job, text.name, language) })} className="-mr-2 -mt-1.5" />
             </div>
             {job.selected_vmids.length ? (
               <span className="text-xs text-muted">
@@ -111,7 +131,7 @@ export function ProxmoxJobsSection({
                 {text.delete}
               </button>
             </div>
-          </li>
+          </ActionMenuArea>
         ))}
       </ul>
       <JobDialog editing={editing} jobs={jobs} vms={vms} language={language} t={t} onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await onChanged(); }} />

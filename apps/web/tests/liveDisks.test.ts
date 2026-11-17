@@ -74,12 +74,13 @@ test("known disks, updates and unrelated events", () => {
 
 test("toast: new disk with Review action, rejected, unplugged", () => {
   const added = toastForDiskEvent(event("disk.added", { id: 7, capacity_gb: 2048 }), "fr")!;
-  assert.equal(added.message, "Nouveau disque détecté : Samsung T7 2 Tio");
+  // Phase 5h: the disk's name, never its model, titles a toast.
+  assert.equal(added.message, "Nouveau disque détecté : Disk S1 2 Tio");
   assert.deepEqual(added.action, { label: "Examiner", diskId: 7 });
   assert.equal(added.tone, "info");
 
   const english = toastForDiskEvent(event("disk.added", { id: 7, capacity_gb: 500 }), "en")!;
-  assert.equal(english.message, "New disk detected: Samsung T7 500 GiB");
+  assert.equal(english.message, "New disk detected: Disk S1 500 GiB");
 
   const rejected = toastForDiskEvent(event("disk.added", { id: 8, capacity_gb: 16, reject_reason: "too_small" }), "fr")!;
   assert.equal(rejected.tone, "warning");
@@ -87,7 +88,7 @@ test("toast: new disk with Review action, rejected, unplugged", () => {
   assert.match(rejected.message, /Trop petit : .*Gio, il faut au moins 34 Gio/);
 
   const removed = toastForDiskEvent(event("disk.removed", { id: 7 }), "fr")!;
-  assert.equal(removed.message, "Disque débranché : Samsung T7");
+  assert.equal(removed.message, "Disque débranché : Disk S1");
   assert.equal(toastForDiskEvent(event("disk.updated", { id: 7 }), "fr"), null);
 });
 

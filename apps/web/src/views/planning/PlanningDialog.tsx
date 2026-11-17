@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, Check, ChevronRight, HardDrive } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ChevronRight } from "lucide-react";
 
 import { createScheduledBackupEvent, deleteScheduledBackupEvent, getDatastores, updateScheduledBackupEvent, type SourceDatastore } from "../../api";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../../components/ui/dialog";
@@ -11,6 +11,7 @@ import { useConfirm } from "../../ui/confirm";
 import { useToast } from "../../ui/toast";
 import { formatBytes, formatGib } from "../../units";
 import { fill } from "../format";
+import { DiskAvatar } from "../disks/DiskBits";
 import { CloseButton, DayPills } from "../resources/ProxmoxJobsSection";
 import { DAY_CODES, type DayCode } from "../resources/jobsModel";
 import { zoned } from "./calendarModel";
@@ -30,7 +31,8 @@ import {
   type Unit,
 } from "./planningForm";
 
-export type DialogState = { mode: "create"; start: Date } | { mode: "edit"; event: ScheduledBackupEvent };
+/** "duplicate" (context menu): the event's settings in a new planning. */
+export type DialogState = { mode: "create"; start: Date } | { mode: "edit"; event: ScheduledBackupEvent } | { mode: "duplicate"; event: ScheduledBackupEvent };
 
 const field = "rounded-lg border border-solid border-border-strong bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent";
 
@@ -88,7 +90,10 @@ export function PlanningDialog({
     if (!state) return setForm(null);
     setTouched(false);
     if (state.mode === "edit") setForm(planFormFromEvent(state.event as never, tz));
-    else {
+    else if (state.mode === "duplicate") {
+      const copy = planFormFromEvent(state.event as never, tz);
+      setForm({ ...copy, title: fill(text.copyOf, { title: state.event.title }), titleTouched: true });
+    } else {
       const local = zoned(state.start, tz);
       setForm(newPlanForm(defaultDatastore, { day: local, hour: local.h }));
     }
@@ -185,7 +190,7 @@ export function PlanningDialog({
         }}
       >
         <div className="flex items-center gap-2 border-0 border-b border-solid border-border px-5 py-4">
-          <DialogTitle className="m-0 flex-1 text-[17px] font-semibold">{editing ? text.editTitle : text.createTitle}</DialogTitle>
+          <DialogTitle className="m-0 flex-1 text-[17px] font-semibold">{editing ? text.editTitle : state.mode === "duplicate" ? text.duplicateTitle : text.createTitle}</DialogTitle>
           <CloseButton label={t.planningV2.closeDetail} onClick={onClose} />
         </div>
 
@@ -289,7 +294,7 @@ export function PlanningDialog({
                     >
                       {ranked ? position + 1 : <Check className="h-3.5 w-3.5" />}
                     </button>
-                    <HardDrive className="h-4 w-4 flex-none text-muted" />
+                    <DiskAvatar disk={disk} t={t} size="sm" />
                     <span className="flex min-w-0 flex-1 flex-col">
                       <span className="truncate text-sm font-medium">{disk.display_name}</span>
                       <span className="text-xs text-faint">

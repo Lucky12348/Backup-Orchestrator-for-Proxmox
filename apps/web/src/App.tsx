@@ -16,6 +16,7 @@ import { ActivityView } from "./views/activity/ActivityView";
 import { PlanningView } from "./views/planning/PlanningView";
 import { IntegrationsView } from "./views/integrations/IntegrationsView";
 import { AgentDiskSettings } from "./views/settings/AgentDiskSettings";
+import { CommandsProvider } from "./views/commands";
 import { ResourcesView } from "./views/resources/ResourcesView";
 import { ProxmoxJobsSection } from "./views/resources/ProxmoxJobsSection";
 import { expectRunModal, openRunModal } from "./runs/openRun";
@@ -162,6 +163,7 @@ function AuthenticatedApp() {
         {/* B26: no global banner, every notice is a toast. */}
         <NoticeToasts notices={notices} onShown={dismissNotice} t={t} />
 
+        <CommandsProvider value={{ backup: handleExternalBackupRequest, eject: handleDiskEjectRequest, refresh }}>
         <Routes>
           <Route
             element={
@@ -275,6 +277,7 @@ function AuthenticatedApp() {
             path="/settings"
           />
         </Routes>
+        </CommandsProvider>
 
       <LaunchBackupDialog disk={launchDisk} onClose={() => setLaunchDisk(null)} onStart={startLaunch} language={language} t={t} />
       <ConfirmModal

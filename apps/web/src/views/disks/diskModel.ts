@@ -101,7 +101,8 @@ export function inTab(status: DiskUiStatus, disk: DiskLike, tab: DiskTab): boole
     case "all":
       return status !== "hidden";
     case "plugged":
-      return isPlugged(status);
+      // A rejected disk (too small, size 0) is physically there too.
+      return isPlugged(status) || (status === "rejected" && Boolean(disk.connected));
     case "approved":
       return disk.trusted && status !== "rejected";
     case "review":

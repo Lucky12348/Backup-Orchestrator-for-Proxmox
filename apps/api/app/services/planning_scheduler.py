@@ -146,7 +146,7 @@ def handle_disk_detected(db: Session, disk: ExternalDisk, now: datetime | None =
             continue
         if run.disk_seen_at is None:
             run.disk_seen_at = current_time
-            notify_expected_disk_detected(run_disk_serial(event, run), event.title)
+            notify_expected_disk_detected(_serial_label(db, run_disk_serial(event, run)), event.title)
         _advance_detected_run(db, event, run, current_time)
     db.commit()
 
@@ -262,7 +262,7 @@ def _process_run(db: Session, event: ScheduledBackupEvent, run: ScheduledBackupR
 
     if run.reminder_sent_at is None and now >= run.window_starts_at - timedelta(minutes=event.notify_before_minutes):
         notify_planned_backup_reminder(
-            run_disk_serial(event, run),
+            _serial_label(db, run_disk_serial(event, run)),
             event.title,
             run.window_starts_at.isoformat(timespec="minutes"),
             run.window_ends_at.isoformat(timespec="minutes"),
@@ -296,7 +296,7 @@ def _process_run(db: Session, event: ScheduledBackupEvent, run: ScheduledBackupR
 
     if run.disk_seen_at is None:
         run.disk_seen_at = now
-        notify_expected_disk_detected(run_disk_serial(event, run), event.title)
+        notify_expected_disk_detected(_serial_label(db, run_disk_serial(event, run)), event.title)
     _advance_detected_run(db, event, run, now)
 
 
@@ -503,3 +503,9 @@ def _days_in_month(year: int, month: int) -> int:
     else:
         next_month = datetime(year, month + 1, 1)
     return (next_month - timedelta(days=1)).day
+
+
+def _serial_label(db: Session, serial: str) -> str:
+    """"Rotation A (WD-123)" in the notifications: the operator's name first."""
+    disk = next((item for item in db.scalars(select(ExternalDisk)) if disk_matches_serial(item, serial)), None)
+    return f"{disk.display_name} ({serial})" if disk is not None and disk.display_name else serial

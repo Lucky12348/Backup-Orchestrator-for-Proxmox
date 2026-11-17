@@ -103,6 +103,13 @@ export function getOverview() {
   return request<Overview>("/overview");
 }
 
+/** PVE_API_URL (not a secret): "Open in Proxmox" builds the web UI link from it. */
+export async function getProxmoxApiUrl(): Promise<string | null> {
+  const items = await request<{ key: string; value: unknown }[]>("/settings?group=proxmox");
+  const value = items.find((item) => item.key === "PVE_API_URL")?.value;
+  return typeof value === "string" && value ? value : null;
+}
+
 export function getVMs() {
   return request<VirtualMachine[]>("/vms");
 }

@@ -241,3 +241,13 @@ export function integrations(status: { pve: boolean; pbs: boolean; agent: boolea
   ];
   return { items, allOk: items.every((item) => item.ok) };
 }
+
+/** B42: the hero state counts what is waiting in "To do": never "all protected"
+ *  in green while something needs attention. */
+export type DashboardState = "protected" | "attention" | "at_risk" | "empty";
+
+export function dashboardState(protection: Pick<ProtectionSummary, "state">, todoCount: number): DashboardState {
+  if (protection.state === "empty") return "empty";
+  if (protection.state === "at_risk") return "at_risk";
+  return todoCount > 0 ? "attention" : "protected";
+}

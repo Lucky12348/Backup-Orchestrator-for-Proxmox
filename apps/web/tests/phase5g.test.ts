@@ -90,7 +90,7 @@ test("rejected disks: size next to the minimum, approve anyway, hide", () => {
   assert.deepEqual(diskActions(hidden, "hidden"), ["unhide"]);
   const rows = diskRows([{ ...base, reject_reason: "too_small" }, hidden], []);
   assert.equal(inTab("hidden", hidden, "all"), false);
-  assert.deepEqual(tabCounts(rows), { all: 1, plugged: 0, approved: 0, review: 0, rejected: 1, hidden: 1 });
+  assert.deepEqual(tabCounts(rows), { all: 1, plugged: 1, approved: 0, review: 0, rejected: 1, hidden: 1 });
   const reason = { code: "disk_too_small", message: "x", size_gb: 16, min_size_gb: 32 };
   assert.equal(reasonText(reason, translations.fr.readiness as Record<string, string>, "fr"), "Le disque est trop petit pour un datastore PBS : 16 Gio, minimum 32 Gio.");
   assert.ok(translations.fr.disksV2.rejectReason.too_small.includes("{size}") && translations.en.disksV2.rejectReason.too_small.includes("{size}"));

@@ -1,4 +1,9 @@
-import { useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { ExternalLink, EyeOff, HardDrive, Shield } from "lucide-react";
+
+import { getProxmoxApiUrl } from "../../api";
+import { ActionMenuArea, ActionMenuButton, type MenuAction } from "../../ui/ActionMenu";
+import { DiskTag } from "../disks/DiskTag";
 import { Link } from "react-router-dom";
 
 import { useNow } from "../../ui/useNow";
@@ -7,7 +12,6 @@ import { Search, Server, ShieldCheck } from "lucide-react";
 import { cn } from "../../components/ui/utils";
 import type { Language, TranslationDictionary } from "../../i18n";
 import type { ExternalCopy, ProxmoxBackupJob, VirtualMachine } from "../../types";
-import { COLOR_CLASS, diskColor } from "../disks/diskProfile";
 import { InfoTip } from "../../ui/InfoTip";
 import { useToast } from "../../ui/toast";
 import { formatGib } from "../../units";
@@ -19,6 +23,7 @@ import {
   jobsFor,
   nextSelection,
   nodesOf,
+  pveGuestUrl,
   protectionCounts,
   protectionOf,
   vmid,
@@ -78,6 +83,66 @@ export function ResourcesView({ vms, jobs, language, t, onIgnore, onJobSelection
   const chosen = useMemo(() => vms.filter((vm) => selected.has(vm.id)), [vms, selected]);
   const set = (patch: Partial<ResourceFilters>) => setFilters((current) => ({ ...current, ...patch }));
   const allShownSelected = shown.length > 0 && shown.every((vm) => selected.has(vm.id));
+  const [pveUrl, setPveUrl] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  useEffect(() => {
+    getProxmoxApiUrl().then(setPveUrl, () => setPveUrl(null));
+  }, []);
+
+  /** Phase 5h: right click / ⋯ / long press / Shift+F10 on a row. */
+  function resourceMenu(vm: VirtualMachine): MenuAction[] {
+    const menu = t.menu.resource;
+    const id = vmid(vm);
+    const inJob = Boolean(targetJob && id !== null && targetJob.selected_vmids.includes(id));
+    const link = pveGuestUrl(pveUrl, vm);
+    const guard = async (task: () => Promise<void> | void) => {
+      try {
+        await task();
+      } catch (error) {
+        toast({ tone: "danger", title: error instanceof Error ? error.message : t.error });
+      }
+    };
+    return [
+      {
+        key: "copies",
+        label: expanded.has(vm.id) ? menu.hideCopies : menu.copies,
+        icon: HardDrive,
+        disabled: !(vm.external_copies ?? []).length,
+        onSelect: () => setExpanded((current) => {
+          const next = new Set(current);
+          if (next.has(vm.id)) next.delete(vm.id);
+          else next.add(vm.id);
+          return next;
+        }),
+      },
+      { key: "pve", label: menu.openPve, icon: ExternalLink, disabled: !link, onSelect: () => void window.open(link ?? "", "_blank", "noopener,noreferrer") },
+      {
+        key: "protect",
+        label: targetJob ? fill(inJob ? menu.unprotect : menu.protect, { job: readableJob(targetJob, t, language) }) : menu.noJob,
+        icon: Shield,
+        disabled: !targetJob || id === null || vm.ignored,
+        confirm: inJob ? { title: fill(menu.unprotect, { job: targetJob ? readableJob(targetJob, t, language) : "" }), description: menu.unprotectText, confirmLabel: menu.confirm } : undefined,
+        onSelect: () =>
+          guard(async () => {
+            if (!targetJob || id === null) return;
+            await onJobSelection(targetJob.job_id, nextSelection(targetJob, [id], inJob ? "remove" : "add"));
+            toast({ tone: "success", title: fill(text.done, { n: 1 }) });
+          }),
+      },
+      {
+        key: "ignore",
+        label: vm.ignored ? text.include : text.ignore,
+        icon: EyeOff,
+        danger: !vm.ignored,
+        confirm: vm.ignored ? undefined : { title: fill(menu.ignoreTitle, { name: vm.name }), description: menu.ignoreText, confirmLabel: text.ignore },
+        onSelect: () =>
+          guard(async () => {
+            await onIgnore(vm, !vm.ignored);
+            toast({ tone: "success", title: fill(text.done, { n: 1 }) });
+          }),
+      },
+    ];
+  }
 
   function toggle(id: number) {
     setSelected((current) => {
@@ -217,6 +282,9 @@ export function ResourcesView({ vms, jobs, language, t, onIgnore, onJobSelection
                     {label}
                   </th>
                 ))}
+                <th className="w-10 border-0 border-b border-solid border-border px-2 py-2.5">
+                  <span className="sr-only">{t.menu.actions}</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -225,8 +293,17 @@ export function ResourcesView({ vms, jobs, language, t, onIgnore, onJobSelection
                 const jobText = jobsFor(vm, jobs)
                   .map((job) => readableJob(job, t, language))
                   .join(", ");
+                const actions = resourceMenu(vm);
+                const menuLabel = fill(t.menu.label, { name: vm.name });
                 return (
-                  <tr key={vm.id} data-vm={vm.id} className={cn("hover:bg-subtle", (protection === "ignored" || protection === "infrastructure") && "text-muted")}>
+                  <Fragment key={vm.id}>
+                  <ActionMenuArea
+                    as="tr"
+                    actions={actions}
+                    label={menuLabel}
+                    data-vm={vm.id}
+                    className={cn("outline-none hover:bg-subtle focus-visible:bg-subtle", (protection === "ignored" || protection === "infrastructure") && "text-muted")}
+                  >
                     <td className="border-0 border-b border-solid border-border px-4 py-2.5">
                       <input type="checkbox" aria-label={fill(text.selectOne, { name: vm.name })} checked={selected.has(vm.id)} onChange={() => toggle(vm.id)} className="m-0 h-4 w-4" />
                     </td>
@@ -259,7 +336,18 @@ export function ResourcesView({ vms, jobs, language, t, onIgnore, onJobSelection
                     <td className="border-0 border-b border-solid border-border px-3 py-2.5 text-muted">
                       {jobText || <span className="text-faint">{text.noJob}</span>}
                     </td>
-                  </tr>
+                    <td className="border-0 border-b border-solid border-border px-2 py-1.5">
+                      <ActionMenuButton actions={actions} label={menuLabel} />
+                    </td>
+                  </ActionMenuArea>
+                  {expanded.has(vm.id) ? (
+                    <tr data-copies-of={vm.id}>
+                      <td colSpan={11} className="border-0 border-b border-solid border-border bg-subtle/50 px-4 py-3">
+                        <AllCopies copies={vm.external_copies ?? []} language={language} now={now} t={t} />
+                      </td>
+                    </tr>
+                  ) : null}
+                  </Fragment>
                 );
               })}
             </tbody>
@@ -278,7 +366,6 @@ export function DiskCopies({ copies, language, now, t }: { copies: ExternalCopy[
   return (
     <div className="flex flex-col gap-1">
       {shown.map((copy) => {
-        const color = diskColor(copy.color);
         return (
           <Link
             key={copy.disk_id}
@@ -289,13 +376,29 @@ export function DiskCopies({ copies, language, now, t }: { copies: ExternalCopy[
             data-source={copy.source ?? "contents"}
             className="flex items-center gap-1.5 whitespace-nowrap text-xs text-muted no-underline hover:text-fg"
           >
-            <span className={cn("h-2 w-2 flex-none rounded-full", color ? COLOR_CLASS[color].swatch : "bg-faint")} />
-            <span className="font-medium text-fg">{copy.disk_name}</span>
+            <DiskTag id={copy.disk_id} fallback={copy.disk_name} color={copy.color} t={t} nameClassName="font-medium text-fg" />
             <span>{formatWhen(copy.newest, language, now, t.dashboardV2)}</span>
           </Link>
         );
       })}
       {more > 0 ? <span className="text-xs text-faint">{fill(t.resourcesV2.moreDisks, { n: more })}</span> : null}
     </div>
+  );
+}
+
+/** "See its copies per disk" (context menu): every disk holding a copy. */
+function AllCopies({ copies, language, now, t }: { copies: ExternalCopy[]; language: Language; now: Date; t: TranslationDictionary }) {
+  return (
+    <ul className="m-0 flex list-none flex-col gap-1.5 p-0" aria-label={t.menu.resource.copies}>
+      {copies.map((copy) => (
+        <li key={copy.disk_id} className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px]">
+          <Link to={`/disks/${copy.disk_id}`} className="min-w-0 text-fg no-underline hover:underline">
+            <DiskTag id={copy.disk_id} fallback={copy.disk_name} t={t} size="sm" secondary nameClassName="font-medium" />
+          </Link>
+          <span className="text-muted">{fill(t.menu.resource.newest, { when: formatWhen(copy.newest, language, now, t.dashboardV2) })}</span>
+          {copy.versions != null ? <span className="text-faint">{fill(t.menu.resource.versions, { n: copy.versions })}</span> : null}
+        </li>
+      ))}
+    </ul>
   );
 }

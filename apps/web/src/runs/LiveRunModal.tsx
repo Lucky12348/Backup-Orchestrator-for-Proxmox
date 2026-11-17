@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { RepairButton } from "../views/disks/DiskBits";
-import { AlertTriangle, Check, Download, Loader2, Minimize2, X } from "lucide-react";
+import { AlertTriangle, ArrowDown, Check, Download, Loader2, Minimize2, X } from "lucide-react";
+import { DiskTag } from "../views/disks/DiskTag";
 
 import { cancelExternalBackupRun } from "../api";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../components/ui/dialog";
@@ -11,6 +12,9 @@ import { useRunMonitor } from "./RunMonitor";
 import {
   clockTime,
   copySummary,
+  currentActivity,
+  isAtBottom,
+  overallPercent,
   entryText,
   filterEntries,
   formatBytes,
@@ -75,11 +79,15 @@ export function RunView({ run, t, language }: { run: RunLike; t: TranslationDict
   const eject = isEjectRun(run, entries);
   const states = stepStates(run, entries);
   const stats = runStats(run, now);
+  const steps = runSteps(run);
+  // B35: the whole run, weighted by step (the copy's own % inside its step).
+  const percent = overallPercent(run, states, steps);
   const resources = resourceRows(run, entries);
   const summary = monitor.journal?.summary ?? null;
   const source = monitor.journal?.source_datastore ?? run.source_datastore;
   const target = monitor.journal?.target_datastore ?? run.target_datastore;
   const diskName = monitor.diskName(run.disk_id) ?? run.disk_name ?? `#${run.disk_id}`;
+  const activity = currentActivity(steps, states, entries);
   const phase = stepIndex(run.current_step);
 
   const title = eject
@@ -168,7 +176,8 @@ export function RunView({ run, t, language }: { run: RunLike; t: TranslationDict
         <div className="flex min-w-[240px] flex-1 flex-col gap-1">
           <DialogTitle className="m-0 text-lg font-semibold tracking-[-0.01em]">{title}</DialogTitle>
           <DialogDescription id="run-subtitle" className="m-0 text-[13px] text-muted">
-            {eject ? text.kind.eject : run.repair ? text.kind.repair : run.verify_only ? text.kind.verify : text.kind.backup} · {fill(text.subtitle, { time: clockTime(run.started_at.endsWith("Z") ? run.started_at : `${run.started_at}Z`) })} · {diskName}
+            {eject ? text.kind.eject : run.repair ? text.kind.repair : run.verify_only ? text.kind.verify : text.kind.backup} · {fill(text.subtitle, { time: clockTime(run.started_at.endsWith("Z") ? run.started_at : `${run.started_at}Z`) })} ·{" "}
+            <DiskTag id={run.disk_id} fallback={diskName} t={t} size="sm" secondary nameClassName="font-medium text-fg" />
             {target ? (
               <>
                 {" "}
@@ -202,18 +211,22 @@ export function RunView({ run, t, language }: { run: RunLike; t: TranslationDict
 
       <div className="flex flex-col gap-2.5 px-[22px] pb-[18px]">
         <div className="flex flex-wrap items-baseline gap-3.5">
-          <span className="text-[40px] font-semibold tracking-[-0.03em] tabular-nums">{Math.floor(stats.percent)} %</span>
+          <span className="text-[40px] font-semibold tracking-[-0.03em] tabular-nums" data-percent={Math.floor(percent)}>{Math.floor(percent)} %</span>
           <span className="font-mono text-[13px] text-muted">{statsLine}</span>
         </div>
         <div className="h-2 overflow-hidden rounded-full bg-subtle">
-          <div className={cn("h-full rounded-full transition-[width] duration-500", barColor)} style={{ width: `${stats.percent.toFixed(1)}%` }} />
+          <div className={cn("h-full rounded-full transition-[width] duration-500 motion-reduce:transition-none", barColor)} style={{ width: `${percent.toFixed(1)}%` }} />
         </div>
       </div>
 
-      <StepList states={states} steps={runSteps(run)} t={t} />
+      <StepList states={states} steps={steps} t={t} />
 
       <div className="flex min-h-0 flex-1 flex-wrap overflow-auto">
-        <ResourceList rows={resources.rows} pending={resources.pending} t={t} lang={lang} groupName={monitor.groupName} />
+        {resources.rows.length ? (
+          <ResourceList rows={resources.rows} pending={resources.pending} t={t} lang={lang} groupName={monitor.groupName} />
+        ) : (
+          <ActivityPanel activity={activity} running={running} t={t} lang={lang} summary={summary ? copySummary(summary, text, lang) : null} />
+        )}
         <div className="flex min-w-0 flex-[1.6_1_420px] flex-col bg-console">
           <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-3.5 py-2.5">
             <span className="flex flex-1 items-center gap-2 text-[13px] font-semibold text-console-fg">
@@ -238,7 +251,7 @@ export function RunView({ run, t, language }: { run: RunLike; t: TranslationDict
               <Download className="h-[15px] w-[15px]" />
             </button>
           </div>
-          <LogLines entries={visible} templates={t.runLog as Record<string, string>} empty={text.emptyLog} lang={lang} />
+          <LogLines entries={visible} templates={t.runLog as Record<string, string>} empty={text.emptyLog} lang={lang} follow={running} resumeLabel={text.resumeFollow} />
         </div>
       </div>
 
@@ -384,21 +397,53 @@ function ResourceList({
 
 const LEVEL_COLOR = { info: "text-[#7DD3FC]", ok: "text-[#4ADE80]", warn: "text-[#FBBF24]", err: "text-[#F87171]" } as const;
 
+/**
+ * B36: while the run goes on and the reader is at the bottom, the journal
+ * follows the new lines. Scrolling up pauses it ("Resume following ↓"); once
+ * the run is over, the scroll is left alone.
+ */
 export function LogLines({
   entries,
   templates,
   empty,
   lang = "en",
+  follow = false,
+  resumeLabel,
 }: {
   entries: JournalEntry[];
   templates: Record<string, string>;
   empty: string;
   lang?: "fr" | "en";
+  follow?: boolean;
+  resumeLabel?: string;
 }) {
+  const box = useRef<HTMLDivElement | null>(null);
+  const [atBottom, setAtBottom] = useState(true);
+  const shown = entries.slice(-400);
+  const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  const toBottom = (smooth: boolean) => {
+    const element = box.current;
+    if (element) element.scrollTo({ top: element.scrollHeight, behavior: smooth && !reduce ? "smooth" : "auto" });
+  };
+  useLayoutEffect(() => {
+    if (follow && atBottom) toBottom(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shown.length, shown[shown.length - 1]?.count, follow]);
   return (
-    <div className="flex min-h-[320px] flex-1 flex-col justify-end gap-[3px] overflow-auto px-3.5 py-2.5 font-mono text-xs leading-[1.55]">
+    <div className="relative flex min-h-[320px] flex-1 flex-col">
+      <div
+        ref={box}
+        onScroll={(event) => {
+          const element = event.currentTarget;
+          setAtBottom(isAtBottom(element.scrollTop, element.clientHeight, element.scrollHeight));
+        }}
+        className="absolute inset-0 overflow-auto px-3.5 py-2.5 font-mono text-xs leading-[1.55]"
+        data-log
+        data-following={follow && atBottom ? "" : undefined}
+      >
+        <div className="flex min-h-full flex-col justify-end gap-[3px]">
       {entries.length === 0 ? <p className="text-faint">{empty}</p> : null}
-      {entries.slice(-400).map((entry, index) => (
+      {shown.map((entry, index) => (
         <div key={index} className="flex gap-2.5" data-level={entry.level} data-source={entry.source}>
           <span className="shrink-0 text-[#71717A]">{clockTime(entry.at)}</span>
           <span className={cn("w-[38px] shrink-0", LEVEL_COLOR[entry.level])}>{LEVEL_LABEL[entry.level]}</span>
@@ -409,6 +454,66 @@ export function LogLines({
           </span>
         </div>
       ))}
+        </div>
+      </div>
+      {follow && !atBottom && resumeLabel ? (
+        <button
+          type="button"
+          onClick={() => {
+            setAtBottom(true);
+            toBottom(true);
+          }}
+          className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full border-0 bg-accent px-3 py-1.5 font-sans text-xs font-medium text-white shadow-lg hover:brightness-110"
+          data-resume
+        >
+          {resumeLabel}
+          <ArrowDown className="h-3.5 w-3.5" />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/** Left panel when no VM/CT is being copied (verification, repair, nothing to
+ *  copy): the step in progress and what it is doing. */
+function ActivityPanel({
+  activity,
+  running,
+  t,
+  lang,
+  summary,
+}: {
+  activity: ReturnType<typeof currentActivity>;
+  running: boolean;
+  t: TranslationDictionary;
+  lang: "fr" | "en";
+  summary: string | null;
+}) {
+  const text = t.runModal;
+  const step = activity.step;
+  return (
+    <div className="flex min-w-0 flex-[1_1_320px] flex-col border-r border-border" data-activity-panel={step ?? ""}>
+      <div className="flex items-center px-[18px] py-3 text-[13px] font-semibold">
+        <span className="flex-1">{running ? text.nowDoing : text.whatHappened}</span>
+      </div>
+      <div className="flex flex-col gap-2 px-[18px] pb-4">
+        {step ? (
+          <span className="flex items-center gap-2 text-[13px] font-medium text-fg">
+            {running ? <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-text motion-reduce:animate-none" /> : <Check className="h-3.5 w-3.5 text-success-text" />}
+            {(text.steps as Record<string, string>)[step] ?? step}
+            <span className="font-normal text-faint">· {(text.stepSub as Record<string, string>)[step] ?? ""}</span>
+          </span>
+        ) : null}
+        {summary ? <span className="text-[13px] text-muted">{summary}</span> : null}
+        <ul className="m-0 flex list-none flex-col gap-1 p-0">
+          {activity.lines.map((entry, index) => (
+            <li key={index} className="text-[12px] leading-snug text-muted [overflow-wrap:anywhere]">
+              {entryText(entry, t.runLog as Record<string, string>, lang)}
+            </li>
+          ))}
+        </ul>
+        {!activity.lines.length ? <p className="m-0 text-[13px] text-faint">{text.noResources}</p> : null}
+      </div>
     </div>
   );
 }

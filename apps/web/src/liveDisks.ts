@@ -40,8 +40,14 @@ export function rejectReasonText(reason: DiskEventData["reject_reason"], minSize
   return "";
 }
 
+/** Setup wizard, step 5: a disk just plugged in, recognised by its model. */
 function cardTitle(data: DiskEventData): string {
   return data.model_name || data.display_name || data.serial_number;
+}
+
+/** Toasts (Phase 5h): the disk's name, as everywhere in the app; the model is never the title. */
+function toastTitle(data: DiskEventData): string {
+  return data.display_name || data.model_name || data.serial_number;
 }
 
 /** step 5 / any live list: one card per disk, unplugged ones stay visible. */
@@ -85,7 +91,7 @@ export function toastForDiskEvent(event: AppEvent, lang: Lang): DiskToast | null
   if (!data || typeof data.id !== "number") return null;
   // Phase 5g: a disk the operator hid makes no noise.
   if ((data as { status?: string }).status === "hidden") return null;
-  const name = cardTitle(data);
+  const name = toastTitle(data);
   const size = formatCapacity(data.capacity_gb, lang);
   const sep = lang === "fr" ? " : " : ": ";
   if (event.type === "disk.added" && data.verify_recommended && !data.reject_reason) {

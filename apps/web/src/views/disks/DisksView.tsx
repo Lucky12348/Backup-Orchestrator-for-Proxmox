@@ -26,8 +26,10 @@ import { InfoTip } from "../../ui/InfoTip";
 import { useToast } from "../../ui/toast";
 import { formatUsage } from "../../units";
 import { fill, formatSize, formatWhen } from "../format";
-import { AlertBadges, DiskAvatar, PbsConfigNotice, VerifyNowButton } from "./DiskBits";
-import { alertsFor, COLOR_CLASS, diskColor, launchState } from "./diskProfile";
+import { DiskAvatar, PbsConfigNotice, VerifyNowButton } from "./DiskBits";
+import { alertsFor, COLOR_CLASS, diskColor, diskSecondary, launchState } from "./diskProfile";
+import { useDiskMenu } from "./diskMenu";
+import { ActionMenuArea, ActionMenuButton } from "../../ui/ActionMenu";
 import {
   DISK_TABS,
   dataWarning,
@@ -208,6 +210,7 @@ export function DisksView({ disks, runs, language, t, onBackup, onEject, isStart
                 configNote={pbsConfigNote(datastoreHealth?.disks[String(row.disk.id)])}
                 row={row}
                 alerts={alertsFor(alerts, row.disk.id)}
+                runs={runs}
                 selected={selected?.disk.id === row.disk.id}
                 onSelect={() => setSelectedId(row.disk.id)}
                 language={language}
@@ -231,6 +234,7 @@ export function DisksView({ disks, runs, language, t, onBackup, onEject, isStart
             onRescan={() => void rescan()}
             rescanning={rescanning}
             onChanged={onChanged}
+            alerts={alertsFor(alerts, selected.disk.id)}
           />
         ) : (
           <aside className="rounded-[14px] border border-solid border-border bg-surface p-[18px] text-[13px] text-muted lg:sticky lg:top-4">
@@ -270,9 +274,11 @@ export function DiskCard({
   t,
   configNote,
   alerts = [],
+  runs = [],
 }: {
   configNote?: PbsConfigNote | null;
   alerts?: DiskAlert[];
+  runs?: ExternalBackupRun[];
   row: DiskRow<ExternalDisk>;
   selected: boolean;
   onSelect: () => void;
@@ -289,23 +295,32 @@ export function DiskCard({
     disk.trusted ? t.disksV2.status.approved : null,
     disk.pbs_datastore_name ?? null,
   ].filter((tag): tag is string => Boolean(tag));
+  const actions = useDiskMenu(disk, t, runs);
+  const menuLabel = fill(t.menu.label, { name: disk.display_name });
+  // B42: the card gives the state and ONE line; the panel gives the detail and the action.
+  const line = cardLine(alerts, t);
   return (
+    <ActionMenuArea
+      actions={actions}
+      label={menuLabel}
+      data-disk={disk.id}
+      className={cn(
+        "relative flex flex-col rounded-[14px] border border-solid bg-surface text-fg outline-none focus-visible:ring-2 focus-visible:ring-accent",
+        color ? cn("border-l-4", COLOR_CLASS[color].stripe) : "",
+        selected ? "border-accent shadow-[0_0_0_3px_rgb(var(--pbo-accent)/0.18)]" : "border-border hover:border-border-strong",
+      )}
+    >
     <button
       type="button"
       onClick={onSelect}
       aria-pressed={selected}
-      data-disk={disk.id}
-      className={cn(
-        "flex flex-col gap-3 rounded-[14px] border border-solid bg-surface p-4 text-left text-fg",
-        color ? cn("border-l-4", COLOR_CLASS[color].stripe) : "",
-        selected ? "border-accent shadow-[0_0_0_3px_rgb(var(--pbo-accent)/0.18)]" : "border-border hover:border-border-strong",
-      )}
+      className="flex flex-col gap-3 rounded-[14px] border-0 bg-transparent p-4 pr-11 text-left text-fg"
     >
       <div className="flex w-full items-start gap-3">
         <DiskAvatar disk={disk} t={t} toneClass={tone.icon} />
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="truncate text-[15px] font-semibold">{disk.display_name}</span>
-          <span className="truncate text-xs text-faint">{disk.model_name ?? disk.serial_number}</span>
+          <span className="truncate text-xs text-faint">{diskSecondary(disk)}</span>
         </div>
         <StatusPill status={status} label={t.disksV2.status[status]} />
       </div>
@@ -322,10 +337,13 @@ export function DiskCard({
         <span className={cn("text-[13px] font-medium", configNote === "missing_recoverable" ? "text-warning-text" : "text-danger-text")} data-config={configNote}>
           {t.datastoresV2.disk[configNote]}
         </span>
+      ) : line ? (
+        <span className={cn("text-[13px] font-medium", line.danger ? "text-danger-text" : "text-warning-text")} data-alert-line={line.code}>
+          {line.text}
+        </span>
       ) : (
         <span className={cn("text-[13px]", tone.note)}>{noteText(row, t, language)}</span>
       )}
-      <AlertBadges alerts={alerts.filter((alert) => !alert.code.startsWith("pbs_"))} t={t} />
       {tags.length ? (
         <div className="flex flex-wrap gap-1.5">
           {tags.map((tag) => (
@@ -336,7 +354,37 @@ export function DiskCard({
         </div>
       ) : null}
     </button>
+    <ActionMenuButton actions={actions} label={menuLabel} className="absolute right-2 top-[52px]" />
+    </ActionMenuArea>
   );
+}
+
+/** An alert's full sentence ("Rotation A is 91 % full"). */
+function alertDetail(alert: DiskAlert, name: string, t: TranslationDictionary): string {
+  const params = Object.fromEntries(Object.entries(alert.params).map(([key, value]) => [key, typeof value === "number" ? Math.round(value) : String(value ?? "")]));
+  return fill((t.guards.alert as Record<string, string>)[alert.code] ?? alert.code, { name, ...params });
+}
+
+/** Readiness codes an alert of the panel already explains (B42: one message per alert). */
+const COVERED_BY_ALERT: Record<string, string> = { smart_failed: "smart_danger", insufficient_space: "usage_critical", verify_recommended: "verify_recommended" };
+
+function withoutCovered(readiness: ExternalBackupReadiness | undefined, alerts: readonly DiskAlert[]): ExternalBackupReadiness | undefined {
+  if (!readiness || readiness.ready) return readiness;
+  const codes = new Set<string>(alerts.map((alert) => alert.code));
+  const reasons = readiness.reasons.filter((reason) => !codes.has(COVERED_BY_ALERT[reason.code] ?? reason.code));
+  // Everything already explained above: no line under the button (it stays disabled).
+  return reasons.length ? { ...readiness, reasons } : { ...readiness, reasons, ready: true };
+}
+
+/** B42: the one line a card shows for its alerts (the most important, "+N" for the others). */
+export function cardLine(alerts: readonly DiskAlert[], t: TranslationDictionary): { code: string; text: string; danger: boolean } | null {
+  const shown = alerts.filter((alert) => !alert.code.startsWith("pbs_"));
+  if (!shown.length) return null;
+  const [top] = shown;
+  const badges = t.guards.badge as Record<string, string>;
+  const params = Object.fromEntries(Object.entries(top.params).map(([key, value]) => [key, typeof value === "number" ? Math.round(value) : String(value ?? "")]));
+  const more = shown.length > 1 ? ` · ${fill(t.disksV2.moreAlerts, { n: shown.length - 1 })}` : "";
+  return { code: top.code, text: `${fill(badges[top.code] ?? top.code, params)}${more}`, danger: top.level === "danger" };
 }
 
 function useReadiness(disk: ExternalDisk, status: DiskUiStatus, runs: ExternalBackupRun[]) {
@@ -373,6 +421,7 @@ export function DiskDetail({
   onRescan,
   rescanning,
   onChanged,
+  alerts = [],
 }: {
   configState?: DiskDatastoreState | null;
   row: DiskRow<ExternalDisk>;
@@ -386,9 +435,12 @@ export function DiskDetail({
   onRescan: () => void;
   rescanning: boolean;
   onChanged: () => Promise<void> | void;
+  alerts?: DiskAlert[];
 }) {
   const { disk, status } = row;
   const text = t.disksV2;
+  // B42: each alert once, here, with its detail and its action (the card only gives one line).
+  const detailed = alerts.filter((alert) => !alert.code.startsWith("pbs_") && alert.code !== "verify_recommended");
   const now = useNow();
   const when = (iso: string | null) => formatWhen(iso, language, now, t.dashboardV2);
   const actions = diskActions(disk, status);
@@ -445,6 +497,25 @@ export function DiskDetail({
         </div>
       ) : null}
 
+      {detailed.length ? (
+        <ul className="m-0 flex list-none flex-col gap-2 border-0 border-b border-solid border-border p-[18px]" data-alert-details={detailed.map((alert) => alert.code).join(",")}>
+          {detailed.map((alert) => (
+            <li
+              key={alert.code}
+              className={cn(
+                "flex flex-col gap-2 rounded-[10px] p-3 text-[13px] leading-[1.45]",
+                alert.level === "danger" ? "bg-danger/15 text-danger-text" : "bg-warning/15 text-warning-text",
+              )}
+            >
+              <span>{alertDetail(alert, disk.display_name, t)}</span>
+              <Link to={`/disks/${disk.id}`} className="w-fit text-[13px] font-medium text-fg underline-offset-2 hover:underline">
+                {(t.guards.action as Record<string, string>)[alert.code] ?? t.diskSheet.open}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
       {status === "new" ? <ApprovalFlow disk={disk} t={t} language={language} onChanged={onChanged} /> : null}
 
       {status === "rejected" && reason ? (
@@ -462,7 +533,8 @@ export function DiskDetail({
               case "backup": {
                 // A failing SMART can be overridden in the launch dialog (explicit confirmation).
                 const blocked = !readiness || !launchState(readiness, true).canStart;
-                const title = readinessTitle(readiness, t.readiness as Record<string, string>, language);
+                // B42: what the alerts above already explain is not repeated under the button.
+                const title = readinessTitle(withoutCovered(readiness, alerts), t.readiness as Record<string, string>, language);
                 return (
                   <div key={action} className="flex flex-col gap-1.5">
                     <button type="button" className={primary} disabled={blocked || starting} title={title} onClick={() => onBackup(disk)}>

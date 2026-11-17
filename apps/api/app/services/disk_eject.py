@@ -82,7 +82,7 @@ def eject_dedicated_external_disk(db: Session, disk_id: int) -> ExternalDisk:
         db.add(run)
         db.commit()
         db.refresh(disk)
-        notify_disk_eject_ready(disk.serial_number)
+        notify_disk_eject_ready(_label(disk))
         return disk
     except AgentCommandError as exc:
         db.refresh(run)
@@ -99,7 +99,7 @@ def eject_dedicated_external_disk(db: Session, disk_id: int) -> ExternalDisk:
                 current_step=EJECT_NOT_FINISHED_STEP,
             )
             logger.warning("Dedicated PBS datastore eject not finished for disk %s: %s", disk.serial_number, exc)
-            notify_disk_eject_not_finished(disk.serial_number, str(exc))
+            notify_disk_eject_not_finished(_label(disk), str(exc))
             raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail=EJECT_NOT_FINISHED_MESSAGE) from exc
         _finish_eject_activity_failed(db, run, str(exc), exc.stdout_log, exc.stderr_log, exc.command_summary, exc.execution_cwd, exc.return_code)
         logger.warning("Dedicated PBS datastore eject failed for disk %s: %s", disk.serial_number, exc)
@@ -132,7 +132,7 @@ def eject_disk_within_run(db: Session, disk: ExternalDisk, run: ExternalBackupRu
     except AgentCommandError as exc:
         db.refresh(run)
         if exc.payload.get("error_code") == EJECT_NOT_FINISHED_ERROR_CODE:
-            notify_disk_eject_not_finished(disk.serial_number, str(exc))
+            notify_disk_eject_not_finished(_label(disk), str(exc))
             _log_auto_eject_failure(db, run, EJECT_NOT_FINISHED_MESSAGE)
         else:
             _log_auto_eject_failure(db, run, str(exc))
@@ -146,7 +146,7 @@ def eject_disk_within_run(db: Session, disk: ExternalDisk, run: ExternalBackupRu
         _log_auto_eject_failure(db, run, str(exc))
         return False
     append_external_backup_run_log(db, run.id, step="ejected", message=AUTO_EJECTED_MESSAGE)
-    notify_disk_eject_ready(disk.serial_number)
+    notify_disk_eject_ready(_label(disk))
     return True
 
 
@@ -353,3 +353,8 @@ def _finish_eject_activity_failed(
 def _merge_logs(*values: str | None) -> str | None:
     merged = "\n\n".join(value for value in values if value)
     return merged or None
+
+
+def _label(disk: ExternalDisk) -> str:
+    """Notifications name the disk as the operator does (serial only as a detail)."""
+    return f"{disk.display_name} ({disk.serial_number})" if disk.display_name else disk.serial_number

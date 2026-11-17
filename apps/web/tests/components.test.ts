@@ -45,6 +45,10 @@ before(async () => {
         'export { ContentsCard } from "./src/views/disks/DiskSheetView";',
         'export { UsageChart } from "./src/views/disks/UsageChart";',
         'export { DiskCopies } from "./src/views/resources/ResourcesView";',
+        'export { DiskSheetView } from "./src/views/disks/DiskSheetView";',
+        'export { DiskTag, DiskDirectoryProvider } from "./src/views/disks/DiskTag";',
+        'export { ActionMenuArea, ActionMenuButton } from "./src/ui/ActionMenu";',
+        'export { Routes, Route } from "react-router-dom";',
       ].join("\n"),
       resolveDir: WEB,
       loader: "tsx",
@@ -120,7 +124,7 @@ function inApp(child: unknown) {
   return createElement(
     ui.MemoryRouter,
     null,
-    createElement(ui.ToastProvider, { closeLabel: "x" }, createElement(ui.ConfirmProvider, { defaultCancelLabel: "Annuler" }, child)),
+    createElement(ui.ToastProvider, { closeLabel: "x", viewLabel: "Voir" }, createElement(ui.ConfirmProvider, { defaultCancelLabel: "Annuler" }, child)),
   );
 }
 
@@ -149,9 +153,11 @@ const baseDisk = {
 
 test("DiskCard: name, status pill, capacity", () => {
   const markup = html(
-    createElement(ui.DiskCard, { row: { disk: baseDisk, status: "approved" }, selected: true, onSelect: () => undefined, language: "fr", t: translations.fr }),
+    inApp(createElement(ui.DiskCard, { row: { disk: baseDisk, status: "approved" }, selected: true, onSelect: () => undefined, language: "fr", t: translations.fr })),
   );
   assert.ok(markup.includes("WD 4 To"));
+  // Phase 5h: the same actions on a right click and on the visible ⋯ button.
+  assert.ok(markup.includes("data-context-menu") && markup.includes("data-menu-button") && markup.includes('aria-label="Actions — WD 4 To"'));
   assert.ok(markup.includes('data-status="approved"') && markup.includes("Approuvé"));
   // Phase 5f: used and total in one unit.
   assert.ok(markup.includes("0,71 / 3,57 Tio utilisés · 20 %"));
@@ -237,8 +243,9 @@ test("DashboardView: protected block, next rotation, to do, rotation disks, last
       }),
     ),
   );
-  assert.ok(markup.includes('data-protection="protected"') && markup.includes("Tout est protégé"));
-  assert.ok(markup.includes("Vos 11 VM et conteneurs"));
+  // B42: everything is protected, but a new disk waits in "To do": attention, never green.
+  assert.ok(markup.includes('data-protection="protected"') && markup.includes('data-state="attention"') && markup.includes("Attention requise"));
+  assert.ok(!markup.includes("Tout est protégé") && markup.includes("1 point demande votre attention"));
   assert.ok(markup.includes("2 ressources ignorées") && markup.includes("dont 2 d&#x27;infrastructure"));
   assert.ok(markup.includes("Prochaine rotation") && markup.includes("Rotation hebdo") && markup.includes("Branché, prêt"));
   assert.ok(markup.includes('data-todo="new_disk"') && markup.includes("Nouveau disque : SanDisk"));
@@ -500,14 +507,16 @@ test("DayPills: L M M J V S D, pressed state", () => {
 
 test("DiskCard: 'PBS configuration missing' note", () => {
   const markup = html(
-    createElement(ui.DiskCard, {
-      row: { disk: baseDisk, status: "approved" },
-      selected: false,
-      onSelect: () => undefined,
-      language: "fr",
-      t: translations.fr,
-      configNote: "missing_recoverable",
-    }),
+    inApp(
+      createElement(ui.DiskCard, {
+        row: { disk: baseDisk, status: "approved" },
+        selected: false,
+        onSelect: () => undefined,
+        language: "fr",
+        t: translations.fr,
+        configNote: "missing_recoverable",
+      }),
+    ),
   );
   assert.ok(markup.includes('data-config="missing_recoverable"') && markup.includes("Configuration PBS supprimée · sera recréée"));
 });
@@ -528,16 +537,18 @@ test("DiskAvatar: kind icon in its colour, or the photo", () => {
   assert.ok(photo.includes('src="/api/v1/disks/1/photo?v=disk-1-ab.webp"') && photo.includes('alt="Photo de WD 4 To"'));
 });
 
-test("DiskCard: guard badges and usage bar colour", () => {
+test("DiskCard: one line for its alerts (B42) and usage bar colour", () => {
   const alerts = [
     { disk_id: 1, disk_name: "WD 4 To", code: "usage_critical", level: "danger", params: { percent: 93.4 } },
     { disk_id: 1, disk_name: "WD 4 To", code: "usb2_slow", level: "warning", params: { speed_mbps: 480 } },
   ];
   const disk = { ...baseDisk, filesystem_used_gb: 3420 };
   const markup = html(
-    createElement(ui.DiskCard, { row: { disk, status: "approved" }, alerts, selected: false, onSelect: () => undefined, language: "fr", t: translations.fr }),
+    inApp(createElement(ui.DiskCard, { row: { disk, status: "approved" }, alerts, selected: false, onSelect: () => undefined, language: "fr", t: translations.fr })),
   );
-  assert.ok(markup.includes('data-alerts="usage_critical,usb2_slow"') && markup.includes("Plein à 93 %") && markup.includes("USB 2.0"));
+  // B42: the most important alert in one line, the others counted; the detail is in the panel.
+  assert.ok(markup.includes('data-alert-line="usage_critical"') && markup.includes("Plein à 93 % · +1 autre(s)"));
+  assert.ok(!markup.includes("data-alerts="));
   assert.ok(markup.includes("bg-danger"));
 });
 
@@ -564,7 +575,7 @@ test("UsageChart: one series with 80/90 % lines and a table view", () => {
   ];
   const markup = html(createElement(ui.UsageChart, { points, name: "WD 4 To", language: "fr", t: translations.fr }));
   assert.ok(markup.includes('role="img"') && markup.includes('aria-label="Occupation de WD 4 To dans le temps, en pourcentage"'));
-  assert.ok(markup.includes("stroke-warning") && markup.includes("stroke-danger"));
+  assert.ok(markup.includes('data-threshold="80"') && markup.includes('data-threshold="90"'));
   assert.ok(markup.includes("Afficher en tableau") && markup.includes("85 %") && markup.includes("3,04 / 3,57 Tio"));
   const empty = html(createElement(ui.UsageChart, { points: [], name: "x", language: "en", t: translations.en }));
   assert.ok(empty.includes("No usage measured yet"));
@@ -612,4 +623,54 @@ test("DamagedVersions: which versions, whether the source still has them, a Repa
   assert.ok(markup.includes('data-damaged="2"') && markup.includes("2 version(s) abîmée(s) sur ce disque"));
   assert.ok(markup.includes("encore dans la source") && markup.includes("n’existe plus qu’abîmée ici"));
   assert.ok(markup.includes("data-repair=") && markup.includes("Réparer"));
+});
+
+// --- Phase 5h: identity everywhere, context menus, chart, journal --------------------------------
+
+test("DiskTag: avatar, the operator's name, model and serial as a secondary line", () => {
+  const disk = { ...baseDisk, display_name: "Rotation A", model_name: "QEMU HARDDISK", serial_number: "QM00005", color: "green" };
+  const markup = html(createElement(ui.DiskDirectoryProvider, { disks: [disk] }, createElement(ui.DiskTag, { id: 1, t: translations.fr, secondary: true })));
+  assert.ok(markup.includes('data-disk-tag="1"') && markup.includes("Rotation A") && markup.includes("QEMU HARDDISK · QM00005"));
+  assert.ok(markup.indexOf("Rotation A") < markup.indexOf("QEMU HARDDISK"));
+  const unknown = html(createElement(ui.DiskTag, { id: 9, fallback: "Ancien disque", color: "blue", t: translations.fr }));
+  assert.ok(unknown.includes("Ancien disque") && unknown.includes("bg-sky-500"));
+});
+
+test("ActionMenuArea / ActionMenuButton: same actions, focusable for Shift+F10, labelled button", () => {
+  const actions = [{ key: "open", label: "Ouvrir", onSelect: () => undefined }];
+  const markup = html(
+    inApp(createElement(ui.ActionMenuArea, { actions, label: "Actions — x" }, createElement(ui.ActionMenuButton, { actions, label: "Actions — x" }))),
+  );
+  assert.ok(markup.includes('tabindex="0"') && markup.includes('aria-haspopup="menu"') && markup.includes("data-context-menu"));
+  assert.ok(markup.includes('aria-label="Actions — x"') && markup.includes("data-menu-button"));
+  assert.equal(html(createElement(ui.ActionMenuButton, { actions: [], label: "x" })), ""); // nothing to offer: no button
+});
+
+test("DiskSheetView: the identity comes first, with the menu; usage chart text is HTML", () => {
+  const disk = { ...baseDisk, usage_history: [{ at: "2026-11-01T00:00:00Z", used_gb: 700, total_gb: 3660 }, { at: "2026-11-10T00:00:00Z", used_gb: 900, total_gb: 3660 }] };
+  const markup = html(
+    createElement(
+      ui.MemoryRouter,
+      { initialEntries: ["/disks/1"] },
+      createElement(ui.ToastProvider, { closeLabel: "x", viewLabel: "Voir" },
+        createElement(ui.ConfirmProvider, { defaultCancelLabel: "Annuler" },
+          createElement(ui.Routes, null, createElement(ui.Route, {
+            path: "/disks/:id",
+            element: createElement(ui.DiskSheetView, { disks: [disk], runs: [], alerts: [], language: "fr", t: translations.fr, onChanged: () => undefined }),
+          })))),
+    ),
+  );
+  assert.ok(markup.includes('id="identity"') && markup.includes("data-preview-name") && markup.includes("data-menu-button"));
+  assert.ok(markup.indexOf("data-identity") < markup.indexOf("data-usage-chart"));
+  // B38: no SVG <text> (it scaled with the width); labels and thresholds are HTML.
+  const chart = markup.slice(markup.indexOf("data-usage-chart"));
+  assert.ok(!chart.includes("<text") && chart.includes('data-threshold="80"') && chart.includes("50 %"));
+});
+
+test("LogLines: follows the end while running; no resume button at the bottom", () => {
+  const entries = [{ at: "2026-11-18T01:00:00Z", step: "sync_job", source: "pbo", level: "info", code: null, params: {}, text: "line", count: 1 }];
+  const running = html(createElement(ui.LogLines, { entries, templates: {}, empty: "-", follow: true, resumeLabel: "Reprendre le suivi" }));
+  assert.ok(running.includes("data-following") && !running.includes("data-resume"));
+  const ended = html(createElement(ui.LogLines, { entries, templates: {}, empty: "-", follow: false, resumeLabel: "Reprendre le suivi" }));
+  assert.ok(!ended.includes("data-following"));
 });

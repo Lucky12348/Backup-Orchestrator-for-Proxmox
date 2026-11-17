@@ -160,3 +160,16 @@
     animation: none;
   }
 }
+
+/* Phase 5h: the system's "reduce motion" setting is respected everywhere in
+   the new UI (fades, progress bars, spinners, smooth scrolling). */
+@media (prefers-reduced-motion: reduce) {
+  .pbo-ui *,
+  .pbo-ui *::before,
+  .pbo-ui *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

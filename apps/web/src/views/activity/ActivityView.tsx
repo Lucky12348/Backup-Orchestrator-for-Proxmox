@@ -11,6 +11,9 @@ import { openRunModal } from "../../runs/openRun";
 import { useConfirm } from "../../ui/confirm";
 import { InfoTip } from "../../ui/InfoTip";
 import { fill, formatWhen } from "../format";
+import { DiskTag } from "../disks/DiskTag";
+import { useRunMenu } from "../../runs/runMenu";
+import { ActionMenuArea, ActionMenuButton } from "../../ui/ActionMenu";
 import {
   ACTIVITY_STATES,
   ACTIVITY_TYPES,
@@ -260,7 +263,7 @@ export function ActivityRow({
             {text.type[item.type]}
           </span>
           <span className="text-faint">·</span>
-          <span className="truncate text-muted">{item.disk_label}</span>
+          <DiskTag id={item.disk_id} fallback={item.disk_label} t={t} className="text-muted" />
           {item.planned && item.type !== "planning" ? <span className="rounded bg-subtle px-1.5 text-[11px] text-faint">{text.planned}</span> : null}
           {badge}
         </span>
@@ -279,9 +282,9 @@ export function ActivityRow({
   return (
     <li data-activity={item.id} data-type={item.type} data-state={state}>
       {clickable ? (
-        <button type="button" className={cn(row, "hover:bg-subtle")} onClick={() => item.run_id && openRunModal(item.run_id)} aria-label={`${text.open}: ${summary}`}>
+        <RunActivityRow item={item} summary={summary} language={language} t={t} rowClass={row}>
           {content}
-        </button>
+        </RunActivityRow>
       ) : item.type === "planning" ? (
         <Link to="/planning" className={cn(row, "no-underline hover:bg-subtle")}>
           {content}
@@ -290,5 +293,36 @@ export function ActivityRow({
         <div className={row}>{content}</div>
       )}
     </li>
+  );
+}
+
+/** A run of the list: opens its follow-up; right click / ⋯ / long press / Shift+F10 for the run menu. */
+function RunActivityRow({
+  item,
+  summary,
+  language,
+  t,
+  rowClass,
+  children,
+}: {
+  item: ActivityItem;
+  summary: string;
+  language: Language;
+  t: TranslationDictionary;
+  rowClass: string;
+  children: ReactNode;
+}) {
+  const run = item.run_id !== null
+    ? { id: item.run_id, disk_id: item.disk_id ?? 0, status: item.status, started_at: item.at, verify_only: (item.type as string) === "verify", repair: (item.type as string) === "repair", current_step: item.type === "eject" ? "ejected" : item.step }
+    : undefined;
+  const actions = useRunMenu(run, t, language);
+  const label = fill(t.menu.label, { name: item.disk_label });
+  return (
+    <ActionMenuArea actions={actions} label={label} className="flex items-center pr-3 outline-none hover:bg-subtle focus-visible:bg-subtle" tabIndex={-1}>
+      <button type="button" className={cn(rowClass, "min-w-0 flex-1 border-b-0")} onClick={() => item.run_id && openRunModal(item.run_id)} aria-label={`${t.activityV2.open}: ${summary}`}>
+        {children}
+      </button>
+      <ActionMenuButton actions={actions} label={label} />
+    </ActionMenuArea>
   );
 }

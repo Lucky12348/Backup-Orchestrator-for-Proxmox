@@ -188,7 +188,7 @@ class NotificationEventWiringTests(TestCase):
         ):
             eject_dedicated_external_disk(self.session, disk.id)
 
-        notify_eject.assert_called_once_with("USB-123")
+        notify_eject.assert_called_once_with("Disk (USB-123)")
 
     def test_update_result_triggers_notify(self):
         from app.api.routes.maintenance import _action_read_with_notification

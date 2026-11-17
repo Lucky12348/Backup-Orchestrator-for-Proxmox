@@ -12,7 +12,10 @@ test("toasts: same id replaces, oldest dropped beyond the limit, sticky allowed"
   assert.equal(list.length, MAX_TOASTS);
   assert.equal(list.at(-1)?.title, `T${MAX_TOASTS + 1}`);
   assert.deepEqual(removeToast(list, list[0].id).length, MAX_TOASTS - 1);
-  assert.equal(makeToast({ title: "x", tone: "danger" }).duration, 10000);
+  // Phase 5h: info/success 8 s, warnings 12 s, errors stay until closed.
+  assert.equal(makeToast({ title: "x", tone: "danger" }).duration, 0);
+  assert.equal(makeToast({ title: "x", tone: "warning" }).duration, 12000);
+  assert.equal(makeToast({ title: "x", tone: "success" }).duration, 8000);
   assert.equal(makeToast({ title: "x", duration: 0 }).duration, 0);
 });
 

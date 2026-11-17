@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { CalendarPlus, ChevronLeft, ChevronRight, Download, Share } from "lucide-react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { CalendarPlus, ChevronLeft, ChevronRight, CopyPlus, Download, Eye, PauseCircle, Pencil, Play, PlayCircle, Settings2, Share, Trash2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 import {
   cancelScheduledBackupRun,
   confirmScheduledBackupRun,
+  deleteScheduledBackupEvent,
+  updateScheduledBackupEvent,
   getAgenda,
   getCalendarFeed,
   regenerateCalendarFeed,
@@ -53,6 +56,11 @@ import {
   type Tone,
 } from "./calendarModel";
 import { PlanningDialog, type DialogState } from "./PlanningDialog";
+import { ActionMenuButton, useContextMenu, type MenuAction } from "../../ui/ActionMenu";
+import { DiskDot, DiskTag } from "../disks/DiskTag";
+
+/** The context menu of an agenda item (built by PlanningView, read by the chips and the detail card). */
+const EventMenuContext = createContext<(item: AgendaItem) => MenuAction[]>(() => []);
 
 const HOUR_PX = 34;
 
@@ -129,6 +137,7 @@ export function PlanningView(props: PlanningViewProps) {
   const lang = language;
   const fetchAgenda = props.fetchAgenda ?? getAgenda;
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [now, setNow] = useState(() => props.now ?? new Date());
   const [agenda, setAgenda] = useState<AgendaResponse | null>(null);
   const [failed, setFailed] = useState(false);
@@ -185,6 +194,58 @@ export function PlanningView(props: PlanningViewProps) {
     setDialog({ mode: "create", start });
   }
 
+  /** Phase 5h: right click / ⋯ / long press on an agenda event. */
+  function eventMenu(item: AgendaItem): MenuAction[] {
+    const menu = t.menu.event;
+    const event = props.events.find((candidate) => candidate.id === item.event_id);
+    if (!event) {
+      if (item.backup_run_id) return [{ key: "open", label: t.menu.run.open, icon: Eye, onSelect: () => openRunModal(item.backup_run_id as number) }];
+      if (item.kind === "proxmox") return [{ key: "job", label: menu.openJob, icon: Settings2, onSelect: () => navigate("/assets#proxmox-jobs") }];
+      return [];
+    }
+    const reload = async () => {
+      await Promise.all([load(), props.onChanged()]);
+    };
+    const guard = async (task: () => Promise<void>) => {
+      try {
+        await task();
+      } catch (error) {
+        toast({ tone: "danger", title: errorText(error, t) });
+      }
+    };
+    return [
+      { key: "run_now", label: menu.runNow, icon: Play, disabled: !event.enabled, onSelect: () => act(item, "run_now") },
+      { key: "edit", label: menu.edit, icon: Pencil, onSelect: () => setDialog({ mode: "edit", event }) },
+      { key: "duplicate", label: menu.duplicate, icon: CopyPlus, onSelect: () => setDialog({ mode: "duplicate", event }) },
+      {
+        key: "toggle",
+        label: event.enabled ? menu.disable : menu.enable,
+        icon: event.enabled ? PauseCircle : PlayCircle,
+        confirm: event.enabled ? { title: fill(menu.disableTitle, { title: event.title }), description: menu.disableText, confirmLabel: menu.disable } : undefined,
+        onSelect: () =>
+          guard(async () => {
+            await updateScheduledBackupEvent(event.id, { enabled: !event.enabled } as never);
+            toast({ tone: "success", title: fill(event.enabled ? menu.disabled : menu.enabled, { title: event.title }) });
+            await reload();
+          }),
+      },
+      {
+        key: "delete",
+        label: menu.delete,
+        icon: Trash2,
+        danger: true,
+        confirm: { title: t.planningV2.dialog.deleteTitle, description: t.planningV2.dialog.deleteText, confirmLabel: menu.delete },
+        onSelect: () =>
+          guard(async () => {
+            await deleteScheduledBackupEvent(event.id);
+            toast({ tone: "success", title: fill(menu.deleted, { title: event.title }) });
+            setSelectedId(null);
+            await reload();
+          }),
+      },
+    ];
+  }
+
   async function act(item: AgendaItem, action: ItemAction) {
     try {
       if (action === "follow" || action === "report") {
@@ -214,6 +275,7 @@ export function PlanningView(props: PlanningViewProps) {
   }
 
   return (
+    <EventMenuContext.Provider value={eventMenu}>
     <div className="-mx-4 -my-5 flex min-h-[calc(100vh-61px)] flex-wrap sm:-mx-7 sm:-my-7 2xl:-mx-10">
       <div className="order-2 flex flex-[1_1_250px] flex-col gap-[22px] border-solid border-border px-4 py-5 lg:order-1 lg:max-w-[290px] lg:border-r">
         <button
@@ -359,6 +421,7 @@ export function PlanningView(props: PlanningViewProps) {
         t={t}
       />
     </div>
+    </EventMenuContext.Provider>
   );
 }
 
@@ -391,9 +454,12 @@ export function EventChip({
 }) {
   const tone = itemTone(item);
   const sub = item.status === "running" && item.progress_percent != null ? `${item.disk_label ?? ""} · ${Math.round(item.progress_percent)} %` : item.disk_label ?? "";
+  const menu = useContextMenu(useContext(EventMenuContext)(item), fill(t.menu.label, { name: itemLabel(item, t) }));
   return (
+    <>
     <button
       type="button"
+      {...menu.props}
       onClick={(event) => {
         event.stopPropagation();
         onSelect();
@@ -413,6 +479,7 @@ export function EventChip({
     >
       {compact ? (
         <>
+          <DiskDot serial={item.disk_serial} className="mr-1" />
           {timeOf(item.starts_at, tz)} {TONE_MARK[tone] ?? ""}
           {itemLabel(item, t)}
         </>
@@ -422,12 +489,17 @@ export function EventChip({
             {TONE_MARK[tone] ?? ""}
             {itemLabel(item, t)}
           </span>
-          <span className="truncate text-[11px] opacity-85">
-            {timeOf(item.starts_at, tz)} · {sub}
+          <span className="flex min-w-0 items-center gap-1 truncate text-[11px] opacity-85">
+            <DiskDot serial={item.disk_serial} />
+            <span className="truncate">
+              {timeOf(item.starts_at, tz)} · {sub}
+            </span>
           </span>
         </>
       )}
     </button>
+    {menu.panel}
+    </>
   );
 }
 
@@ -805,9 +877,14 @@ export function DetailCard({
   const day = `${weekdayName(start.weekday, lang, "long")} ${start.d} ${new Intl.DateTimeFormat(lang === "fr" ? "fr-FR" : "en-GB", { month: "long", timeZone: "UTC" }).format(new Date(Date.UTC(start.y, start.m - 1, 1)))}`;
   const statusText = item.status === "running" && item.progress_percent != null ? `${text.status.running} · ${Math.round(item.progress_percent)} %` : text.status[item.status];
   const actions = itemActions(item);
+  const menu = useContext(EventMenuContext)(item);
   return (
     <section aria-label={text.detail} className="flex flex-col gap-2 rounded-xl border border-solid border-border bg-surface p-3.5" data-detail={item.id}>
-      <span className={cn("self-start rounded-full px-2 py-0.5 text-[11px] font-medium", STATUS_CHIP[item.status] ?? "bg-subtle text-muted")}>{statusText}</span>
+      <span className="flex items-center gap-2">
+        <span className={cn("self-start rounded-full px-2 py-0.5 text-[11px] font-medium", STATUS_CHIP[item.status] ?? "bg-subtle text-muted")}>{statusText}</span>
+        <span className="flex-1" />
+        <ActionMenuButton actions={menu} label={fill(t.menu.label, { name: itemLabel(item, t) })} className="-my-1 -mr-1.5" />
+      </span>
       <span className="text-[15px] font-semibold">{itemLabel(item, t)}</span>
       <span className="text-xs text-muted">
         {day} · {timeOf(item.starts_at, tz)} – {timeOf(item.ends_at, tz)}
@@ -816,8 +893,8 @@ export function DetailCard({
         <span className="font-mono text-xs text-faint" data-job={item.job_id ?? ""}>
           {[item.job_id, item.job_comment, item.message].filter(Boolean).join(" · ")}
         </span>
-      ) : item.disk_label ? (
-        <span className="text-xs text-faint">{item.disk_label}</span>
+      ) : item.disk_label || item.disk_serial ? (
+        <DiskTag serial={item.disk_serial} fallback={item.disk_label} t={t} size="sm" secondary className="text-xs text-muted" />
       ) : null}
       {item.message && item.status !== "success" && item.kind !== "proxmox" ? <span className="text-xs text-faint [overflow-wrap:anywhere]">{item.message}</span> : null}
       {actions.length ? (

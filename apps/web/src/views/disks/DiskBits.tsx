@@ -21,6 +21,14 @@ const KIND_ICON: Record<DiskKind, ComponentType<{ className?: string }>> = {
   unknown: HardDrive,
 };
 
+const AVATAR_BOX = {
+  xs: "h-5 w-5 rounded-[5px]",
+  sm: "h-7 w-7 rounded-[7px]",
+  md: "h-[38px] w-[38px] rounded-[10px]",
+  lg: "h-[88px] w-[88px] rounded-[14px]",
+} as const;
+const AVATAR_ICON = { xs: "h-3 w-3", sm: "h-4 w-4", md: "h-[18px] w-[18px]", lg: "h-9 w-9" } as const;
+
 /** Photo of the disk when there is one, else the icon of its kind, in its colour. */
 export function DiskAvatar({
   disk,
@@ -30,14 +38,14 @@ export function DiskAvatar({
 }: {
   disk: ExternalDisk;
   t: TranslationDictionary;
-  size?: "md" | "lg";
+  size?: "xs" | "sm" | "md" | "lg";
   toneClass?: string;
 }) {
   const photo = diskPhotoUrl(disk);
   const kind = diskKind(disk.kind);
   const Icon = KIND_ICON[kind];
   const color = diskColor(disk.color);
-  const box = size === "lg" ? "h-[88px] w-[88px] rounded-[14px]" : "h-[38px] w-[38px] rounded-[10px]";
+  const box = AVATAR_BOX[size];
   if (photo) {
     return (
       <img
@@ -54,7 +62,7 @@ export function DiskAvatar({
       title={t.diskSheet.kind[kind]}
       data-kind={kind}
     >
-      <Icon className={size === "lg" ? "h-9 w-9" : "h-[18px] w-[18px]"} />
+      <Icon className={AVATAR_ICON[size]} />
     </div>
   );
 }

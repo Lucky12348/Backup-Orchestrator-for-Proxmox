@@ -31,6 +31,10 @@ export function formatBytes(bytes: number | null | undefined, lang: Lang): strin
 export function formatGib(gib: number | null | undefined, lang: Lang): string {
   if (gib === null || gib === undefined) return "—";
   if (gib <= 0) return `0 ${UNITS[lang][0]}`;
+  // B38: small values stay readable ("180 Mio", "2,35 Gio"), never "0 Gio".
+  if (gib < 1) return formatBytes(gib * 1024 ** 3, lang);
+  if (gib < 10) return `${number(gib, 2, lang)} ${UNITS[lang][3]}`;
+  if (gib < 100) return `${number(gib, 1, lang)} ${UNITS[lang][3]}`;
   if (gib < 1024) return `${Math.round(gib)} ${UNITS[lang][3]}`;
   return formatBytes(gib * 1024 ** 3, lang);
 }
@@ -38,8 +42,13 @@ export function formatGib(gib: number | null | undefined, lang: Lang): string {
 /** Used and total in ONE unit (Phase 5f): "820 / 931 Gio", "0,85 / 3,64 Tio". */
 export function formatUsage(usedGib: number | null | undefined, totalGib: number | null | undefined, lang: Lang): string {
   if (usedGib === null || usedGib === undefined || !totalGib) return "—";
+  const used = Math.max(0, usedGib);
   const tera = totalGib >= 1024;
   const scale = tera ? 1024 : 1;
-  const digits = tera ? 2 : 0;
-  return `${number(Math.max(0, usedGib) / scale, digits, lang)} / ${number(totalGib / scale, digits, lang)} ${UNITS[lang][tera ? 4 : 3]}`;
+  const unit = UNITS[lang][tera ? 4 : 3];
+  const total = number(totalGib / scale, tera ? 2 : 0, lang);
+  // B38: a small used size in the total's unit would read "0 / 491 Gio".
+  if (used > 0 && used / scale < 0.005) return `${formatBytes(used * 1024 ** 3, lang)} / ${total} ${unit}`;
+  const usedDigits = tera || used < 10 ? 2 : 0;
+  return `${number(used / scale, usedDigits, lang)} / ${total} ${unit}`;
 }

@@ -87,7 +87,8 @@ test("tabs and counters (plugged includes an ejected disk still there)", () => {
     disk({ id: 5, display_name: "Ejected", connected: false, status: "ejected", handoff_status: "ejected" }),
   ];
   const rows = diskRows(disks, [run({ disk_id: 1, status: "running" })]);
-  assert.deepEqual(tabCounts(rows), { all: 5, plugged: 3, approved: 3, review: 1, rejected: 1, hidden: 0 });
+  // A rejected disk still plugged in counts in "Plugged in" too (B42: the counters follow the real state).
+  assert.deepEqual(tabCounts(rows), { all: 5, plugged: 4, approved: 3, review: 1, rejected: 1, hidden: 0 });
   assert.deepEqual(visibleRows(rows, "review", "").map((row) => row.disk.id), [3]);
   assert.equal(rows[0].status, "running"); // the running disk comes first
 });

@@ -33,6 +33,8 @@ import { Popover } from "../ui/Popover";
 import { PortalContainerContext } from "../ui/portal";
 import { useTheme } from "../ui/theme";
 import { ToastProvider, useToast } from "../ui/toast";
+import { DiskAvatar } from "../views/disks/DiskBits";
+import { DiskDirectoryProvider } from "../views/disks/DiskTag";
 import { useEvents } from "../useEvents";
 import { newDiskCount } from "./shellModel";
 
@@ -84,7 +86,15 @@ export function AppShellV2({ children, language, onLanguageChange, t, disks, vms
   return (
     <div className="pbo-ui min-h-screen" data-theme={theme}>
       <PortalContainerContext.Provider value={portal}>
-        <ToastProvider closeLabel={t.shell.close}>
+        <DiskDirectoryProvider disks={disks}>
+        <ToastProvider
+          closeLabel={t.shell.close}
+          viewLabel={t.shell.view}
+          renderDisk={(diskId) => {
+            const disk = disks.find((item) => item.id === diskId);
+            return disk ? <DiskAvatar disk={disk} t={t} size="sm" /> : null;
+          }}
+        >
           <ConfirmProvider defaultCancelLabel={t.confirmDialogs.cancel}>
             <RunMonitorProvider diskNames={diskNames} groupNames={groupNames}>
               <ShellLayout
@@ -103,6 +113,7 @@ export function AppShellV2({ children, language, onLanguageChange, t, disks, vms
             </RunMonitorProvider>
           </ConfirmProvider>
         </ToastProvider>
+        </DiskDirectoryProvider>
       </PortalContainerContext.Provider>
       {/* Radix portals land here: inside .pbo-ui, so tokens and utilities apply. */}
       <div ref={setPortal} />
@@ -394,7 +405,7 @@ function DiskEventToasts({ language }: { language: Language }) {
       id: `disk-${item.key}`,
       tone: item.tone === "warning" ? "warning" : item.tone === "neutral" ? "neutral" : "info",
       title: item.message,
-      duration: 8000,
+      diskId: (event.data as { id?: number }).id,
       action: item.action ? { label: item.action.label, href: diskPageUrl(item.action.diskId) } : undefined,
     });
   });

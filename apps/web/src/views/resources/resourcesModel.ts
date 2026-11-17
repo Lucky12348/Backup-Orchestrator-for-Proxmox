@@ -87,3 +87,15 @@ export function nextSelection(job: JobLike, ids: readonly number[], action: "add
   }
   return [...current].sort((a, b) => a - b);
 }
+
+/** "Open in Proxmox": the guest's page in the PVE web UI, from PVE_API_URL
+ *  ("https://pve:8006/api2/json" → "https://pve:8006/#v1:0:=qemu%2F100"). */
+export function pveGuestUrl(apiUrl: string | null | undefined, vm: { vm_type: string; external_id: string | null }): string | null {
+  if (!apiUrl || !vm.external_id) return null;
+  try {
+    const origin = new URL(apiUrl).origin;
+    return `${origin}/#v1:0:=${vm.vm_type === "ct" ? "lxc" : "qemu"}%2F${encodeURIComponent(vm.external_id)}`;
+  } catch {
+    return null;
+  }
+}

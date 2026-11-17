@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useNow } from "../../ui/useNow";
 import { CalendarDays, HardDrive, Loader2, Play } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -15,6 +15,10 @@ import { InfoTip } from "../../ui/InfoTip";
 import { runKind } from "../disks/diskModel";
 import { alertValues } from "../disks/diskProfile";
 import { RepairButton } from "../disks/DiskBits";
+import { DiskMark, DiskTag, useDisk, withDisk } from "../disks/DiskTag";
+import { useDiskMenu } from "../disks/diskMenu";
+import { useRunMenu } from "../../runs/runMenu";
+import { ActionMenuArea, ActionMenuButton } from "../../ui/ActionMenu";
 import { formatUsage } from "../../units";
 import { fill, formatDay, formatSize, formatTime, formatWhen } from "../format";
 import {
@@ -26,6 +30,7 @@ import {
   recentRuns,
   rotationDisks,
   todoItems,
+  dashboardState,
 } from "./dashboardModel";
 
 export interface DashboardViewProps {
@@ -139,13 +144,17 @@ export function DashboardView(props: DashboardViewProps) {
   const lastRuns = recentRuns(runs);
   const infrastructure = overview.infrastructure_ignored ?? 0;
 
-  const headline = protection.state === "protected" ? text.protected : protection.state === "at_risk" ? text.atRisk : text.empty;
+  // B42: "Attention required" (orange) as long as something waits in "To do".
+  const state = dashboardState(protection, todo.length);
+  const headline = state === "protected" ? text.protected : state === "attention" ? text.attention : state === "at_risk" ? text.atRisk : text.empty;
   const sentence =
-    protection.state === "protected"
+    state === "protected"
       ? fill(text.protectedText, { n: protection.total })
-      : protection.state === "at_risk"
-        ? fill(text.atRiskText, { n: protection.atRisk, total: protection.total })
-        : text.emptyText;
+      : state === "attention"
+        ? fill(todo.length === 1 ? text.attentionOne : text.attentionText, { n: todo.length, total: protection.total })
+        : state === "at_risk"
+          ? fill(text.atRiskText, { n: protection.atRisk, total: protection.total })
+          : text.emptyText;
 
   return (
     <div className="flex flex-col gap-6">
@@ -164,11 +173,11 @@ export function DashboardView(props: DashboardViewProps) {
       </div>
 
       <div className="flex flex-wrap items-stretch gap-5">
-        <section aria-label={text.protectionLabel} className={cn(card, "flex min-w-0 flex-[2_1_520px] flex-col")} data-protection={protection.state}>
+        <section aria-label={text.protectionLabel} className={cn(card, "flex min-w-0 flex-[2_1_520px] flex-col")} data-protection={protection.state} data-state={state}>
           <div className="flex flex-wrap items-center gap-7 p-7">
-            <Ring percent={protection.percent} tone={protection.state === "protected" ? "ok" : protection.state === "at_risk" ? "warn" : "off"} label={text.coverage} />
+            <Ring percent={protection.percent} tone={state === "protected" ? "ok" : state === "empty" ? "off" : "warn"} label={text.coverage} />
             <div className="flex flex-[1_1_260px] flex-col gap-2.5">
-              <span className={cn("text-2xl font-semibold tracking-[-0.02em]", protection.state === "at_risk" && "text-warning-text")}>{headline}</span>
+              <span className={cn("text-2xl font-semibold tracking-[-0.02em]", (state === "at_risk" || state === "attention") && "text-warning-text")}>{headline}</span>
               <span className="text-[15px] leading-normal text-muted">{sentence}</span>
               <span className="text-[13px] text-faint">
                 {lastSuccess ? fill(text.lastSuccess, { when: when(lastSuccess) }) : text.noSuccess}
@@ -196,7 +205,10 @@ export function DashboardView(props: DashboardViewProps) {
                 <>
                   <Loader2 className="h-4 w-4 flex-none animate-spin text-accent-text" />
                   <span className="text-sm font-medium">
-                    {fill(runKind(current.run) === "eject" ? text.ejecting : runKind(current.run) === "verify" ? text.verifying : runKind(current.run) === "repair" ? text.repairing : text.running, { disk: current.run.disk_name })}
+                    {withDisk(
+                      runKind(current.run) === "eject" ? text.ejecting : runKind(current.run) === "verify" ? text.verifying : runKind(current.run) === "repair" ? text.repairing : text.running,
+                      <DiskTag id={current.run.disk_id} fallback={current.run.disk_name} t={t} />,
+                    )}
                   </span>
                   <span className="block h-1.5 flex-[1_1_120px] overflow-hidden rounded-full bg-subtle">
                     <span className="block h-full rounded-full bg-accent" style={{ width: `${current.run.progress_percent ?? 0}%` }} />
@@ -213,7 +225,7 @@ export function DashboardView(props: DashboardViewProps) {
                     )}
                   />
                   <span className="flex-1 text-sm">
-                    {fill(current.run.status === "success" ? text.lastRunOk : text.lastRunFailed, { disk: current.run.disk_name })}
+                    {withDisk(current.run.status === "success" ? text.lastRunOk : text.lastRunFailed, <DiskTag id={current.run.disk_id} fallback={current.run.disk_name} t={t} />)}
                   </span>
                   <span className="text-xs text-faint">{when(current.run.finished_at ?? current.run.started_at)}</span>
                   <span className="text-[13px] font-medium text-accent-text">{text.open}</span>
@@ -254,7 +266,7 @@ export function DashboardView(props: DashboardViewProps) {
                   to={rotation.diskId ? `/disks?disk=${rotation.diskId}` : "/disks"}
                   className="flex items-center gap-3 rounded-[10px] bg-subtle p-3 text-fg no-underline"
                 >
-                  <HardDrive className="h-[18px] w-[18px] flex-none text-muted" />
+                  {rotation.diskId ? <DiskMark id={rotation.diskId} t={t} size="md" /> : <HardDrive className="h-[18px] w-[18px] flex-none text-muted" />}
                   <div className="flex flex-1 flex-col">
                     <span className="text-sm font-medium">{rotation.diskLabel}</span>
                     <span className={cn("text-xs", rotation.diskPlugged ? "text-success-text" : "text-warning-text")}>
@@ -295,6 +307,7 @@ export function DashboardView(props: DashboardViewProps) {
                 ) : item.kind === "disk_alert" && item.alert?.code === "damaged_versions" ? (
                   <div key={`alert-${item.alert.disk_id}-damaged`} className="flex flex-wrap items-center gap-3 px-[22px] py-3" data-todo="alert:damaged_versions">
                     <span className="h-2 w-2 flex-none rounded-full bg-danger" />
+                    <DiskMark id={item.alert.disk_id} t={t} />
                     <Link to={item.href} className="min-w-0 flex-1 text-sm text-fg no-underline hover:underline">
                       {fill((t.guards.alert as Record<string, string>).damaged_versions, alertValues(item.alert, (iso) => when(iso)))}
                     </Link>
@@ -311,6 +324,7 @@ export function DashboardView(props: DashboardViewProps) {
                 ) : item.kind === "disk_alert" && item.alert ? (
                   <Link key={`alert-${item.alert.disk_id}-${item.alert.code}`} to={item.href} className={cn(rowLink, "gap-3 px-[22px] py-3")} data-todo={`alert:${item.alert.code}`}>
                     <span className={cn("h-2 w-2 flex-none rounded-full", item.tone === "err" ? "bg-danger" : "bg-warning")} />
+                    <DiskMark id={item.alert.disk_id} t={t} />
                     <span className="flex-1 text-sm">
                       {fill((t.guards.alert as Record<string, string>)[item.alert.code] ?? item.alert.code, alertValues(item.alert, (iso) => when(iso)))}
                     </span>
@@ -352,7 +366,9 @@ export function DashboardView(props: DashboardViewProps) {
             <span className="px-[22px] pb-3 text-[13px] text-faint">{text.noRotationDisks}</span>
           ) : (
             rotationList.map((disk) => (
-              <Link key={disk.id} to={`/disks?disk=${disk.id}`} className={cn(rowLink, "gap-3.5 px-[22px] py-3.5")}>
+              <RotationRow key={disk.id} diskId={disk.id} runs={runs} t={t}>
+              <Link to={`/disks?disk=${disk.id}`} className={cn(rowLink, "min-w-0 flex-1 gap-3.5 py-3.5 pl-[22px] pr-1")}>
+                <DiskMark id={disk.id} t={t} size="sm" />
                 <div className="flex w-[140px] flex-none flex-col gap-0.5">
                   <span className="truncate text-sm font-medium">{disk.name}</span>
                   <span
@@ -379,6 +395,7 @@ export function DashboardView(props: DashboardViewProps) {
                 </div>
                 <span className="w-[92px] text-right text-xs text-faint">{when(disk.lastBackupAt)}</span>
               </Link>
+              </RotationRow>
             ))
           )}
         </section>
@@ -394,11 +411,11 @@ export function DashboardView(props: DashboardViewProps) {
             <span className="px-[22px] pb-3 text-[13px] text-faint">{text.noRuns}</span>
           ) : (
             lastRuns.map(({ run, tone }) => (
+              <RunRow key={run.id} run={run} t={t} language={language}>
               <button
-                key={run.id}
                 type="button"
                 onClick={() => openRunModal(run.id)}
-                className={cn(rowLink, "gap-3 border-0 bg-transparent px-[22px] py-[11px] text-left")}
+                className={cn(rowLink, "min-w-0 flex-1 gap-3 border-0 bg-transparent py-[11px] pl-[22px] pr-1 text-left")}
                 data-run={run.id}
                 data-tone={tone}
               >
@@ -411,15 +428,44 @@ export function DashboardView(props: DashboardViewProps) {
                 >
                   {tone === "ok" ? "✓" : tone === "err" ? "✕" : "•"}
                 </span>
-                <span className="min-w-0 flex-1 truncate text-sm">
-                  {fill(runKind(run) === "eject" ? text.runEject : runKind(run) === "verify" ? text.runVerify : runKind(run) === "repair" ? text.runRepair : text.runBackup, { disk: run.disk_name })}
+                <span className="flex min-w-0 flex-1 items-center truncate text-sm">
+                  {withDisk(
+                    runKind(run) === "eject" ? text.runEject : runKind(run) === "verify" ? text.runVerify : runKind(run) === "repair" ? text.runRepair : text.runBackup,
+                    <DiskTag id={run.disk_id} fallback={run.disk_name} t={t} className="mx-1" />,
+                  )}
                 </span>
                 <span className="text-xs text-faint">{tone === "run" ? text.inProgress : when(run.finished_at ?? run.started_at)}</span>
               </button>
+              </RunRow>
             ))
           )}
         </section>
       </div>
     </div>
+  );
+}
+
+/** Phase 5h: a rotation disk row with the disk's context menu (right click, ⋯, long press, Shift+F10). */
+function RotationRow({ diskId, runs, t, children }: { diskId: number; runs: ExternalBackupRun[]; t: TranslationDictionary; children: ReactNode }) {
+  const disk = useDisk({ id: diskId });
+  const actions = useDiskMenu(disk, t, runs);
+  const label = fill(t.menu.label, { name: disk?.display_name ?? "" });
+  return (
+    <ActionMenuArea actions={actions} label={label} className="flex items-center pr-3 outline-none focus-visible:bg-hover" data-rotation-disk={diskId}>
+      {children}
+      <ActionMenuButton actions={actions} label={label} />
+    </ActionMenuArea>
+  );
+}
+
+/** A "Latest runs" row with the run's context menu. */
+function RunRow({ run, t, language, children }: { run: ExternalBackupRun; t: TranslationDictionary; language: Language; children: ReactNode }) {
+  const actions = useRunMenu(run, t, language);
+  const label = fill(t.menu.label, { name: run.disk_name ?? `#${run.id}` });
+  return (
+    <ActionMenuArea actions={actions} label={label} className="flex items-center pr-3 outline-none focus-visible:bg-hover">
+      {children}
+      <ActionMenuButton actions={actions} label={label} />
+    </ActionMenuArea>
   );
 }

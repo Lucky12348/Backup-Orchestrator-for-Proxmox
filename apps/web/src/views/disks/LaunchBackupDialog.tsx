@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, Loader2, Play } from "lucide-react";
+import { AlertTriangle, Loader2, Play, X } from "lucide-react";
 
 import {
   getExternalBackupPreview,
@@ -14,8 +14,7 @@ import { reasonText } from "../../readiness";
 import type { ExternalBackupPreview, ExternalDisk } from "../../types";
 import { formatBytes } from "../../units";
 import { fill } from "../format";
-import { estimateKind, type GuestCommand } from "./diskProfile";
-import { CloseButton } from "../resources/ProxmoxJobsSection";
+import { diskSecondary, estimateKind, type GuestCommand } from "./diskProfile";
 import { DiskAvatar } from "./DiskBits";
 import { launchState } from "./diskProfile";
 
@@ -82,14 +81,25 @@ export function LaunchBackupDialog({
 
   return (
     <Dialog open onOpenChange={(value) => !value && onClose()}>
-      <DialogContent className="max-w-[520px]" aria-describedby="launch-text">
+      {/* The focus goes to the dialog itself, not to the close button (it showed a stray ring on open). */}
+      <DialogContent className="max-w-[520px]" aria-describedby="launch-text" onOpenAutoFocus={(event) => event.preventDefault()}>
         <div className="flex items-center gap-3 border-0 border-b border-solid border-border px-5 py-4">
           <DiskAvatar disk={disk} t={t} />
           <div className="flex min-w-0 flex-1 flex-col">
             <DialogTitle className="m-0 text-[17px] font-semibold">{text.title}</DialogTitle>
-            <span className="truncate text-[13px] text-muted">{disk.display_name}</span>
+            <span className="truncate text-[14px] font-medium text-fg" data-launch-disk={disk.id}>{disk.display_name}</span>
+            {diskSecondary(disk) ? <span className="truncate text-xs text-faint">{diskSecondary(disk)}</span> : null}
           </div>
-          <CloseButton label={t.planningV2.closeDetail} onClick={onClose} />
+          <button
+            type="button"
+            aria-label={t.shell.close}
+            title={t.shell.close}
+            onClick={onClose}
+            className="flex h-8 w-8 flex-none items-center justify-center rounded-lg border-0 bg-transparent p-0 text-faint outline-none hover:bg-subtle hover:text-fg focus-visible:bg-subtle focus-visible:text-fg"
+            data-close
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
         <div className="flex flex-col gap-3 px-5 py-4 text-[13px] leading-[1.45]">
           <DialogDescription id="launch-text" className="m-0 text-sm text-muted">

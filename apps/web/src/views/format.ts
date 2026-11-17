@@ -11,8 +11,33 @@ function sameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
+/** Server timestamps without a zone ("2026-11-17T03:10:00") are UTC (B38):
+ *  read as local time they were shown one or two hours off. */
+export function serverDate(iso: string): Date {
+  return new Date(/^\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d(\.\d+)?)?$/.test(iso) ? `${iso}Z` : iso);
+}
+
 export function formatTime(iso: string, lang: Lang, timeZone?: string): string {
-  return new Intl.DateTimeFormat(locale(lang), { hour: "2-digit", minute: "2-digit", timeZone }).format(new Date(iso));
+  return new Intl.DateTimeFormat(locale(lang), { hour: "2-digit", minute: "2-digit", timeZone }).format(serverDate(iso));
+}
+
+/** B38: "Read today at 04:10" / "Read yesterday at 23:50" / "Read on 8 Nov at 09:00", local time. */
+export function formatReadAt(
+  iso: string,
+  lang: Lang,
+  now: Date,
+  texts: { readToday: string; readYesterday: string; readOn: string },
+): string {
+  const date = serverDate(iso);
+  const time = formatTime(iso, lang);
+  if (sameDay(date, now)) return texts.readToday.replace("{time}", time);
+  if (sameDay(date, new Date(now.getTime() - 24 * 3600 * 1000))) return texts.readYesterday.replace("{time}", time);
+  const day = new Intl.DateTimeFormat(locale(lang), {
+    day: "numeric",
+    month: "short",
+    year: date.getFullYear() === now.getFullYear() ? undefined : "numeric",
+  }).format(date);
+  return texts.readOn.replace("{date}", day).replace("{time}", time);
 }
 
 /** "today 14:02" / "yesterday 09:00" / "8 nov." (+ year when not this year). */
@@ -24,7 +49,7 @@ export function formatWhen(
   timeZone?: string,
 ): string {
   if (!iso) return texts.never;
-  const date = new Date(iso);
+  const date = serverDate(iso);
   const time = formatTime(iso, lang, timeZone);
   if (sameDay(date, now)) return texts.today.replace("{time}", time);
   const yesterday = new Date(now.getTime() - 24 * 3600 * 1000);

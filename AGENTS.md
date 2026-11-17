@@ -628,6 +628,40 @@ should reach them — and every call is additionally protected with an
   steps); `clear_mistaken_verify_flags` (startup) removes the flags left by
   failures before the passthrough.
 
+## UI: identity, toasts, context menus, run modal (Phase 5h, UI only)
+
+- **Disk identity everywhere**: `views/disks/DiskTag.tsx` — `DiskDirectoryProvider`
+  (the shell gives the disks once), `useDisk({id|serial})`, `DiskTag` (avatar +
+  name, model · serial only as a secondary line), `DiskMark`, `DiskDot`,
+  `withDisk(template, node)` for "{disk}" sentences. The model is never a
+  title (`diskProfile.diskSecondary`). Notifications name the disk too
+  ("Rotation A (SERIAL)").
+- **Toasts** (`ui/toastStore.ts`): info/success 8 s, warning 12 s, danger
+  sticky; pause on hover/focus; 3 at most (oldest non-error dropped);
+  `action.href` without label = "See"; `diskId` shows the disk's avatar.
+- **Context menus** (`ui/ActionMenu.tsx`): `useContextMenu` /
+  `ActionMenuArea` (right click, long press 550 ms, Shift+F10 / Menu key) and
+  `ActionMenuButton` (visible ⋯) share ONE action list; risky entries carry
+  `confirm` (shadcn AlertDialog). Builders: `views/disks/diskMenu.tsx`,
+  `runs/runMenu.tsx`, agenda (`EventMenuContext` in PlanningView), resources
+  and Proxmox jobs in their views. App commands (launch dialog, eject) come
+  from `views/commands.tsx` (`CommandsProvider` in App). "Start now" for a
+  Proxmox job is listed disabled (no API: PBO never runs PVE jobs).
+- **Run modal**: `overallPercent` (B35, weighted steps, capped at 99 % until
+  success; also the top-bar pill), `LogLines` follows the end only while the
+  reader is at the bottom (B36, "Resume following ↓", free once the run is
+  over), `currentActivity` fills the left panel when no VM/CT is copied.
+- **B38**: naive server timestamps are UTC (`format.serverDate`), "Read today
+  at 04:10" (`formatReadAt`); `formatGib` / `formatUsage` keep small values
+  readable ("184 Mio", "0,18 / 491 Gio"); the usage chart draws in a stretched
+  SVG with HTML labels (font size constant), edge-aware tooltip.
+- **B42**: `dashboardState` = "attention" while "To do" is not empty (never
+  green "all protected"); Disks: the card shows its state + ONE line
+  (`cardLine`), the panel the detail and action of each alert, readiness
+  lines already explained by an alert are not repeated; a rejected disk still
+  plugged in counts in "Plugged in".
+- `prefers-reduced-motion` is honoured globally in `.pbo-ui` (`ui/ui.css`).
+
 ## Disk ↔ USB port (Phase 4.4, read before touching the USB passthrough)
 
 - The host agent reports, for each USB disk, its physical USB location read

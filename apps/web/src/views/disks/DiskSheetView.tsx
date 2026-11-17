@@ -22,9 +22,11 @@ import { openRunModal } from "../../runs/openRun";
 import type { ExternalBackupRun, ExternalDisk } from "../../types";
 import { useToast } from "../../ui/toast";
 import { formatBytes, formatUsage } from "../../units";
-import { fill, formatWhen } from "../format";
+import { fill, formatReadAt, formatWhen } from "../format";
+import { ActionMenuButton } from "../../ui/ActionMenu";
+import { useDiskMenu } from "./diskMenu";
 import { AlertBadges, CONFIG_ALERT_NOTE, DamagedVersions, DiskAvatar, PbsConfigNotice } from "./DiskBits";
-import { diskHistory, diskRows, usagePercent, type Tone } from "./diskModel";
+import { diskHistory, diskRows, usagePercent, type DiskRow, type Tone } from "./diskModel";
 import {
   alertsFor,
   COLOR_CLASS,
@@ -86,20 +88,8 @@ export function DiskSheetView({ disks, runs, alerts, language, t, onChanged }: D
   return (
     <div className="flex flex-col gap-[18px]" data-disk-sheet={disk.id}>
       <BackLink t={t} />
-      <header className="flex flex-wrap items-center gap-4">
-        <DiskAvatar disk={disk} t={t} size="lg" />
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <h1 className="m-0 text-[26px] font-semibold tracking-[-0.02em]">{disk.display_name}</h1>
-            <StatusPill status={row.status} label={t.disksV2.status[row.status]} />
-          </div>
-          <span className="text-[13px] text-muted">
-            {[text.kind[diskKind(disk.kind)], disk.model_name, disk.serial_number].filter(Boolean).join(" · ")}
-          </span>
-          {disk.location_note ? <span className="text-[13px] text-faint">{fill(text.locationShown, { location: disk.location_note })}</span> : null}
-          <AlertBadges alerts={diskAlerts} t={t} />
-        </div>
-      </header>
+      {/* Phase 5h: the identity first, with a live preview of what is being edited. */}
+      <IdentityCard disk={disk} row={row} alerts={diskAlerts} runs={runs} t={t} onChanged={onChanged} />
 
       {diskAlerts
         .filter((alert) => alert.code in CONFIG_ALERT_NOTE)
@@ -145,7 +135,6 @@ export function DiskSheetView({ disks, runs, alerts, language, t, onChanged }: D
           </section>
         </div>
         <div className="flex min-w-0 flex-col gap-[18px]">
-          <IdentityCard disk={disk} t={t} onChanged={onChanged} />
           <HealthCard disk={disk} t={t} language={language} />
           <RetentionCard disk={disk} t={t} onChanged={onChanged} />
         </div>
@@ -256,7 +245,7 @@ export function ContentsCard({ disk, t, language, initial }: { disk: ExternalDis
     <section className={card} aria-labelledby="contents-title">
       <div className="flex flex-wrap items-center gap-2">
         <h2 id="contents-title" className="m-0 text-[15px] font-semibold">{text.contents}</h2>
-        {contents?.cached_at ? <span className="text-xs text-faint">{fill(text.contentsAsOf, { when: when(contents.cached_at, language, t) })}</span> : null}
+        {contents?.cached_at ? <span className="text-xs text-faint" data-read-at>{formatReadAt(contents.cached_at, language, new Date(), text)}</span> : null}
         <span className="flex-1" />
         {disk.pbs_datastore_name ? (
           <button type="button" className={secondary} disabled={busy} onClick={() => void refresh()}>
@@ -324,7 +313,27 @@ function History({ disk, runs, language, t }: { disk: ExternalDisk; runs: Extern
   );
 }
 
-function IdentityCard({ disk, t, onChanged }: { disk: ExternalDisk; t: TranslationDictionary; onChanged: () => Promise<void> | void }) {
+function IdentityCard({
+  disk,
+  row,
+  alerts,
+  runs,
+  t,
+  onChanged,
+}: {
+  disk: ExternalDisk;
+  row: DiskRow<ExternalDisk>;
+  alerts: DiskAlert[];
+  runs: ExternalBackupRun[];
+  t: TranslationDictionary;
+  onChanged: () => Promise<void> | void;
+}) {
+  const actions = useDiskMenu(disk, t, runs);
+  const anchor = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    // "Rename / colour…" from a context menu lands here.
+    if (window.location.hash === "#identity") anchor.current?.querySelector("input")?.focus();
+  }, []);
   const text = t.diskSheet;
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -381,8 +390,47 @@ function IdentityCard({ disk, t, onChanged }: { disk: ExternalDisk; t: Translati
     }
   }
 
+  // Live preview: the avatar and the title follow the draft (name, colour) before saving.
+  const preview = { ...disk, display_name: name.trim() || disk.display_name, color };
   return (
-    <section className={card} aria-labelledby="identity-title">
+    <section ref={anchor} id="identity" className={cn(card, "grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(300px,420px)]")} aria-labelledby="identity-title" data-identity>
+      <div className="flex min-w-0 flex-col gap-3">
+        <div className="flex flex-wrap items-start gap-4">
+          <DiskAvatar disk={preview} t={t} size="lg" />
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h1 className="m-0 min-w-0 truncate text-[26px] font-semibold tracking-[-0.02em]" data-preview-name>{preview.display_name}</h1>
+              <StatusPill status={row.status} label={t.disksV2.status[row.status]} />
+              <span className="flex-1" />
+              <ActionMenuButton actions={actions} label={fill(t.menu.label, { name: disk.display_name })} />
+            </div>
+            <span className="text-[13px] text-muted">{[text.kind[diskKind(disk.kind)], disk.model_name, disk.serial_number].filter(Boolean).join(" · ")}</span>
+            {location.trim() ? <span className="text-[13px] text-faint">{fill(text.locationShown, { location: location.trim() })}</span> : null}
+            <AlertBadges alerts={alerts} t={t} />
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="hidden"
+            aria-label={text.addPhoto}
+            onChange={(event) => void upload(event.target.files?.[0])}
+          />
+          <button type="button" className={secondary} disabled={busy} onClick={() => fileRef.current?.click()}>
+            <Camera className="h-4 w-4" />
+            {disk.photo_version ? text.changePhoto : text.addPhoto}
+          </button>
+          {disk.photo_version ? (
+            <button type="button" className={secondary} disabled={busy} onClick={() => void removePhoto()} aria-label={text.removePhoto}>
+              <Trash2 className="h-4 w-4" />
+            </button>
+          ) : null}
+          <span className="text-xs text-faint">{text.photoHint}</span>
+        </div>
+      </div>
+      <div className="flex flex-col gap-3">
       <h2 id="identity-title" className="m-0 text-[15px] font-semibold">{text.identity}</h2>
       <label className="flex flex-col gap-1.5 text-[13px] text-muted">
         {text.name}
@@ -417,29 +465,6 @@ function IdentityCard({ disk, t, onChanged }: { disk: ExternalDisk; t: Translati
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
         {text.save}
       </button>
-      <div className="flex flex-col gap-2 border-0 border-t border-solid border-border pt-3">
-        <span className="text-[13px] text-muted">{text.photo}</span>
-        <div className="flex items-center gap-3">
-          <DiskAvatar disk={disk} t={t} />
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            className="hidden"
-            aria-label={text.addPhoto}
-            onChange={(event) => void upload(event.target.files?.[0])}
-          />
-          <button type="button" className={secondary} disabled={busy} onClick={() => fileRef.current?.click()}>
-            <Camera className="h-4 w-4" />
-            {disk.photo_version ? text.changePhoto : text.addPhoto}
-          </button>
-          {disk.photo_version ? (
-            <button type="button" className={secondary} disabled={busy} onClick={() => void removePhoto()} aria-label={text.removePhoto}>
-              <Trash2 className="h-4 w-4" />
-            </button>
-          ) : null}
-        </div>
-        <span className="text-xs text-faint">{text.photoHint}</span>
       </div>
     </section>
   );

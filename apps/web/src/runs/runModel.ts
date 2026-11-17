@@ -474,3 +474,60 @@ function pickRunFields(data: Record<string, unknown>): Partial<RunLike> {
   if ("disk_id" in data && data.disk_id !== null) patch.disk_id = data.disk_id;
   return patch as Partial<RunLike>;
 }
+
+// --- B35: one percentage for the whole run -----------------------------------------------
+
+/** Rough share of each step in a run's duration (the copy dominates). */
+export const STEP_WEIGHT: Record<RunStepKey, number> = {
+  detect: 2,
+  passthrough: 5,
+  mount: 8,
+  repair: 8,
+  sync: 55,
+  cleanup: 10,
+  verify: 12,
+  eject: 8,
+  release: 6,
+};
+/** An active step without a measure of its own counts as a third done. */
+const ACTIVE_SHARE = 0.3;
+
+/** B35: progress over ALL the steps of the run (weighted), the copy's own
+ *  percentage inside its step. Never 100 % before the run is over. */
+export function overallPercent(run: RunLike, states: readonly StepState[], steps: readonly RunStepKey[]): number {
+  if (run.status === "success") return 100;
+  let total = 0;
+  let done = 0;
+  steps.forEach((key, index) => {
+    const state = states[index];
+    if (state === "skipped") return;
+    const weight = STEP_WEIGHT[key] ?? 5;
+    total += weight;
+    if (state === "done") done += weight;
+    else if (state === "active") {
+      const own = key === "sync" && run.progress_percent != null ? Math.max(0, Math.min(100, run.progress_percent)) / 100 : ACTIVE_SHARE;
+      done += weight * own;
+    }
+  });
+  if (!total) return 0;
+  return Math.min(99, Math.max(0, (done / total) * 100));
+}
+
+// --- B36: the journal follows the end while the reader is there ---------------------------
+
+/** At the bottom (a few pixels of slack): keep following the new lines. */
+export function isAtBottom(scrollTop: number, clientHeight: number, scrollHeight: number, slack = 24): boolean {
+  return scrollHeight - (scrollTop + clientHeight) <= slack;
+}
+
+/** What the left panel shows when no VM/CT is being copied (verification,
+ *  repair, nothing to copy): the step in progress and its latest lines. */
+export function currentActivity(steps: readonly RunStepKey[], states: readonly StepState[], entries: readonly JournalEntry[], limit = 6): { step: RunStepKey | null; lines: JournalEntry[] } {
+  const activeIndex = states.findIndex((state) => state === "active" || state === "failed");
+  const lastDone = states.reduce((last, state, index) => (state === "done" ? index : last), -1);
+  const index = activeIndex >= 0 ? activeIndex : lastDone;
+  const step = index >= 0 ? steps[index] : null;
+  const ofStep = step ? entries.filter((entry) => entry.step && (STEP_OF[entry.step] ?? null) === (step === "release" ? "eject" : step)) : [];
+  const lines = (ofStep.length ? ofStep : entries).slice(-limit);
+  return { step, lines };
+}

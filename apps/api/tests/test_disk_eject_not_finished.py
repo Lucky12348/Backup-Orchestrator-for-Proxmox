@@ -134,7 +134,7 @@ class EjectNotFinishedTests(TestCase):
         detach.assert_not_called()
         spin_down.assert_not_called()
         notify_ready.assert_not_called()
-        notify_not_finished.assert_called_once_with("WD-WXD2DA1L1E7C", "PBS agent returned 500: " + AGENT_TIMEOUT_MESSAGE)
+        notify_not_finished.assert_called_once_with("Western Digital Game Drive (WD-WXD2DA1L1E7C)", "PBS agent returned 500: " + AGENT_TIMEOUT_MESSAGE)
 
         disk = self.session.get(ExternalDisk, self.disk.id)
         self.assertTrue(disk.connected)
@@ -159,7 +159,7 @@ class EjectNotFinishedTests(TestCase):
         self.assertEqual(outcome.handoff_status, "ejected")
         detach.assert_called_once()
         notify_not_finished.assert_not_called()
-        notify_ready.assert_called_once_with("WD-WXD2DA1L1E7C")
+        notify_ready.assert_called_once_with("Western Digital Game Drive (WD-WXD2DA1L1E7C)")
         first, retry = self._runs()
         self.assertEqual(first.current_step, EJECT_NOT_FINISHED_STEP)
         self.assertEqual(retry.status, BackupRunStatus.SUCCESS)

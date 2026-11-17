@@ -193,3 +193,34 @@ export function launchState(readiness: ReadinessLike | null | undefined, smartOv
   const blocking = reasons.filter((reason) => !(reason.code === "smart_failed" && smartOverride));
   return { blocking, smartFailed, canStart: Boolean(readiness) && blocking.length === 0 };
 }
+
+// --- identity everywhere (Phase 5h) ----------------------------------------------
+
+export interface DiskRefLike {
+  id: number;
+  serial_number: string;
+  canonical_serial_number?: string | null;
+  serial_aliases?: string[] | null;
+  display_name: string;
+  model_name?: string | null;
+}
+
+const compactSerial = (value: string | null | undefined) => (value ?? "").toUpperCase().replace(/[\s_-]+/g, "");
+
+/** The disk a run, an agenda event or a copy is about: by id, else by serial (aliases included). */
+export function findDisk<D extends DiskRefLike>(disks: readonly D[], ref: { id?: number | null; serial?: string | null }): D | undefined {
+  if (ref.id != null) {
+    const byId = disks.find((disk) => disk.id === ref.id);
+    if (byId) return byId;
+  }
+  const serial = compactSerial(ref.serial);
+  if (!serial) return undefined;
+  return disks.find((disk) =>
+    [disk.serial_number, disk.canonical_serial_number, ...(disk.serial_aliases ?? [])].some((value) => value && compactSerial(value) === serial),
+  );
+}
+
+/** Model and serial: a secondary line, never the title ("QEMU HARDDISK · QM00005"). */
+export function diskSecondary(disk: Pick<DiskRefLike, "model_name" | "serial_number" | "display_name">): string {
+  return [disk.model_name, disk.serial_number].filter((value) => value && value !== disk.display_name).join(" · ");
+}
