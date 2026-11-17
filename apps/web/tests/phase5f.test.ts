@@ -186,3 +186,28 @@ test("missing PBS privileges: readable reason with the exact command (FR/EN)", (
     assert.ok("pbs_token_missing_privileges" in translations[lang].readiness);
   }
 });
+
+// --- Phase 5f.2: removed without eject -----------------------------------------------------------
+
+test("a disk pulled out while handed to PBS: own status, toasts, one-click verification texts", async () => {
+  const { diskUiStatus, diskActions } = await import("../src/views/disks/diskModel.ts");
+  const { toastForDiskEvent } = await import("../src/liveDisks.ts");
+  const disk = { id: 7, serial_number: "PBOTESTA", display_name: "PBOTESTA", capacity_gb: 500, connected: false, trusted: true, status: "pulled" };
+  assert.equal(diskUiStatus(disk), "pulled");
+  assert.deepEqual(diskActions(disk, "pulled"), ["rescan"]);
+  const data = { id: 7, serial_number: "PBOTESTA", display_name: "PBOTESTA", model_name: null, capacity_gb: 500, connected: false, trusted: true, status: "pulled", reject_reason: null, min_size_gb: 32 };
+  const pulled = toastForDiskEvent({ id: 1, type: "disk.removed", data } as never, "fr");
+  assert.equal(pulled?.tone, "warning");
+  assert.match(pulled?.message ?? "", /retiré sans éjection.*vérification/);
+  const back = toastForDiskEvent({ id: 2, type: "disk.added", data: { ...data, status: "known", connected: true, verify_recommended: true } } as never, "en");
+  assert.match(back?.message ?? "", /plugged back in.*verification/);
+  assert.equal(back?.action?.label, "Verify");
+  for (const lang of ["en", "fr"] as const) {
+    const t = translations[lang];
+    assert.ok(t.disksV2.status.pulled && t.disksV2.summary.pulled && t.diskSheet.verify.now && t.diskSheet.verify.failedText);
+    assert.ok(t.guards.alert.verify_failed && t.guards.badge.verify_failed && t.guards.action.verify_failed);
+    for (const code of ["verify_requested", "disk_pulled", "verify_nothing"] as const) assert.ok(t.runLog[code], `${code} (${lang})`);
+  }
+  assert.equal(translations.fr.runLog.verify_nothing, "Vérification sautée : aucune nouvelle version.");
+  assert.match(translations.fr.guards.alert.verify_recommended, /peut-être incomplète.*Rebranchez-le/);
+});

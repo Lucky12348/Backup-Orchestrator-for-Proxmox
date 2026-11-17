@@ -74,6 +74,16 @@ class AgentDiskReportItem(BaseModel):
     smart: AgentSmart | None = None
 
 
+class AgentUsbDevice(BaseModel):
+    """A USB device present on the host (sysfs), Phase 5f.2."""
+
+    port_id: str = Field(max_length=70)
+    vendor_id: str | None = Field(default=None, max_length=16)
+    product_id: str | None = Field(default=None, max_length=16)
+    serial: str | None = Field(default=None, max_length=255)
+    product: str | None = Field(default=None, max_length=255)
+
+
 class AgentHotplugEvent(BaseModel):
     """A USB disk udev event seen by the agent since its previous report."""
 
@@ -89,6 +99,8 @@ class AgentDiskReportCreate(BaseModel):
     # What triggered the report: "timer" (periodic) or "udev" (hot-plug).
     trigger: Literal["timer", "udev", "manual"] | None = None
     hotplug: list[AgentHotplugEvent] = Field(default_factory=list, max_length=64)
+    # USB devices present on the host; None from agents older than 5f.2 (no verdict).
+    usb_devices: list[AgentUsbDevice] | None = Field(default=None, max_length=256)
 
 
 class AgentHeartbeatRead(UTCDateTimeModel):

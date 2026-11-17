@@ -490,6 +490,24 @@ should reach them — and every call is additionally protected with an
   on the run, kind "verify") or "Not needed" (`/verify/dismiss`).
 - Run journal appends reload the run's logs first (other sessions — PBS API
   backend progress, agent callbacks — append to the same run).
+- **Pulled out while passed through (5f.2)**, `services/passthrough_watch.py`:
+  a disk handed to the PBS VM has no block device on the host, so the host
+  agent also sends the USB devices present (sysfs, `usb_devices` in every
+  report; udev `SUBSYSTEM=="usb"` add/remove triggers one; `GET /usb/devices`,
+  capability `usb-devices`). The app checks every 30 s and at start (watch
+  task in the lifespan), only while a disk is handed off: host sysfs first,
+  PBS `/inspect-disk` twice in a row when the host cannot tell. Gone →
+  `handle_pulled`: remove the `usbN` mapping FIRST, stop the run's PBS task
+  (journal `disk_pulled`), unmount the removable datastore on PBS
+  (`/offline-removable-datastore`, stacked stale mounts, no error if the
+  device is gone), disk `handoff_status="pulled"` (status `pulled`),
+  `verify_recommended`, activity, notification, `disk.removed` (toast).
+  Plugged back: usable again, one-click "Verify now" (verify-only run);
+  failed verification → alert `verify_failed`. Every usbN PBO writes is
+  tracked in `pbs_usb_mappings` (Alembic `0011`); at start, the mappings of
+  disks no longer in use are removed (only if the VM line still equals what
+  PBO wrote). A run with "Verify the copy" journals `verify_requested`, and
+  `verify_nothing` ("Verification skipped: no new version") when nothing new.
 
 ## Disk ↔ USB port (Phase 4.4, read before touching the USB passthrough)
 

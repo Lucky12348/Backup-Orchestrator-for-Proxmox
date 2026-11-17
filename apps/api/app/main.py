@@ -60,7 +60,12 @@ async def lifespan(_: FastAPI):
         logger.error("Notification settings are invalid: %s", exc)
     start_planning_scheduler(settings)
     presence_watcher = asyncio.create_task(run_events.watch_agent_presence(SessionLocal))
+    # Phase 5f.2: disks handed to the PBS VM still plugged in? + orphan usbN at start.
+    from app.services import passthrough_watch
+
+    passthrough_watcher = asyncio.create_task(passthrough_watch.watch(SessionLocal))
     yield
+    passthrough_watcher.cancel()
     presence_watcher.cancel()
     stop_planning_scheduler()
 

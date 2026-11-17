@@ -273,6 +273,10 @@ def run_external_backup(
             message="SMART reports this disk as failing: backup started anyway on explicit confirmation.",
             stream="stderr",
         )
+    if verify_after_backup and not verify_only:
+        append_external_backup_run_log(
+            db, run.id, step="starting", message="Verification of the copy requested: it runs after the sync."
+        )
     if disk_profile.is_usb2(disk):
         append_external_backup_run_log(
             db, run.id, step="starting",
@@ -440,6 +444,8 @@ def execute_external_backup_run(run_id: int) -> None:
                     if run.verify_after_backup:
                         copied, verify_all = post_sync.copied_keys(execution_result.pre_sync_snapshots, after)
                         post_sync.verify(bridge, run, store, log, copied=copied, verify_all=verify_all)
+                elif run.verify_after_backup:
+                    log(step="verify", message="Verification skipped: no new version was copied.")
                 run.current_step = "success"
                 run.progress_message = run.message
                 run.last_log_at = datetime.utcnow()

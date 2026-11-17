@@ -140,7 +140,7 @@ export interface SmartDetails {
   message?: string | null;
 }
 
-export type DiskServerStatus = "new" | "known" | "ignored" | "ejected" | "unplugged" | "rejected";
+export type DiskServerStatus = "new" | "known" | "ignored" | "ejected" | "pulled" | "unplugged" | "rejected";
 
 export interface DiskPartition {
   name: string;

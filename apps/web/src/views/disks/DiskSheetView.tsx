@@ -113,7 +113,9 @@ export function DiskSheetView({ disks, runs, alerts, language, t, onChanged }: D
           />
         ))}
 
-      {disk.verify_recommended ? <VerifyBanner disk={disk} t={t} language={language} onChanged={onChanged} /> : null}
+      {disk.verify_recommended ? (
+        <VerifyBanner disk={disk} t={t} language={language} onChanged={onChanged} failed={diskAlerts.some((alert) => alert.code === "verify_failed")} />
+      ) : null}
 
       <div className="grid items-start gap-[18px] xl:grid-cols-[minmax(0,1fr)_400px]">
         <div className="flex min-w-0 flex-col gap-[18px]">
@@ -163,7 +165,19 @@ function when(iso: string | null | undefined, language: Language, t: Translation
   return formatWhen(iso ?? null, language, new Date(), t.dashboardV2);
 }
 
-function VerifyBanner({ disk, t, language, onChanged }: { disk: ExternalDisk; t: TranslationDictionary; language: Language; onChanged: () => Promise<void> | void }) {
+function VerifyBanner({
+  disk,
+  t,
+  language,
+  onChanged,
+  failed = false,
+}: {
+  disk: ExternalDisk;
+  t: TranslationDictionary;
+  language: Language;
+  onChanged: () => Promise<void> | void;
+  failed?: boolean;
+}) {
   const text = t.diskSheet.verify;
   const { toast } = useToast();
   const [busy, setBusy] = useState(false);
@@ -193,8 +207,8 @@ function VerifyBanner({ disk, t, language, onChanged }: { disk: ExternalDisk; t:
   return (
     <div role="alert" className="flex flex-wrap items-center gap-3 rounded-[14px] bg-warning/15 p-4 text-[13px] leading-[1.45] text-warning-text" data-verify-banner>
       <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <b>{text.title}</b>
-        <span>{fill(text.text, { when: when(disk.unsafe_removal_at, language, t) })}</span>
+        <b>{failed ? text.failedTitle : text.title}</b>
+        <span>{failed ? text.failedText : fill(text.text, { when: when(disk.unsafe_removal_at, language, t) })}</span>
         {disk.connected ? null : <span>{text.needsPlug}</span>}
       </div>
       <button type="button" className={primary} disabled={busy || !disk.connected} onClick={() => void verify()}>

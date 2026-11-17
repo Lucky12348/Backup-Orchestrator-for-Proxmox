@@ -123,6 +123,10 @@ def handoff_disk_to_pbs(
         disk.pbs_visible = False
         disk.pbs_device_path = None
         db.add(disk)
+        # Phase 5f.2: every usbN line PBO writes is tracked (orphan cleanup).
+        from app.services.passthrough_watch import record_mapping
+
+        record_mapping(db, disk, vmid=settings.pbs_execution_vm_id, slot=slot, host_value=candidate["mapping"])
         db.commit()
         db.refresh(disk)
         try:
@@ -176,6 +180,9 @@ def detach_disk_from_pbs(db: Session, disk: ExternalDisk) -> DiskHandoffStatus:
             detail=f"Failed to detach USB disk `{disk.serial_number}` from the PBS VM: slot `{disk.pbs_handoff_slot}` still exists.",
         )
 
+    from app.services.passthrough_watch import release_mappings
+
+    release_mappings(db, vmid=settings.pbs_execution_vm_id, slot=disk.pbs_handoff_slot, reason="detached")
     disk.handoff_status = "detected_on_proxmox"
     disk.pbs_visible = False
     disk.pbs_device_path = None

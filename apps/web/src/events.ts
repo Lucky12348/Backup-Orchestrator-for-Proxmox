@@ -35,10 +35,12 @@ export interface DiskEventData {
   filesystem_type?: string | null;
   connected: boolean;
   trusted: boolean;
-  status: "new" | "known" | "rejected" | "unplugged";
+  status: "new" | "known" | "rejected" | "unplugged" | "ejected" | "ignored" | "pulled";
   reject_reason: "zero_size" | "too_small" | null;
   min_size_gb: number;
   hostname?: string | null;
+  /** Phase 5f.2: removed without eject, a PBS verification is advised. */
+  verify_recommended?: boolean;
 }
 
 export interface RunProgressData {

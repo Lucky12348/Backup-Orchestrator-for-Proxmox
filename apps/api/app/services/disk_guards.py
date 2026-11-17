@@ -104,7 +104,10 @@ def disk_alerts(db: Session, *, now: datetime | None = None, stale_days: int | N
             alerts.append(_alert(disk, "smart_danger", "danger", **_smart_params(disk)))
         elif disk.smart_status == "warning":
             alerts.append(_alert(disk, "smart_warning", "warning", **_smart_params(disk)))
-        if disk.verify_recommended:
+        last_verify = _last_verify_run(db, disk.id)
+        if disk.verify_recommended and last_verify is not None and last_verify.status == BackupRunStatus.FAILED:
+            alerts.append(_alert(disk, "verify_failed", "danger", connected=bool(disk.connected)))
+        elif disk.verify_recommended:
             alerts.append(
                 _alert(
                     disk,
@@ -120,6 +123,15 @@ def disk_alerts(db: Session, *, now: datetime | None = None, stale_days: int | N
         if disk.trusted and last is not None and moment - last >= timedelta(days=days):
             alerts.append(_alert(disk, "rotation_stale", "warning", days=(moment - last).days, last_backup_at=last.isoformat(timespec="seconds") + "Z", threshold_days=days))
     return alerts
+
+
+def _last_verify_run(db: Session, disk_id: int) -> ExternalBackupRun | None:
+    return db.scalar(
+        select(ExternalBackupRun)
+        .where(ExternalBackupRun.disk_id == disk_id, ExternalBackupRun.verify_only.is_(True), ExternalBackupRun.status.not_in(ACTIVE))
+        .order_by(ExternalBackupRun.started_at.desc())
+        .limit(1)
+    )
 
 
 def _smart_params(disk: ExternalDisk) -> dict[str, Any]:

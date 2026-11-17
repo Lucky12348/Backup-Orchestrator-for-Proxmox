@@ -25,7 +25,7 @@ import httpx
 import uvicorn
 
 from agent import hotplug, smart
-from agent.usb_location import usb_location
+from agent.usb_location import list_usb_devices, usb_location
 
 
 logging.basicConfig(
@@ -78,6 +78,7 @@ AGENT_CAPABILITIES = {
     "disk-rescan",
     "disk-smart",
     "usb-link-speed",
+    "usb-devices",
 }
 
 
@@ -231,6 +232,9 @@ def post_real_disk_report(settings: AgentSettings, *, track_hotplug: bool = Fals
         "hostname": settings.hostname,
         "observed_at": current_timestamp(),
         "disks": disks,
+        # USB devices present: lets the app see a disk pulled out while it was
+        # passed through to the PBS VM (no block device on the host then).
+        "usb_devices": list_usb_devices(),
     }
     events: list[dict[str, Any]] = []
     if track_hotplug:
@@ -246,6 +250,13 @@ def post_real_disk_report(settings: AgentSettings, *, track_hotplug: bool = Fals
         disk.pop("_device", None)
     post_json(settings, "/agent/disks/report", payload, token=settings.reporting_token)
     logger.info("Real disk report sent for host %s with %s disks", settings.hostname, len(disks))
+
+
+def usb_devices_result() -> dict[str, Any]:
+    """USB devices present on the host now (cheap sysfs read, polled by the
+    app every ~30 s while a disk is handed to the PBS VM)."""
+    devices = list_usb_devices()
+    return {"ok": True, "success": True, "devices": devices, "message": f"{len(devices)} USB device(s) present."}
 
 
 def rescan_disks_result(settings: AgentSettings) -> dict[str, Any]:

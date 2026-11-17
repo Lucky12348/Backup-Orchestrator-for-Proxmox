@@ -87,3 +87,33 @@ def usb_location(
     if udev_props and udev_props.get("ID_PATH"):
         location["id_path"] = udev_props["ID_PATH"]
     return location
+
+
+def list_usb_devices(*, sys_root: Path = SYS_ROOT) -> list[dict[str, Any]]:
+    """USB devices physically present on the host (sysfs), root hubs and hubs
+    excluded. A disk passed through to a VM keeps its entry here (QEMU only
+    claims the device): it disappears only when the disk is unplugged —
+    which the block-level udev events never see during a passthrough."""
+    devices: list[dict[str, Any]] = []
+    base = sys_root / "bus" / "usb" / "devices"
+    try:
+        entries = sorted(base.iterdir())
+    except OSError:
+        return devices
+    for entry in entries:
+        busnum = _read(entry / "busnum")
+        devpath = _read(entry / "devpath")
+        if not busnum or not devpath or not busnum.isdigit() or devpath == "0" or not _DEVPATH_RE.match(devpath):
+            continue
+        if (_read(entry / "bDeviceClass") or "").lower() == "09":  # hub
+            continue
+        devices.append(
+            {
+                "port_id": f"{int(busnum)}-{devpath}",
+                "vendor_id": _read(entry / "idVendor"),
+                "product_id": _read(entry / "idProduct"),
+                "serial": _read(entry / "serial"),
+                "product": _read(entry / "product"),
+            }
+        )
+    return devices

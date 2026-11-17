@@ -47,7 +47,8 @@ def disk_status(disk: ExternalDisk) -> str:
     if is_ejected(disk):
         return "ejected"
     if not disk.connected:
-        return "unplugged"
+        # Phase 5f.2: pulled out while handed to the PBS VM.
+        return "pulled" if (disk.handoff_status or "") == "pulled" else "unplugged"
     if disk.trusted:
         return "known"
     return "ignored" if disk.operator_decision == "ignored" else "new"
@@ -68,6 +69,7 @@ def disk_event_payload(disk: ExternalDisk) -> dict[str, Any]:
         "min_size_gb": MIN_DISK_SIZE_GB,
         "hostname": disk.reported_by_hostname,
         "handoff_status": disk.handoff_status,
+        "verify_recommended": bool(disk.verify_recommended),
     }
 
 

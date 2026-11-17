@@ -438,6 +438,10 @@ write_udev_rule() {
 # Report USB disks as soon as they are plugged in or unplugged.
 ACTION=="add", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", ENV{ID_BUS}=="usb", TAG+="systemd", ENV{SYSTEMD_WANTS}+="pbo-agent-report.service"
 ACTION=="remove", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", ENV{ID_BUS}=="usb", RUN+="/usr/bin/systemctl --no-block start pbo-agent-report.service"
+# A disk passed through to the PBS VM has no block device on the host: only
+# the USB device event tells it was unplugged.
+ACTION=="remove", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", RUN+="/usr/bin/systemctl --no-block start pbo-agent-report.service"
+ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", RUN+="/usr/bin/systemctl --no-block start pbo-agent-report.service"
 RULE
   chmod 0644 "${target}"
 }

@@ -93,6 +93,7 @@ def ingest_agent_disk_report(db: Session, payload: AgentDiskReportCreate) -> lis
     updated_disks: list[ExternalDisk] = []
     before_snapshots: dict[int, tuple] = {}
     health_notifications: list[tuple[str, str, str | None]] = []
+    pulled_disks: list[ExternalDisk] = []
 
     report_marker = db.scalar(
         select(ExternalDisk)
@@ -196,6 +197,8 @@ def ingest_agent_disk_report(db: Session, payload: AgentDiskReportCreate) -> lis
             # Phase 5f: a disk handed to the PBS VM is invisible to the host;
             # seen again here = pulled out without eject (mounted on PBS).
             disk_guards.mark_unsafe_removal(db, disk, reason="mounted_on_pbs")
+        if disk.handoff_status == "pulled" and item.connected:
+            disk.handoff_status = None  # back on the host after a removal without eject
         if is_ejected(disk) and item.connected:
             # B25: still plugged in after a safe eject. It stays "ejected" (not
             # usable, no disk.added) until it is unplugged and plugged back.
@@ -237,6 +240,14 @@ def ingest_agent_disk_report(db: Session, payload: AgentDiskReportCreate) -> lis
             continue
 
         if _is_pbs_handoff_disk(disk):
+            # Phase 5f.2: handed to the PBS VM, so no block device here; its
+            # USB device must still be present, or it was pulled out.
+            from app.services.passthrough_watch import is_present
+
+            devices = None if payload.usb_devices is None else [device.model_dump() for device in payload.usb_devices]
+            if disk.pbs_handoff_slot and is_present(disk, devices) is False:
+                pulled_disks.append(disk)
+                continue
             disk.connected = True
             disk.presence_state = "present"
             disk.active = True
@@ -266,6 +277,14 @@ def ingest_agent_disk_report(db: Session, payload: AgentDiskReportCreate) -> lis
     for disk in removed_disks:
         db.refresh(disk)
     disk_events.publish_report_events(added_disks, removed_disks, updated_disks)
+
+    for disk in pulled_disks:
+        try:
+            from app.services.passthrough_watch import handle_pulled
+
+            handle_pulled(db, disk, reason="mounted_on_pbs")
+        except Exception:
+            logger.exception("Could not handle disk %s pulled out while handed to PBS", disk.id)
 
     for label, smart_status, detail in health_notifications:
         notify_disk_health(label, smart_status, detail)

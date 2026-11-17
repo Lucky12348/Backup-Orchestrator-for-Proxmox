@@ -98,13 +98,15 @@ rule_case() {
   rule="${tmp}/rules.d/90-pbo-agent.rules"
   write_udev_rule "${rule}"
   local expect
-  for expect in     'ACTION=="add", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", ENV{ID_BUS}=="usb", TAG+="systemd", ENV{SYSTEMD_WANTS}+="pbo-agent-report.service"'     'ACTION=="remove", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", ENV{ID_BUS}=="usb", RUN+="/usr/bin/systemctl --no-block start pbo-agent-report.service"'; do
+  for expect in     'ACTION=="add", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", ENV{ID_BUS}=="usb", TAG+="systemd", ENV{SYSTEMD_WANTS}+="pbo-agent-report.service"'     'ACTION=="remove", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", ENV{ID_BUS}=="usb", RUN+="/usr/bin/systemctl --no-block start pbo-agent-report.service"' \
+    'ACTION=="remove", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", RUN+="/usr/bin/systemctl --no-block start pbo-agent-report.service"' \
+    'ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", RUN+="/usr/bin/systemctl --no-block start pbo-agent-report.service"'; do
     if ! grep -qxF "${expect}" "${rule}"; then
       echo "FAIL  udev rule line missing: ${expect}"
       failures=$((failures + 1))
     fi
   done
-  if [[ "$(grep -vc '^#' "${rule}")" != 2 ]]; then
+  if [[ "$(grep -vc '^#' "${rule}")" != 4 ]]; then
     echo "FAIL  udev rule has unexpected lines"
     failures=$((failures + 1))
   fi

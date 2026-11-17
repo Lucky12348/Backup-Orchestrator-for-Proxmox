@@ -188,7 +188,12 @@ def _eject_steps(db: Session, disk: ExternalDisk, run: ExternalBackupRun, datast
     append_external_backup_run_log(
         db, run.id, step="eject", message="Detaching USB disk from PBS VM.", line=result.stdout_log
     )
+    slot = disk.pbs_handoff_slot
     detach_message = _detach_usb_passthrough_from_pbs_vm(disk)
+    if slot:
+        from app.services.passthrough_watch import release_mappings
+
+        release_mappings(db, vmid=get_settings().pbs_execution_vm_id, slot=slot, reason="ejected")
     spin_down_message = _attempt_disk_spin_down(disk)
     if spin_down_message:
         append_external_backup_run_log(db, run.id, step="eject", message=spin_down_message)

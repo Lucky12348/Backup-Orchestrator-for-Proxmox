@@ -481,3 +481,20 @@ def test_identity_and_retention_are_editable(client, session_factory):
     assert empty.status_code == 400 and empty.json()["detail"]["code"] == "retention_invalid"
     assert client.get("/api/v1/disks/alerts").status_code == 200
     assert client.get(f"/api/v1/disks/{disk_id}/contents").json()["items"] == []
+
+
+def test_verification_with_nothing_new_says_so(db, session_factory):
+    """Run 24: "Verify the copy" ticked, nothing new to copy → an explicit line."""
+    fake = FakePBS()
+    _source(fake)
+    fake.snapshots[TARGET] = [dict(item) for item in fake.snapshots["main"]]  # already on the disk
+    run = _run(db, _disk(db), verify_after_backup=True)
+    from app.services.external_backups import append_external_backup_run_log
+
+    append_external_backup_run_log(db, run.id, step="starting", message="Verification of the copy requested: it runs after the sync.")
+    with ExitStack() as stack:
+        _flow(stack, fake, session_factory)
+        execute_external_backup_run(run.id)
+    assert fake.verify_calls == []
+    codes = _codes(db, run.id)
+    assert "verify_requested" in codes and "verify_nothing" in codes

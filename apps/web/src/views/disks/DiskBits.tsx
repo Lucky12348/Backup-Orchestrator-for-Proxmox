@@ -1,7 +1,10 @@
-import { AlertTriangle, HardDrive, MemoryStick, Microchip, Server, ShieldAlert, Usb } from "lucide-react";
-import type { ComponentType } from "react";
+import { AlertTriangle, HardDrive, Loader2, MemoryStick, Microchip, Server, ShieldAlert, ShieldCheck, Usb } from "lucide-react";
+import { useState, type ComponentType } from "react";
 
-import { diskPhotoUrl, type DiskAlert } from "../../api";
+import { diskPhotoUrl, startDiskVerify, type DiskAlert } from "../../api";
+import { ApiError } from "../../notices";
+import { openRunModal } from "../../runs/openRun";
+import { useToast } from "../../ui/toast";
 import { cn } from "../../components/ui/utils";
 import type { TranslationDictionary } from "../../i18n";
 import type { ExternalDisk } from "../../types";
@@ -126,3 +129,49 @@ export const CONFIG_ALERT_NOTE = {
   pbs_config_missing: "missing",
   pbs_conflict: "conflict",
 } as const;
+
+
+/** One click: PBS verification of the disk's datastore, no backup (after a
+ *  removal without eject). Opens the run modal. */
+export function VerifyNowButton({
+  disk,
+  t,
+  onChanged,
+  className,
+}: {
+  disk: ExternalDisk;
+  t: TranslationDictionary;
+  onChanged: () => Promise<void> | void;
+  className?: string;
+}) {
+  const { toast } = useToast();
+  const [busy, setBusy] = useState(false);
+  async function verify() {
+    setBusy(true);
+    try {
+      const result = await startDiskVerify(disk.id, true);
+      openRunModal(result.run_id);
+      await onChanged();
+    } catch (error) {
+      const errors = t.diskSheet.errors as Record<string, string>;
+      toast({ tone: "danger", title: error instanceof ApiError && error.code && errors[error.code] ? errors[error.code] : error instanceof Error ? error.message : t.error });
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <button
+      type="button"
+      disabled={busy || !disk.connected}
+      onClick={() => void verify()}
+      className={cn(
+        "flex items-center justify-center gap-2 rounded-lg border-0 bg-accent px-3.5 py-[9px] text-[13px] font-medium text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50",
+        className,
+      )}
+      data-verify-now={disk.id}
+    >
+      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+      {t.diskSheet.verify.now}
+    </button>
+  );
+}

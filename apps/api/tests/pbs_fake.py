@@ -281,6 +281,10 @@ class FakePBS:
                 {"upid": t["upid"], "worker_type": t["worker_type"], "worker_id": t["worker_id"], "starttime": t["starttime"], "status": None if t["status"] == "running" else t["exitstatus"]}
                 for t in items
             ]
+        if parts[:3] == ["nodes", "localhost", "tasks"] and len(parts) == 4 and method == "DELETE":
+            task = self.tasks[parts[3]]
+            task["status"], task["exitstatus"], task["hang"] = "stopped", "stopped by user", False
+            return None
         if parts[:3] == ["nodes", "localhost", "tasks"] and len(parts) == 5:
             task = self.tasks[parts[3]]
             if parts[4] == "status":

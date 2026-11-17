@@ -78,7 +78,7 @@ def verify(
         log(step="verify", message="Verification needs PBS_MODE=api: skipped.")
         return
     if not verify_all and not copied:
-        log(step="verify", message="Nothing new was copied: no snapshot to verify.")
+        log(step="verify", message="Verification skipped: no new version was copied.")
         return
     payload: dict[str, Any] = {"datastore_name": store}
     if verify_all:
@@ -97,7 +97,7 @@ def copied_keys(before: list[str] | None, after: list[str] | None) -> tuple[list
     """Snapshots copied by this run, still there after the cleanup. Unknown
     "before" → verify everything (`True`)."""
     if after is None:
-        return None, before is None
+        return None, True  # the disk's snapshots could not be read: verify everything
     if before is None:
         return None, True
     known = set(before)

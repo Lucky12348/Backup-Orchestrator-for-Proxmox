@@ -718,7 +718,8 @@ export type DiskAlertCode =
   | "rotation_stale"
   | "pbs_config_recoverable"
   | "pbs_config_missing"
-  | "pbs_conflict";
+  | "pbs_conflict"
+  | "verify_failed";
 
 export interface DiskAlert {
   disk_id: number;

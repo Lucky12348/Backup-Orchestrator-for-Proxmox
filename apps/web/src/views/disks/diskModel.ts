@@ -1,7 +1,7 @@
 // Disks page (docs/design/mockups/disks.html): status, tabs, search, actions
 // and history of a disk. Pure module (node:test), no React.
 
-export type DiskUiStatus = "new" | "approved" | "running" | "ejected" | "unplugged" | "rejected" | "ignored";
+export type DiskUiStatus = "new" | "approved" | "running" | "ejected" | "pulled" | "unplugged" | "rejected" | "ignored";
 export type DiskTab = "all" | "plugged" | "approved" | "review" | "rejected";
 export type Tone = "ok" | "run" | "warn" | "err" | "off";
 
@@ -68,6 +68,8 @@ export function diskUiStatus(disk: DiskLike, runs: readonly RunLike[] = []): Dis
   if (rejectReason(disk)) return "rejected";
   if (activeRunFor(disk, runs)) return "running";
   if (disk.status === "ejected" || (disk.handoff_status ?? "").toLowerCase() === "ejected") return "ejected";
+  // Phase 5f.2: pulled out while handed to the PBS VM (not plugged back yet).
+  if (disk.status === "pulled") return "pulled";
   if (!disk.connected) return "unplugged";
   if (disk.trusted) return "approved";
   if (disk.status === "ignored" || disk.operator_decision === "ignored") return "ignored";
@@ -79,6 +81,7 @@ export const STATUS_TONE: Record<DiskUiStatus, Tone> = {
   approved: "ok",
   running: "run",
   ejected: "off",
+  pulled: "err",
   unplugged: "off",
   rejected: "err",
   ignored: "off",
@@ -127,7 +130,7 @@ export interface DiskRow<D extends DiskLike> {
   run?: RunLike;
 }
 
-const ORDER: Record<DiskUiStatus, number> = { running: 0, new: 1, approved: 2, ejected: 3, ignored: 4, unplugged: 5, rejected: 6 };
+const ORDER: Record<DiskUiStatus, number> = { running: 0, pulled: 1, new: 2, approved: 3, ejected: 4, ignored: 5, unplugged: 6, rejected: 7 };
 
 export function diskRows<D extends DiskLike>(disks: readonly D[], runs: readonly RunLike[]): DiskRow<D>[] {
   return disks
@@ -168,6 +171,7 @@ export function diskActions(disk: DiskLike, status: DiskUiStatus): DiskAction[] 
     case "rejected":
       return disk.operator_decision === "rejected" ? ["unreject", "rescan"] : ["rescan"];
     case "unplugged":
+    case "pulled":
     case "ignored":
       return ["rescan"];
     case "new":

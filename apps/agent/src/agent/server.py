@@ -32,6 +32,7 @@ from agent.main import (
     run_external_export_result,
     rescan_disks_result,
     spin_down_disk_result,
+    usb_devices_result,
     version_payload,
 )
 from agent.pve_access import guest_addresses, provision_pve_access, vm_addresses
@@ -94,6 +95,8 @@ ROUTE_ROLES: dict[str, frozenset[str]] = {
     "/qemu/config": _HOST,
     "/disk/spin-down": _HOST,
     "/disk/usb-location": _HOST,
+    # Passthrough watch: is the disk handed to the PBS VM still plugged in?
+    "/usb/devices": _HOST,
     # Disks page "Run detection again": sends a disk report now.
     "/disk/rescan": _HOST,
     # Setup wizard: pveum provisioning of pbo@pve!pbo, guest agent addresses.
@@ -589,6 +592,11 @@ def pve_guest_addresses(
     _: None = Depends(require_agent_token),
 ) -> Response:
     return _run_endpoint("pve-guest-addresses", lambda: guest_addresses(payload.vmids))
+
+
+@app.get("/usb/devices", response_model=None)
+def usb_devices(_: None = Depends(require_agent_token)) -> Response:
+    return _run_endpoint("usb-devices", usb_devices_result)
 
 
 @app.post("/disk/usb-location", response_model=None)

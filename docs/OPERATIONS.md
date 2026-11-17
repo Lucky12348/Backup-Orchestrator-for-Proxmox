@@ -58,6 +58,32 @@ Safe eject performs:
 
 Only unplug the disk after the UI reports that safe eject completed.
 
+## Disk Pulled Out Without Eject
+
+If a disk is unplugged while it is handed to the PBS VM (passthrough), PBO
+notices it within ~30 s (USB device gone from the host, or invisible to PBS
+twice in a row) and, in this order: removes the `usbN` mapping from the PBS VM
+(otherwise PBS would get whatever is plugged into that port next), stops a run
+on that disk, unmounts its removable datastore on PBS, and marks the disk
+"Removed without eject" (alert in Disks, "To do", toast, notification). Plug it
+back in, then click **Verify now**: a PBS verification of its datastore, no
+backup. Success clears the alert; a failure says what to do (new backup, then
+verify again; replace the disk if it fails again).
+
+At start, PBO also removes the `usbN` mappings it wrote for disks no longer in
+use (tracked in `pbs_usb_mappings`; a line someone changed is never touched).
+
+Manual cleanup, if PBO cannot reach the host agent (example: VM 100, slot
+`usb0`, datastore `pbo-pbotesta`):
+
+```bash
+# Proxmox host
+qm config 100 | grep ^usb
+qm set 100 -delete usb0
+# PBS (repeat while `mount | grep pbo-pbotesta` shows a stale mount)
+proxmox-backup-manager datastore unmount pbo-pbotesta
+```
+
 ## Replug and Rerun Backup
 
 For the next backup cycle:

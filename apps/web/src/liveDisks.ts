@@ -84,6 +84,17 @@ export function toastForDiskEvent(event: AppEvent, lang: Lang): DiskToast | null
   const name = cardTitle(data);
   const size = formatCapacity(data.capacity_gb, lang);
   const sep = lang === "fr" ? " : " : ": ";
+  if (event.type === "disk.added" && data.verify_recommended && !data.reject_reason) {
+    return {
+      key: `${event.id}`,
+      tone: "warning",
+      message:
+        lang === "fr"
+          ? `Disque rebranché${sep}${name} — il avait été retiré sans éjection : lancez une vérification de sa copie.`
+          : `Disk plugged back in${sep}${name} — it was removed without eject: run a verification of its copy.`,
+      action: { label: lang === "fr" ? "Vérifier" : "Verify", diskId: data.id },
+    };
+  }
   if (event.type === "disk.added") {
     if (data.reject_reason) {
       return {
@@ -97,6 +108,18 @@ export function toastForDiskEvent(event: AppEvent, lang: Lang): DiskToast | null
       tone: "info",
       message: `${lang === "fr" ? "Nouveau disque détecté" : "New disk detected"}${sep}${name} ${size}`,
       action: { label: lang === "fr" ? "Examiner" : "Review", diskId: data.id },
+    };
+  }
+  if (event.type === "disk.removed" && data.status === "pulled") {
+    // Phase 5f.2: pulled out while PBS was using it.
+    return {
+      key: `${event.id}`,
+      tone: "warning",
+      message:
+        lang === "fr"
+          ? `Disque retiré sans éjection${sep}${name} — PBO l’a détaché de PBS ; la dernière copie est peut-être incomplète. Rebranchez-le puis lancez une vérification.`
+          : `Disk removed without eject${sep}${name} — PBO detached it from PBS; the last copy may be incomplete. Plug it back in, then run a verification.`,
+      action: { label: lang === "fr" ? "Voir" : "See", diskId: data.id },
     };
   }
   if (event.type === "disk.removed") {

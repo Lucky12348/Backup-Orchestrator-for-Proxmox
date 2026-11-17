@@ -138,3 +138,27 @@ class HardwareTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UsbDevicesTests(unittest.TestCase):
+    """Phase 5f.2: a disk passed through to the PBS VM keeps its USB entry in
+    sysfs; only unplugging removes it (no block device to watch then)."""
+
+    def test_present_usb_devices_without_hubs(self):
+        from agent.usb_location import list_usb_devices
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            devices = root / "bus" / "usb" / "devices"
+            for name, values in {
+                "usb3": {"busnum": "3", "devpath": "0", "bDeviceClass": "09"},  # root hub
+                "3-1": {"busnum": "3", "devpath": "1", "bDeviceClass": "09"},  # hub
+                "3-4": {"busnum": "3", "devpath": "4", "bDeviceClass": "00", "idVendor": "152d", "serial": "ABC"},
+                "3-4_1.0": {},  # interface, no busnum
+            }.items():
+                (devices / name).mkdir(parents=True)
+                for key, value in values.items():
+                    (devices / name / key).write_text(value + "\n")
+            found = list_usb_devices(sys_root=root)
+            self.assertEqual([(d["port_id"], d["vendor_id"], d["serial"]) for d in found], [("3-4", "152d", "ABC")])
+            self.assertEqual(list_usb_devices(sys_root=root / "missing"), [])

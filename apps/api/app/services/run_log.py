@@ -31,7 +31,7 @@ _SIZE_RE = re.compile(r"(?P<n>\d+(?:\.\d+)?)\s*(?P<unit>B|KiB|MiB|GiB|TiB)\b")
 _RATE_RE = re.compile(r"(?P<n>\d+(?:\.\d+)?)\s*(?P<unit>B|KiB|MiB|GiB|TiB)/s\b")
 _UNITS = {"B": 1, "KiB": 1024, "MiB": 1024**2, "GiB": 1024**3, "TiB": 1024**4}
 
-FAILURE_STEPS = {"failure", "verify_failed", "eject_not_finished", "usb_device_not_found", "usb_location_not_in_proxmox", "disk_not_plugged", "usb_device_ambiguous"}
+FAILURE_STEPS = {"failure", "verify_failed", "disk_pulled", "eject_not_finished", "usb_device_not_found", "usb_location_not_in_proxmox", "disk_not_plugged", "usb_device_ambiguous"}
 
 # PBO messages → stable code + params (the UI holds the FR/EN texts).
 # Keep in sync with `runLog` in apps/web/src/i18n.ts (a test checks it).
@@ -94,7 +94,9 @@ PBO_MESSAGES: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
         ("verify_all", r"^Verifying every snapshot of `(?P<store>[^`]+)`"),
         ("verify_ok", r"^PBS verify OK on `(?P<store>[^`]+)`"),
         ("verify_failed", r"^PBS verify failed: (?P<reason>.+)$"),
-        ("verify_nothing", r"^Nothing new was copied: no snapshot to verify\.$"),
+        ("verify_nothing", r"^(?:Verification skipped: no new version was copied|Nothing new was copied: no snapshot to verify)\.$"),
+        ("verify_requested", r"^Verification of the copy requested: it runs after the sync\.$"),
+        ("disk_pulled", r"^The disk was unplugged during the run: the copy is stopped and the disk's last copy may be incomplete\.$"),
         ("verify_agent_mode", r"^Verification needs PBS_MODE=api: skipped\.$"),
         ("verify_only_start", r"^Verify-only run: the disk's datastore is checked, nothing is copied\.$"),
         ("pbs_token_cannot_create_datastore", r"^The PBO token cannot create a datastore on PBS \(missing: (?P<privileges>.+?)\)\. On PBS, run: (?P<command>.+)$"),

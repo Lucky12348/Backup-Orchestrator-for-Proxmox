@@ -25,7 +25,7 @@ import { InfoTip } from "../../ui/InfoTip";
 import { useToast } from "../../ui/toast";
 import { formatUsage } from "../../units";
 import { fill, formatSize, formatWhen } from "../format";
-import { AlertBadges, DiskAvatar, PbsConfigNotice } from "./DiskBits";
+import { AlertBadges, DiskAvatar, PbsConfigNotice, VerifyNowButton } from "./DiskBits";
 import { alertsFor, COLOR_CLASS, diskColor, launchState } from "./diskProfile";
 import {
   DISK_TABS,
@@ -425,16 +425,16 @@ export function DiskDetail({
 
       {disk.verify_recommended ? (
         <div className="border-0 border-b border-solid border-border p-[18px]" data-verify-recommended>
-          <Link
-            to={`/disks/${disk.id}`}
-            className="flex gap-2.5 rounded-[10px] bg-warning/15 p-3 text-[13px] leading-[1.45] text-warning-text no-underline"
-          >
-            <ShieldCheck className="mt-0.5 h-4 w-4 flex-none" />
-            <span className="flex flex-col gap-0.5">
-              <b>{t.diskSheet.verify.title}</b>
-              <span>{t.diskSheet.verify.short}</span>
+          <div className="flex flex-col gap-2.5 rounded-[10px] bg-warning/15 p-3 text-[13px] leading-[1.45] text-warning-text">
+            <span className="flex gap-2.5">
+              <ShieldCheck className="mt-0.5 h-4 w-4 flex-none" />
+              <span className="flex flex-col gap-0.5">
+                <b>{t.diskSheet.verify.title}</b>
+                <span>{disk.connected ? t.diskSheet.verify.short : t.diskSheet.verify.needsPlug}</span>
+              </span>
             </span>
-          </Link>
+            {disk.connected ? <VerifyNowButton disk={disk} t={t} onChanged={onChanged} /> : null}
+          </div>
         </div>
       ) : null}
 

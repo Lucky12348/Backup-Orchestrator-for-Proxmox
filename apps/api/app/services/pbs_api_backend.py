@@ -71,6 +71,9 @@ REUSED_MESSAGE = "Existing dedicated PBS datastore reused."  # compared by exter
 CREATED_MESSAGE = "Dedicated PBS datastore created."
 RECREATED_MESSAGE = "PBS configuration re-created from the existing data, no formatting."
 EJECT_OK_MESSAGE = "External datastore unmounted safely. Disk can be detached."
+# Disk pulled out: unmount attempts (stacked stale mounts) and their timeout.
+OFFLINE_ATTEMPTS = 3
+OFFLINE_TIMEOUT_SECONDS = 120.0
 # What a 403 interrupted, for the operator.
 OPERATIONS = {
     "/prepare-dedicated-pbs-datastore": "the datastore preparation",
@@ -152,6 +155,7 @@ class PBSApiBackend:
             "/list-datastore-snapshots": self._list_snapshots,
             "/prune-datastore": self._prune_datastore,
             "/verify-snapshots": self._verify_snapshots,
+            "/offline-removable-datastore": self._offline_datastore,
             "/external-export-objects/status": lambda _payload: self._export_objects_status(),
             "/external-export-objects/cleanup": lambda _payload: self._cleanup_export_objects(),
             "/cleanup-legacy-external-export-objects": lambda _payload: self._cleanup_export_objects(),
@@ -580,6 +584,23 @@ class PBSApiBackend:
             "message": f"PBS verify OK on `{store}`{suffix}",
             "stdout_log": "\n".join(lines) or None,
         }
+
+    def _offline_datastore(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Disk pulled out: unmount its removable datastore without failing when
+        the device is gone. A previous removal can leave stacked stale mounts
+        on the same path: unmount until PBS reports `notmounted` (bounded)."""
+        store = fit_datastore_name(str(payload.get("datastore_name") or "").strip())
+        errors: list[str] = []
+        for _ in range(OFFLINE_ATTEMPTS):
+            state = self._mount_status(store)
+            if state != "mounted":
+                return {"ok": True, "datastore_name": store, "state": state or "missing", "errors": errors, "message": f"Datastore `{store}`: {state or 'missing'}."}
+            try:
+                self.client.wait_for_task(self.client.unmount_datastore(store), timeout_seconds=OFFLINE_TIMEOUT_SECONDS)
+            except (PBSApiError, PBSTaskError, PBSTaskTimeout) as exc:
+                errors.append(str(exc))
+        state = self._mount_status(store)
+        return {"ok": True, "datastore_name": store, "state": state or "missing", "errors": errors, "message": f"Datastore `{store}`: {state or 'missing'}."}
 
     def _wait_unmounted(self, store: str, attempts: int = 5, delay_seconds: float = 2.0) -> bool:
         for attempt in range(attempts):
