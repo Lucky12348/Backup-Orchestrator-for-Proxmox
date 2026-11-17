@@ -24,7 +24,7 @@ import { InfoTip } from "../../ui/InfoTip";
 import { useToast } from "../../ui/toast";
 import { formatUsage } from "../../units";
 import { fill, formatSize, formatWhen } from "../format";
-import { AlertBadges, DiskAvatar } from "./DiskBits";
+import { AlertBadges, DiskAvatar, PbsConfigNotice } from "./DiskBits";
 import { alertsFor, COLOR_CLASS, diskColor, launchState } from "./diskProfile";
 import {
   DISK_TABS,
@@ -323,7 +323,7 @@ export function DiskCard({
       ) : (
         <span className={cn("text-[13px]", tone.note)}>{noteText(row, t)}</span>
       )}
-      <AlertBadges alerts={alerts} t={t} />
+      <AlertBadges alerts={alerts.filter((alert) => !alert.code.startsWith("pbs_"))} t={t} />
       {tags.length ? (
         <div className="flex flex-wrap gap-1.5">
           {tags.map((tag) => (
@@ -439,15 +439,7 @@ export function DiskDetail({
 
       {pbsConfigNote(configState) ? (
         <div className="border-0 border-b border-solid border-border p-[18px]" data-config-detail={pbsConfigNote(configState)}>
-          <div
-            className={cn(
-              "flex flex-col gap-1 rounded-[10px] p-3 text-[13px] leading-[1.45]",
-              pbsConfigNote(configState) === "missing_recoverable" ? "bg-warning/15 text-warning-text" : "bg-danger/15 text-danger-text",
-            )}
-          >
-            <b>{t.datastoresV2.disk[pbsConfigNote(configState) as PbsConfigNote]}</b>
-            <span>{fill(t.datastoresV2.diskHelp[pbsConfigNote(configState) as PbsConfigNote], { name: configState?.datastore ?? "" })}</span>
-          </div>
+          <PbsConfigNotice note={pbsConfigNote(configState) as PbsConfigNote} datastore={configState?.datastore ?? ""} serial={disk.serial_number} t={t} />
         </div>
       ) : null}
 

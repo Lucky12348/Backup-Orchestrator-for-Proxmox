@@ -82,3 +82,47 @@ export function AlertBadges({ alerts, t }: { alerts: DiskAlert[]; t: Translation
     </div>
   );
 }
+
+/** PBS configuration of the disk's datastore deleted or taken (Phase 6c/5f), told
+ *  for a user: what happened, whether the data is safe, what PBO / the user does. */
+export function PbsConfigNotice({
+  note,
+  datastore,
+  serial,
+  t,
+}: {
+  note: "missing_recoverable" | "missing" | "conflict";
+  datastore: string;
+  serial: string;
+  t: TranslationDictionary;
+}) {
+  const help = t.datastoresV2.diskHelp[note];
+  const command = `proxmox-backup-manager datastore create ${datastore} ${datastore} --backing-device <uuid> --reuse-datastore true --comment pbo:serial=${serial}`;
+  return (
+    <div
+      role="status"
+      className={cn(
+        "flex flex-col gap-1.5 rounded-[10px] p-3 text-[13px] leading-[1.45]",
+        note === "missing_recoverable" ? "bg-warning/15 text-warning-text" : "bg-danger/15 text-danger-text",
+      )}
+      data-config-notice={note}
+    >
+      <b>{t.datastoresV2.disk[note]}</b>
+      <span>{fill(help.happened, { name: datastore })}</span>
+      <span className="font-medium">{help.data}</span>
+      <span>{help.next}</span>
+      {note === "missing" ? (
+        <>
+          <span className="text-xs">{t.datastoresV2.manualSteps}</span>
+          <code className="block whitespace-pre-wrap break-all rounded-md bg-bg/60 px-2 py-1.5 font-mono text-[11px] text-fg">{command}</code>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+export const CONFIG_ALERT_NOTE = {
+  pbs_config_recoverable: "missing_recoverable",
+  pbs_config_missing: "missing",
+  pbs_conflict: "conflict",
+} as const;

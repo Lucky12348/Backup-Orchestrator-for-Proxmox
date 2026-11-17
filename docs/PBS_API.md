@@ -169,26 +169,52 @@ disk costs its newest snapshot's size, other missing snapshots 10 % of theirs
 when never prepared); `insufficient_space` (409, no run) only when the
 contents are known. [U]: snapshot `size` is logical, so this is an estimate.
 
-### Deleted datastore configuration (Phase 6c)
+### Deleted datastore configuration (Phase 6c, proof kept by PBO since 5f)
 
-When PBO creates or reuses a rotation datastore it records, from
-`GET /config/datastore/<name>`, the filesystem UUID (`backing-device`) and the
-on-device `path` (`external_disks.pbs_backing_device` / `pbs_datastore_path`):
-the **PBO marker** of that disk. If the PBS configuration is later deleted
-(the data stays on the disk), the next backup finds no bound datastore:
+`proxmox-backup-manager datastore remove <name>` (without `--destroy-data`)
+deletes the configuration — including the `pbo:serial=` comment — but not the
+data. So PBO keeps its own proof of ownership, in its database
+(`services/pbs_marker.py`), for each rotation disk:
 
-- the disk's partition UUID matches the marker → `POST /config/datastore`
-  `name`, `path`, `backing-device`, `reuse-datastore=true`,
-  `comment=pbo:serial=<serial>`, then mount — **no wipe, no format**, and the
-  run journal says so (`datastore_recreated`);
-- no matching marker and an ext4/xfs/btrfs filesystem on the disk → refused
-  (`pbs_config_missing_unrecoverable`), nothing is touched;
+| Field | Value |
+|---|---|
+| `pbs_backing_device` | filesystem UUID (PBS `backing-device`) |
+| `pbs_datastore_path` | path relative to that filesystem (PBS: `path = <name>` for a removable datastore created by `disks/directory`, verified in the PBS source) |
+| `pbs_datastore_name`, `serial_number` | the datastore and the disk |
+| `pbs_marker_source` | `created` (recorded at create/reuse), `pbs_config` or `run_log` (back-filled) |
+
+**Back-fill** (disks prepared before this record existed), at each datastore
+check and before each preparation:
+1. the PBS configuration still exists with `pbo:serial=<serial>` → its
+   `backing-device` and `path`;
+2. otherwise the journals of the disk's runs: PBS logs
+   `temporarily mounting '<uuid>' to '<tmp dir>'` every time it mounts a
+   removable datastore (`do_mount_device`); the most recent UUID is taken,
+   the path is the datastore name.
+
+**Next backup** (after the USB hand-off), config missing:
+- recorded UUID present among the disk's partition UUIDs
+  (`GET /nodes/{node}/disks/list`) → `POST /config/datastore` `name`,
+  `path`, `backing-device`, `reuse-datastore=true`,
+  `comment=pbo:serial=<serial>` → mount → readable check (`status` answers
+  with a capacity; empty while PBO saw backups on that disk →
+  `recreated_datastore_empty`, the run stops) → the sync goes on. Journal:
+  `datastore_recreate_start`, then `datastore_recreated` ("re-created from the
+  existing data, no formatting"). PBS's reuse only opens an existing chunk
+  store (`.chunks`), so a wrong path fails without writing anything.
+- recorded UUID not on the disk → `pbs_config_missing_uuid_mismatch`;
+  no UUID known → `pbs_config_missing_unknown`. Both refuse, with the manual
+  steps (`proxmox-backup-manager datastore create <name> <name>
+  --backing-device <uuid> --reuse-datastore true --comment
+  pbo:serial=<serial>`). **No wipedisk / disks/directory call in this path**
+  (tests check it).
 - a datastore with the expected name but without the PBO comment → conflict,
   refused (`datastore_name_taken` / `pbs_datastore_conflict`).
 
-The datastore health check (`services/datastore_health.py`) reports these
-states after each PBS sync. [U: `reuse-datastore` on a removable datastore to
-be confirmed on a test PBS.]
+Datastore health (`services/datastore_health.py`): `config_missing` is
+`recoverable` (not blocking) when the UUID is known; these states are also
+disk alerts (`pbs_config_recoverable` / `pbs_config_missing` /
+`pbs_conflict`, `GET /disks/alerts`) shown in the dashboard "To do".
 
 ## TLS
 

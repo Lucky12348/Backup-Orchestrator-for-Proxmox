@@ -53,6 +53,9 @@ class ExternalDisk(Base):
     # with reuse-datastore, never by formatting.
     pbs_backing_device: Mapped[str | None] = mapped_column(String(128), nullable=True)
     pbs_datastore_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # Where that proof comes from: created | pbs_config | run_log (services/pbs_marker.py).
+    pbs_marker_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    pbs_marker_recorded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
     prepared_as_pbs_datastore: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     presence_state: Mapped[str] = mapped_column(String(16), nullable=False, default="absent")
     # Physical USB port reported by the host agent (sysfs): {"port_id": "2-3",

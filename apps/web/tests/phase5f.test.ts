@@ -57,7 +57,7 @@ test("alerts: per disk, ordered by severity; USB 2.0 stays off the 'To do' list"
   assert.deepEqual(todoAlerts(alerts).map((item) => item.code), ["smart_danger", "usage_warning", "rotation_stale"]);
   const values = alertValues(alert("rotation_stale", "warning", { days: 40, last_backup_at: "2026-10-01T00:00:00Z", percent: 93.6 }), () => "1 oct.");
   assert.deepEqual(values, { name: "WD 4 To", days: 40, last_backup_at: "1 oct.", percent: 94 });
-  for (const code of ["usage_critical", "usage_warning", "smart_danger", "smart_warning", "verify_recommended", "usb2_slow", "rotation_stale"]) {
+  for (const code of ["usage_critical", "usage_warning", "smart_danger", "smart_warning", "verify_recommended", "usb2_slow", "rotation_stale", "pbs_config_recoverable", "pbs_config_missing", "pbs_conflict"]) {
     for (const lang of ["en", "fr"] as const) {
       const guards = translations[lang].guards as Record<string, Record<string, string>>;
       assert.ok(guards.alert[code] && guards.badge[code] && guards.action[code], `${code} (${lang})`);
@@ -120,4 +120,40 @@ test("verify-only runs and unsafe removals in the history and the activity", () 
   const base = { id: "x", at: "2026-11-16T10:00:00Z", duration_seconds: null, disk_id: 1, disk_label: "WD", run_id: 1, planned: false, auto_eject: false, step: null, progress_percent: null, transferred_bytes: null, no_new_data: false, message: null };
   assert.equal(activitySummary({ ...base, type: "verify", status: "success" }, texts, "fr"), "Vérification PBS réussie");
   assert.equal(activitySummary({ ...base, type: "detection", status: "unsafe_removal" }, texts, "fr"), texts.unsafeRemoval);
+});
+
+test("PBS configuration deleted: in 'To do' first, linked to the disk sheet, told for a user", () => {
+  const items = todoItems({
+    disks: [],
+    runs: [],
+    scheduledRuns: [],
+    agentConnected: true,
+    agentConfigured: true,
+    now: new Date("2026-11-16T11:00:00Z"),
+    missingDatastore: "main",
+    alerts: [
+      alert("rotation_stale", "warning", { days: 40 }),
+      alert("pbs_config_recoverable", "warning", { datastore: "pbo-pbotesta" }, 2),
+      alert("pbs_config_missing", "danger", { datastore: "pbo-x" }, 3),
+      alert("verify_recommended", "warning", {}, 4),
+    ],
+  });
+  assert.deepEqual(
+    items.map((item) => [item.kind, item.alert?.code ?? null, item.href]),
+    [
+      ["datastore_missing", null, "/integrations"],
+      ["disk_alert", "pbs_config_missing", "/disks/3"],
+      ["disk_alert", "pbs_config_recoverable", "/disks/2"],
+      ["disk_alert", "verify_recommended", "/disks/4"],
+      ["disk_alert", "rotation_stale", "/disks/1"],
+    ],
+  );
+  for (const lang of ["en", "fr"] as const) {
+    const help = translations[lang].datastoresV2.diskHelp;
+    for (const note of ["missing_recoverable", "missing", "conflict"] as const) {
+      assert.ok(help[note].happened && help[note].data && help[note].next, `${note} (${lang})`);
+    }
+  }
+  assert.match(translations.fr.datastoresV2.diskHelp.missing_recoverable.data, /toujours sur le disque/);
+  assert.match(translations.fr.runLog.datastore_recreated, /aucun formatage/);
 });

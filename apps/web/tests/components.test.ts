@@ -41,7 +41,7 @@ before(async () => {
         'export { ChooseDatastoreDialog } from "./src/views/datastores/ChooseDatastoreDialog";',
         'export { PlanningDialog } from "./src/views/planning/PlanningDialog";',
         'export { UserMenu } from "./src/shell/AppShellV2";',
-        'export { DiskAvatar, AlertBadges } from "./src/views/disks/DiskBits";',
+        'export { DiskAvatar, AlertBadges, PbsConfigNotice } from "./src/views/disks/DiskBits";',
         'export { ContentsCard } from "./src/views/disks/DiskSheetView";',
         'export { UsageChart } from "./src/views/disks/UsageChart";',
         'export { DiskCopies } from "./src/views/resources/ResourcesView";',
@@ -509,7 +509,7 @@ test("DiskCard: 'PBS configuration missing' note", () => {
       configNote: "missing_recoverable",
     }),
   );
-  assert.ok(markup.includes('data-config="missing_recoverable"') && markup.includes("Configuration PBS manquante"));
+  assert.ok(markup.includes('data-config="missing_recoverable"') && markup.includes("Configuration PBS supprimée · sera recréée"));
 });
 
 test("Planning and datastore dialogs render nothing while closed", () => {
@@ -578,4 +578,12 @@ test("DiskCopies: the disks holding a copy of a VM, newest first", () => {
   const markup = html(inApp(createElement(ui.DiskCopies, { copies, language: "fr", now: new Date("2026-11-16T12:00:00Z"), t: translations.fr })));
   assert.ok(markup.includes('href="/disks/1"') && markup.includes("WD 4 To") && markup.includes("bg-sky-500"));
   assert.ok(html(inApp(createElement(ui.DiskCopies, { copies: [], language: "fr", now: new Date(), t: translations.fr }))).includes("sur aucun disque"));
+});
+
+test("PbsConfigNotice: what happened, data safe, what to do (manual command when PBO cannot)", () => {
+  const recoverable = html(createElement(ui.PbsConfigNotice, { note: "missing_recoverable", datastore: "pbo-pbotesta", serial: "PBOTESTA", t: translations.fr }));
+  assert.ok(recoverable.includes("Configuration PBS supprimée · sera recréée") && recoverable.includes("toujours sur le disque"));
+  assert.ok(!recoverable.includes("proxmox-backup-manager datastore create"));
+  const missing = html(createElement(ui.PbsConfigNotice, { note: "missing", datastore: "pbo-pbotesta", serial: "PBOTESTA", t: translations.fr }));
+  assert.ok(missing.includes("action requise") && missing.includes("--reuse-datastore true --comment pbo:serial=PBOTESTA"));
 });

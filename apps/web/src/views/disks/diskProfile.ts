@@ -35,7 +35,7 @@ export interface AlertLike {
   params: Record<string, unknown>;
 }
 
-const ALERT_ORDER = ["smart_danger", "usage_critical", "verify_recommended", "smart_warning", "usage_warning", "rotation_stale", "usb2_slow"];
+const ALERT_ORDER = ["pbs_config_missing", "pbs_conflict", "smart_danger", "usage_critical", "pbs_config_recoverable", "verify_recommended", "smart_warning", "usage_warning", "rotation_stale", "usb2_slow"];
 
 export function alertsFor<A extends AlertLike>(alerts: readonly A[] | null | undefined, diskId: number): A[] {
   return (alerts ?? [])

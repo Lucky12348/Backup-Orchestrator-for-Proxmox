@@ -88,10 +88,13 @@ def evaluate(db: Session, configs: list[dict[str, Any]], source: str) -> dict[st
         prepared = bool(disk.prepared_as_pbs_datastore and disk.pbs_datastore_name)
         if config is None:
             if prepared:
+                # Recoverable: PBO knows the filesystem UUID; the run checks it on
+                # the plugged disk before re-creating anything (never a format).
                 disks[str(disk.id)] = {
                     "state": "config_missing",
                     "datastore": name,
-                    "recoverable": bool(disk.pbs_backing_device and disk.pbs_datastore_path),
+                    "recoverable": bool(disk.pbs_backing_device),
+                    "marker_source": disk.pbs_marker_source,
                 }
             continue
         if not has_pbo_marker(config, disk.serial_number):
@@ -128,6 +131,9 @@ def check(db: Session, *, client: Any | None = None) -> dict[str, Any]:
             value.setdefault("blocked_events", [])
             value.setdefault("datastores", [])
         else:
+            from app.services.pbs_marker import backfill
+
+            backfill(db, configs)
             value = evaluate(db, configs, settings.pbs_datastore)
     _store(db, value)
     return value

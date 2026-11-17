@@ -23,7 +23,7 @@ import type { ExternalBackupRun, ExternalDisk } from "../../types";
 import { useToast } from "../../ui/toast";
 import { formatBytes, formatUsage } from "../../units";
 import { fill, formatWhen } from "../format";
-import { AlertBadges, DiskAvatar } from "./DiskBits";
+import { AlertBadges, CONFIG_ALERT_NOTE, DiskAvatar, PbsConfigNotice } from "./DiskBits";
 import { diskHistory, diskRows, usagePercent, type Tone } from "./diskModel";
 import {
   alertsFor,
@@ -100,6 +100,18 @@ export function DiskSheetView({ disks, runs, alerts, language, t, onChanged }: D
           <AlertBadges alerts={diskAlerts} t={t} />
         </div>
       </header>
+
+      {diskAlerts
+        .filter((alert) => alert.code in CONFIG_ALERT_NOTE)
+        .map((alert) => (
+          <PbsConfigNotice
+            key={alert.code}
+            note={CONFIG_ALERT_NOTE[alert.code as keyof typeof CONFIG_ALERT_NOTE]}
+            datastore={String(alert.params.datastore ?? disk.pbs_datastore_name ?? "")}
+            serial={disk.serial_number}
+            t={t}
+          />
+        ))}
 
       {disk.verify_recommended ? <VerifyBanner disk={disk} t={t} language={language} onChanged={onChanged} /> : null}
 

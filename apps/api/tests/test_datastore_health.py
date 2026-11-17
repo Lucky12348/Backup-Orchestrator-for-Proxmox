@@ -96,7 +96,8 @@ def test_source_candidates_exclude_rotation_disks(api_mode):
 
 
 def _prepared(db, session_factory):
-    """A disk prepared by PBO (format path), then its PBS configuration deleted."""
+    """A disk prepared by PBO (format path), then its PBS configuration deleted
+    (`proxmox-backup-manager datastore remove`, WITHOUT --destroy-data)."""
     disk = _disk(db)
     fake = FakePBS(disks=[usb_disk(SERIAL, partitions=[])])
     backend = make_backend(fake, session_factory)
@@ -106,51 +107,134 @@ def _prepared(db, session_factory):
     disk.prepared_as_pbs_datastore = True
     disk.pbs_datastore_name = TARGET
     db.commit()
-    assert disk.pbs_backing_device == f"UUID-{TARGET}" and disk.pbs_datastore_path == "."  # the PBO marker
+    # The proof PBO keeps for itself: filesystem UUID + relative path (PBS: path = name).
+    assert (disk.pbs_backing_device, disk.pbs_datastore_path, disk.pbs_marker_source) == (f"UUID-{TARGET}", TARGET, "created")
     fake.datastores = [cfg for cfg in fake.datastores if cfg["name"] != TARGET]  # deleted in PBS
+    fake.mount_status.pop(TARGET, None)
     fake.calls.clear()
     return disk, fake, backend
 
 
-def test_config_missing_is_reported_then_recreated_with_reuse_never_wiped(api_mode, session_factory):
+def _prepare(backend):
+    return backend.post("/prepare-dedicated-pbs-datastore", {"disk": SERIAL, "datastore_name": TARGET, "confirmation": True})
+
+
+def test_config_missing_same_uuid_is_recreated_without_any_wipe(api_mode, session_factory):
     db = api_mode
     disk, fake, backend = _prepared(db, session_factory)
+    fake.add_snapshot(TARGET, "vm/100", 1_700_000_000)  # the backups are still on the disk
     health = datastore_health.check(db, client=backend.client)
-    assert health["disks"][str(disk.id)] == {"state": "config_missing", "datastore": TARGET, "recoverable": True}
+    assert health["disks"][str(disk.id)] == {"state": "config_missing", "datastore": TARGET, "recoverable": True, "marker_source": "created"}
     assert "pbs_config_missing" not in [r["code"] for r in backup_readiness.local_disk_reasons(db, disk)]
 
-    result = backend.post("/prepare-dedicated-pbs-datastore", {"disk": SERIAL, "datastore_name": TARGET, "confirmation": True})
+    from app.models import BackupRunStatus, ExternalBackupMode, ExternalBackupRun
+    from app.services.run_log import run_journal
+
+    run = ExternalBackupRun(
+        disk_id=disk.id, status=BackupRunStatus.RUNNING, started_at=NOW, created_at=NOW, target_path="/x", datastore_name="main",
+        mode=ExternalBackupMode.DEDICATED,
+    )
+    db.add(run)
+    db.commit()
+    result = backend.post(
+        "/prepare-dedicated-pbs-datastore", {"disk": SERIAL, "datastore_name": TARGET, "confirmation": True, "callback_run_id": run.id}
+    )
     assert result.ok, result.message
     assert _wiped(fake) == []  # NEVER formatted
+    db.refresh(run)
+    codes = [entry["code"] for entry in run_journal(run, disk)["entries"]]
+    assert "datastore_recreate_start" in codes and "datastore_recreated" in codes
     assert fake.reused == [
-        {"name": TARGET, "path": ".", "backing-device": f"UUID-{TARGET}", "reuse-datastore": True, "comment": pbo_marker(SERIAL)}
+        {"name": TARGET, "path": TARGET, "backing-device": f"UUID-{TARGET}", "reuse-datastore": True, "comment": pbo_marker(SERIAL)}
     ]
+    assert fake.mount_status[TARGET] == "mounted"
+    assert result.message == "PBS configuration re-created from the existing data, no formatting."
     assert datastore_health.check(db, client=backend.client)["disks"][str(disk.id)]["state"] == "ok"
 
 
-def test_config_missing_without_marker_is_refused_and_never_wiped(api_mode, session_factory):
+def test_marker_backfilled_from_the_run_journal(api_mode, session_factory):
+    """A disk prepared before PBO kept its own proof: the UUID comes from the
+    `temporarily mounting '<uuid>'` line PBS logged in an earlier run."""
+    from app.models import BackupRunStatus, ExternalBackupMode, ExternalBackupRun
+
     db = api_mode
     disk, fake, backend = _prepared(db, session_factory)
-    disk.pbs_backing_device = None  # prepared before Phase 6c: no PBO marker recorded
+    disk.pbs_backing_device = disk.pbs_datastore_path = disk.pbs_marker_source = None
+    db.add(
+        ExternalBackupRun(
+            disk_id=disk.id, status=BackupRunStatus.SUCCESS, started_at=NOW, created_at=NOW, target_path="/x", datastore_name="main",
+            mode=ExternalBackupMode.DEDICATED,
+            stdout_log=f"[2026-11-16T01:00:00Z] mount_datastore 2026-11-16T02:00:01+01:00: temporarily mounting 'UUID-{TARGET}' to '/run/proxmox-backup/mount/1a2b'",
+        )
+    )
+    db.commit()
+    health = datastore_health.check(db, client=backend.client)
+    db.refresh(disk)
+    assert (disk.pbs_backing_device, disk.pbs_datastore_path, disk.pbs_marker_source) == (f"UUID-{TARGET}", TARGET, "run_log")
+    assert health["disks"][str(disk.id)]["recoverable"] is True
+    assert _prepare(backend).ok
+    assert _wiped(fake) == [] and len(fake.reused) == 1
+
+
+def test_marker_backfilled_from_the_pbs_config_while_it_still_exists(api_mode, session_factory):
+    db = api_mode
+    disk = _disk(db, prepared_as_pbs_datastore=True, pbs_datastore_name=TARGET)
+    configs = [{"name": TARGET, "path": TARGET, "backing-device": "UUID-X", "comment": pbo_marker(SERIAL)}]
+    from app.services.pbs_marker import backfill
+
+    assert backfill(db, configs) == [disk.id]
+    assert (disk.pbs_backing_device, disk.pbs_datastore_path, disk.pbs_marker_source) == ("UUID-X", TARGET, "pbs_config")
+
+
+def test_config_missing_other_uuid_is_refused_never_wiped(api_mode, session_factory):
+    db = api_mode
+    disk, fake, backend = _prepared(db, session_factory)
+    disk.pbs_backing_device = "UUID-of-a-previous-filesystem"
+    db.commit()
+    with pytest.raises(HostAgentError) as refused:
+        _prepare(backend)
+    assert refused.value.payload.get("error_code") == "pbs_config_missing_uuid_mismatch"
+    assert "Nothing is formatted" in str(refused.value) and "--reuse-datastore true" in str(refused.value)
+    assert _wiped(fake) == [] and fake.reused == []
+
+
+def test_config_missing_unknown_uuid_is_refused_never_wiped(api_mode, session_factory):
+    db = api_mode
+    disk, fake, backend = _prepared(db, session_factory)
+    disk.pbs_backing_device = None  # nothing recorded, nothing in the journals
     db.commit()
     health = datastore_health.check(db, client=backend.client)
     assert health["disks"][str(disk.id)]["recoverable"] is False
     assert "pbs_config_missing" in [r["code"] for r in backup_readiness.local_disk_reasons(db, disk)]
     with pytest.raises(HostAgentError) as refused:
-        backend.post("/prepare-dedicated-pbs-datastore", {"disk": SERIAL, "datastore_name": TARGET, "confirmation": True})
-    assert refused.value.payload.get("error_code") == "pbs_config_missing_unrecoverable"
-    assert "nothing is formatted" in str(refused.value)
+        _prepare(backend)
+    assert refused.value.payload.get("error_code") == "pbs_config_missing_unknown"
     assert _wiped(fake) == [] and fake.reused == []
 
 
-def test_marker_of_another_filesystem_is_not_trusted(api_mode, session_factory):
+def test_recreated_but_empty_datastore_stops_the_run(api_mode, session_factory):
+    """Re-created at the wrong place: PBO saw backups on this disk, PBS shows none."""
     db = api_mode
     disk, fake, backend = _prepared(db, session_factory)
-    disk.pbs_backing_device = "UUID-of-a-previous-filesystem"
+    disk.contents_cache = {"items": [{"group": "vm/100", "versions": 2}], "snapshots": ["vm/100/1"]}
     db.commit()
-    with pytest.raises(HostAgentError):
-        backend.post("/prepare-dedicated-pbs-datastore", {"disk": SERIAL, "datastore_name": TARGET, "confirmation": True})
-    assert _wiped(fake) == [] and fake.reused == []
+    with pytest.raises(HostAgentError) as refused:
+        _prepare(backend)
+    assert refused.value.payload.get("error_code") == "recreated_datastore_empty"
+    assert _wiped(fake) == []
+
+
+def test_datastore_problems_are_disk_alerts(api_mode, session_factory):
+    from app.services.disk_guards import disk_alerts
+
+    db = api_mode
+    disk, fake, backend = _prepared(db, session_factory)
+    datastore_health.check(db, client=backend.client)
+    assert [(a["code"], a["level"]) for a in disk_alerts(db) if a["disk_id"] == disk.id] == [("pbs_config_recoverable", "warning")]
+    disk.pbs_backing_device = None
+    db.commit()
+    datastore_health.check(db, client=backend.client)
+    assert [a["code"] for a in disk_alerts(db) if a["disk_id"] == disk.id] == ["pbs_config_missing"]
 
 
 # --- c) expected name taken by a datastore PBO did not create -----------------------------------

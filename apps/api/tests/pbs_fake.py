@@ -173,7 +173,8 @@ class FakePBS:
                 uuid = f"UUID-{name}"
                 disk["partitions"] = [{"name": "sdb1", "devpath": "/dev/sdb1", "filesystem": "ext4", "uuid": uuid, "used": "filesystem", "mounted": True}]
                 disk["used"] = "partitions"
-                self.datastores.append({"name": name, "path": ".", "backing-device": uuid})
+                # PBS: removable datastore → path = its name, backing-device = fs UUID.
+                self.datastores.append({"name": name, "path": name, "backing-device": uuid})
                 self.mount_status[name] = "mounted"
 
             return self._task("dircreate", name, [f"create datastore '{name}' on disk {body['disk']}", "TASK OK"], create)

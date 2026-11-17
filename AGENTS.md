@@ -409,10 +409,16 @@ should reach them — and every call is additionally protected with an
   `pbs_datastore_path`, recorded from the PBS config at every create/reuse
   (`PBSApiBackend._record_marker`). `plan_dedicated_preparation` action
   `recreate` = `POST /config/datastore reuse-datastore=1` when the config is
-  gone and the disk's filesystem UUID matches the marker. A prepared disk with
-  an ext4/xfs/btrfs filesystem and no matching marker is refused
-  (`pbs_config_missing_unrecoverable`) — never wiped. Journal code
-  `datastore_recreated`.
+  gone and the disk's filesystem UUID matches the marker. The marker is PBO's
+  own proof (`services/pbs_marker.py`, + `pbs_marker_source` /
+  `pbs_marker_recorded_at`, Alembic `0010`), back-filled from the PBS config
+  or from the runs' `temporarily mounting '<uuid>'` lines; path = datastore
+  name when unknown (PBS default). Recoverable = UUID known (not blocking);
+  the run re-creates, mounts, checks the store is readable and non-empty
+  (`recreated_datastore_empty`). Refusals: `pbs_config_missing_uuid_mismatch`
+  / `pbs_config_missing_unknown`, with manual steps — never wiped. Journal
+  codes `datastore_recreate_start` / `datastore_recreated`. Config states are
+  disk alerts too (`pbs_config_recoverable|missing`, `pbs_conflict`).
 - **Recurrence**: `recurrence_config.weekdays` (several days a week, 0 =
   Monday) in `services/recurrence.py`, RRULE `BYDAY`. The planning form
   (`views/planning/planningForm.ts`) = When / Which disk(s) / What, presets,

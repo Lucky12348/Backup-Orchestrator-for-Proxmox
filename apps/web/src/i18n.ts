@@ -127,7 +127,8 @@ export const translations = {
       wiping: "Wiping {device} on PBS.",
       creating_datastore: "Creating removable datastore {store} on {device}.",
       datastore_marked: "PBO datastore {store} found on this disk.",
-      datastore_recreated: "PBS configuration of {store} was missing: re-created with reuse-datastore from the PBO-marked filesystem (no formatting).",
+      datastore_recreate_start: "Filesystem {uuid} is the one PBO recorded for {store}: re-creating its PBS configuration.",
+      datastore_recreated: "PBS configuration re-created from the existing data ({count} backup(s) found), no formatting.",
       mounting: "Mounting datastore {store}.",
       export_start: "Starting the copy to the disk.",
       sync_job_create: "PBS sync {source} → {target}.",
@@ -790,6 +791,9 @@ export const translations = {
     // Disk guards (Phase 5f): cards, "To do", alerts.
     guards: {
       badge: {
+        pbs_config_recoverable: "PBS config deleted",
+        pbs_config_missing: "PBS config deleted",
+        pbs_conflict: "Datastore conflict",
         usage_critical: "{percent} % full",
         usage_warning: "{percent} % full",
         smart_danger: "SMART failing",
@@ -799,6 +803,9 @@ export const translations = {
         rotation_stale: "{days} d without backup",
       },
       alert: {
+        pbs_config_recoverable: "{name}: PBS configuration deleted, re-created at the next backup (data intact)",
+        pbs_config_missing: "{name}: PBS configuration deleted, backups refused until you act (data intact)",
+        pbs_conflict: "{name}: a PBS datastore uses its name, nothing is done automatically",
         usage_critical: "{name} is {percent} % full",
         usage_warning: "{name} is {percent} % full",
         smart_danger: "{name}: SMART reports the disk as failing",
@@ -808,6 +815,9 @@ export const translations = {
         rotation_stale: "{name}: no backup for {days} days",
       },
       action: {
+        pbs_config_recoverable: "See",
+        pbs_config_missing: "Fix",
+        pbs_conflict: "See",
         usage_critical: "See",
         usage_warning: "See",
         smart_danger: "See",
@@ -845,15 +855,28 @@ export const translations = {
       chosen: "Source datastore: {name}.",
       usage: "{used} used of {total}",
       disk: {
-        missing_recoverable: "PBS configuration missing",
-        missing: "PBS configuration missing",
+        missing_recoverable: "PBS configuration deleted · will be re-created",
+        missing: "PBS configuration deleted · action needed",
         conflict: "Datastore conflict",
       },
       diskHelp: {
-        missing_recoverable: "The configuration of {name} was deleted in PBS. The PBO marker is on the disk: it is re-created at the next backup with reuse-datastore, without formatting.",
-        missing: "The configuration of {name} was deleted in PBS and PBO cannot prove the filesystem is its own: backups are refused, nothing is formatted. Re-create it in PBS (reuse-datastore) or wipe the disk yourself.",
-        conflict: "A PBS datastore {name} exists but was not created by PBO (no pbo:serial marker). Nothing is done automatically: rename or remove it in PBS.",
+        missing_recoverable: {
+          happened: "The PBS configuration of this disk's datastore ({name}) was deleted in PBS.",
+          data: "Your backups are still on the disk: deleting a configuration does not erase data.",
+          next: "Nothing to do. At the next backup, PBO checks that the plugged disk is the right one (filesystem identifier) and re-creates the configuration from the existing data, without formatting anything.",
+        },
+        missing: {
+          happened: "The PBS configuration of this disk's datastore ({name}) was deleted in PBS, and PBO cannot check that the plugged disk is the right one.",
+          data: "Your backups are not erased: PBO touches nothing and refuses the backups on this disk for now.",
+          next: "What you can do: plug the disk in, find its filesystem identifier on PBS, then re-register the datastore without formatting:",
+        },
+        conflict: {
+          happened: "A PBS datastore named {name} exists but was not created by PBO.",
+          data: "PBO does not touch it: no data is changed.",
+          next: "What you can do: rename or remove that datastore in PBS (it belongs to someone else), then run the detection again.",
+        },
       },
+      manualSteps: "On PBS: `proxmox-backup-manager disk list` (or `lsblk -f`) shows the filesystem UUID of the disk.",
     },
     login: {
       subtitle: "BACKUP ORCHESTRATION CONSOLE",
@@ -1504,7 +1527,8 @@ export const translations = {
       wiping: "Effacement de {device} sur PBS.",
       creating_datastore: "Création du datastore amovible {store} sur {device}.",
       datastore_marked: "Datastore PBO {store} trouvé sur ce disque.",
-      datastore_recreated: "Configuration PBS de {store} manquante : recréée avec reuse-datastore depuis le système de fichiers marqué par PBO (aucun formatage).",
+      datastore_recreate_start: "Le système de fichiers {uuid} est celui que PBO a enregistré pour {store} : recréation de sa configuration PBS.",
+      datastore_recreated: "Configuration PBS recréée à partir des données existantes ({count} sauvegarde(s) trouvée(s)), aucun formatage.",
       mounting: "Montage du datastore {store}.",
       export_start: "Démarrage de la copie vers le disque.",
       sync_job_create: "Synchronisation PBS {source} → {target}.",
@@ -2167,6 +2191,9 @@ export const translations = {
     // Garde-fous des disques (phase 5f) : cartes, « À traiter », alertes.
     guards: {
       badge: {
+        pbs_config_recoverable: "Config PBS supprimée",
+        pbs_config_missing: "Config PBS supprimée",
+        pbs_conflict: "Conflit de datastore",
         usage_critical: "Plein à {percent} %",
         usage_warning: "Plein à {percent} %",
         smart_danger: "SMART en danger",
@@ -2176,6 +2203,9 @@ export const translations = {
         rotation_stale: "{days} j sans sauvegarde",
       },
       alert: {
+        pbs_config_recoverable: "{name} : configuration PBS supprimée, recréée à la prochaine sauvegarde (données intactes)",
+        pbs_config_missing: "{name} : configuration PBS supprimée, sauvegardes refusées tant que rien n’est fait (données intactes)",
+        pbs_conflict: "{name} : un datastore PBS utilise son nom, aucune action automatique",
         usage_critical: "{name} est plein à {percent} %",
         usage_warning: "{name} est plein à {percent} %",
         smart_danger: "{name} : SMART signale le disque comme défaillant",
@@ -2185,6 +2215,9 @@ export const translations = {
         rotation_stale: "{name} : aucune sauvegarde depuis {days} jours",
       },
       action: {
+        pbs_config_recoverable: "Voir",
+        pbs_config_missing: "Corriger",
+        pbs_conflict: "Voir",
         usage_critical: "Voir",
         usage_warning: "Voir",
         smart_danger: "Voir",
@@ -2222,15 +2255,28 @@ export const translations = {
       chosen: "Datastore source : {name}.",
       usage: "{used} utilisés sur {total}",
       disk: {
-        missing_recoverable: "Configuration PBS manquante",
-        missing: "Configuration PBS manquante",
+        missing_recoverable: "Configuration PBS supprimée · sera recréée",
+        missing: "Configuration PBS supprimée · action requise",
         conflict: "Conflit de datastore",
       },
       diskHelp: {
-        missing_recoverable: "La configuration de {name} a été supprimée dans PBS. Le marqueur PBO est présent sur le disque : elle sera recréée à la prochaine sauvegarde avec reuse-datastore, sans formatage.",
-        missing: "La configuration de {name} a été supprimée dans PBS et PBO ne peut pas prouver que le système de fichiers est le sien : les sauvegardes sont refusées, rien n'est formaté. Recréez-la dans PBS (reuse-datastore) ou videz le disque vous-même.",
-        conflict: "Un datastore PBS {name} existe mais n'a pas été créé par PBO (pas de marqueur pbo:serial). Aucune action automatique : renommez-le ou supprimez-le dans PBS.",
+        missing_recoverable: {
+          happened: "La configuration PBS du datastore de ce disque ({name}) a été supprimée dans PBS.",
+          data: "Vos sauvegardes sont toujours sur le disque : supprimer une configuration n’efface pas les données.",
+          next: "Rien à faire. À la prochaine sauvegarde, PBO vérifie que le disque branché est bien le bon (identifiant du système de fichiers) puis recrée la configuration à partir des données existantes, sans rien formater.",
+        },
+        missing: {
+          happened: "La configuration PBS du datastore de ce disque ({name}) a été supprimée dans PBS, et PBO ne peut pas vérifier que le disque branché est bien le bon.",
+          data: "Vos sauvegardes ne sont pas effacées : PBO ne touche à rien et refuse pour l’instant les sauvegardes sur ce disque.",
+          next: "Ce que vous pouvez faire : branchez le disque, relevez l’identifiant de son système de fichiers sur PBS, puis réenregistrez le datastore sans formatage :",
+        },
+        conflict: {
+          happened: "Un datastore PBS nommé {name} existe mais n’a pas été créé par PBO.",
+          data: "PBO n’y touche pas : aucune donnée n’est modifiée.",
+          next: "Ce que vous pouvez faire : renommez ou supprimez ce datastore dans PBS (il appartient à autre chose), puis relancez la détection.",
+        },
       },
+      manualSteps: "Sur PBS : `proxmox-backup-manager disk list` (ou `lsblk -f`) affiche l’UUID du système de fichiers du disque.",
     },
     login: {
       subtitle: "CONSOLE D'ORCHESTRATION DES SAUVEGARDES",

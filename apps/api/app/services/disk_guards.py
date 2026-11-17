@@ -8,6 +8,11 @@
   verify_recommended               unplugged without eject (mounted or during a run)
   usb2_slow                        USB 2.0 link (≈ 10× slower)
   rotation_stale                   approved disk without a backup for N days
+  pbs_config_recoverable           PBS config of the disk's datastore deleted, PBO
+                                   knows its filesystem: re-created at the next run
+  pbs_config_missing               … and PBO cannot prove the filesystem: blocked
+  pbs_conflict                     the expected name is used by a datastore PBO
+                                   did not create
 
 Unsafe removal: a disk handed to the PBS VM is invisible to the host; seeing
 it again on the host means it was pulled out without eject. Unplugged during
@@ -58,6 +63,9 @@ def disk_alerts(db: Session, *, now: datetime | None = None, stale_days: int | N
     moment = now or datetime.utcnow()
     days = stale_days if stale_days is not None else effective_settings(db).rotation_stale_days
     backups = last_backup_at(db)
+    from app.services import datastore_health
+
+    health = datastore_health.read_health(db)
     alerts: list[dict[str, Any]] = []
     disks = db.scalars(
         select(ExternalDisk).where(ExternalDisk.serial_number.not_like("agent-report::%")).order_by(ExternalDisk.display_name)
@@ -65,7 +73,21 @@ def disk_alerts(db: Session, *, now: datetime | None = None, stale_days: int | N
     for disk in disks:
         if disk.operator_decision == "rejected":
             continue
-        percent = disk_profile.usage_percent(disk.filesystem_used_gb, disk.filesystem_total_gb)
+        # PBS configuration of the disk's datastore (last datastore check).
+        state = datastore_health.disk_state(health, disk.id) or {}
+        if state.get("state") == "config_missing":
+            alerts.append(
+                _alert(
+                    disk,
+                    "pbs_config_recoverable" if state.get("recoverable") else "pbs_config_missing",
+                    "warning" if state.get("recoverable") else "danger",
+                    datastore=state.get("datastore"),
+                    marker_source=state.get("marker_source"),
+                )
+            )
+        elif state.get("state") == "conflict":
+            alerts.append(_alert(disk, "pbs_conflict", "danger", datastore=state.get("datastore")))
+        percent =disk_profile.usage_percent(disk.filesystem_used_gb, disk.filesystem_total_gb)
         level = disk_profile.usage_level(percent)
         if level is not None and disk.prepared_as_pbs_datastore:
             alerts.append(

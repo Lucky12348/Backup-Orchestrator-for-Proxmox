@@ -715,7 +715,10 @@ export type DiskAlertCode =
   | "smart_warning"
   | "verify_recommended"
   | "usb2_slow"
-  | "rotation_stale";
+  | "rotation_stale"
+  | "pbs_config_recoverable"
+  | "pbs_config_missing"
+  | "pbs_conflict";
 
 export interface DiskAlert {
   disk_id: number;

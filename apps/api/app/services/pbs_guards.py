@@ -100,6 +100,16 @@ def assert_store_idle(store: str, running_tasks: list[dict[str, Any]]) -> None:
             )
 
 
+def manual_recreate_steps(name: str, serial: str) -> str:
+    """What the operator can do when PBO refuses to re-create a configuration."""
+    return (
+        "Manual steps: 1) on PBS, `proxmox-backup-manager disk list` and `lsblk -f` show the disk's filesystem UUID; "
+        f"2) if it is the right disk, re-register the datastore without formatting: "
+        f"`proxmox-backup-manager datastore create {name} {name} --backing-device <uuid> --reuse-datastore true "
+        f"--comment pbo:serial={serial}`; 3) in PBO, run the disk detection again."
+    )
+
+
 def plan_dedicated_preparation(
     *,
     serial: str,
@@ -154,28 +164,36 @@ def plan_dedicated_preparation(
         for part in pbs_disk.get("partitions") or []
     )
     if recorded_name and may_hold_datastore:
-        if recorded_backing_device and recorded_backing_device in uuids and recorded_path:
-            other = next((cfg for cfg in datastore_configs if cfg.get("name") == recorded_name), None)
-            if other is not None:
-                raise GuardViolation(
-                    "datastore_name_taken",
-                    f"A PBS datastore named `{recorded_name}` exists on another device; refusing to re-create it.",
-                )
-            assert_store_idle(recorded_name, running_tasks)
-            return PreparationPlan(
-                action="recreate",
-                datastore_name=recorded_name,
-                device=device,
-                devpath=pbs_disk.get("devpath"),
-                backing_device=recorded_backing_device,
-                path=recorded_path,
-                reasons=["PBO marker found on this disk (filesystem recorded by PBO)"],
+        manual = manual_recreate_steps(recorded_name, serial)
+        if not recorded_backing_device:
+            raise GuardViolation(
+                "pbs_config_missing_unknown",
+                f"The PBS configuration of `{recorded_name}` is missing and PBO never recorded which filesystem holds it: "
+                f"nothing is formatted, the data stays on the disk. {manual}",
             )
-        raise GuardViolation(
-            "pbs_config_missing_unrecoverable",
-            f"The PBS configuration of `{recorded_name}` is missing and PBO cannot prove that the filesystem on "
-            f"`{device}` is the one it created (no PBO marker): nothing is formatted. Re-create the datastore in PBS "
-            "with `reuse-datastore`, or wipe the disk yourself after checking its content.",
+        if recorded_backing_device not in uuids:
+            found = ", ".join(sorted(uuids)) or "none"
+            raise GuardViolation(
+                "pbs_config_missing_uuid_mismatch",
+                f"The PBS configuration of `{recorded_name}` is missing and the filesystem on `{device}` (UUID {found}) is not "
+                f"the one PBO recorded ({recorded_backing_device}): this may be another disk. Nothing is formatted. {manual}",
+            )
+        other = next((cfg for cfg in datastore_configs if cfg.get("name") == recorded_name), None)
+        if other is not None:
+            raise GuardViolation(
+                "datastore_name_taken",
+                f"A PBS datastore named `{recorded_name}` exists on another device; refusing to re-create it.",
+            )
+        assert_store_idle(recorded_name, running_tasks)
+        return PreparationPlan(
+            action="recreate",
+            datastore_name=recorded_name,
+            device=device,
+            devpath=pbs_disk.get("devpath"),
+            backing_device=recorded_backing_device,
+            # PBS creates removable datastores with path = their name.
+            path=recorded_path or recorded_name,
+            reasons=["filesystem UUID recorded by PBO found on this disk"],
         )
 
     taken = next((cfg for cfg in datastore_configs if cfg.get("name") == target_name), None)
