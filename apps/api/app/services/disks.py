@@ -237,6 +237,7 @@ def ingest_agent_disk_report(db: Session, payload: AgentDiskReportCreate) -> lis
                 detection_notifications.append(("new" if previous_presence == "never_seen" else "known", disk))
                 disk.last_detection_notified_at = observed_at
 
+    report_devices = None if payload.usb_devices is None else [device.model_dump() for device in payload.usb_devices]
     for disk in stale_disks:
         existing_aliases = set(serial_aliases(disk.serial_number)) | set(disk.serial_aliases or [])
         if existing_aliases & reported_aliases:
@@ -247,8 +248,7 @@ def ingest_agent_disk_report(db: Session, payload: AgentDiskReportCreate) -> lis
             # USB device must still be present, or it was pulled out.
             from app.services.passthrough_watch import is_present
 
-            devices = None if payload.usb_devices is None else [device.model_dump() for device in payload.usb_devices]
-            if disk.pbs_handoff_slot and is_present(disk, devices) is False:
+            if disk.pbs_handoff_slot and is_present(disk, report_devices) is False:
                 pulled_disks.append(disk)
                 continue
             disk.connected = True
@@ -259,18 +259,39 @@ def ingest_agent_disk_report(db: Session, payload: AgentDiskReportCreate) -> lis
             db.add(disk)
             continue
 
-        if disk.connected or disk.presence_state == "present":
+        # B49: no block device. Its USB device may still be on the bus (spun
+        # down / powered off by the eject): not usable, but not unplugged.
+        from app.services.disk_presence import EJECTED, run_reached_datastore
+        from app.services.passthrough_watch import is_present
+
+        usb_there = is_present(disk, report_devices)
+        active = disk_guards.active_run_for(db, disk.id) if disk.id is not None else None
+        was_usable = bool(disk.connected) and not is_ejected(disk)
+        # Only when the agent positively sees its USB device (no USB data: legacy B25 rule).
+        stays_ejected = is_ejected(disk) and usb_there is True
+        becomes_ejected = was_usable and usb_there is True and active is None
+        if (disk.connected or disk.presence_state == "present") and not stays_ejected:
             removed_disks.append(disk)
-            active = disk_guards.active_run_for(db, disk.id) if disk.id is not None else None
             if (
                 active is not None
                 and not is_ejected(disk)
                 and (active.current_step or "") not in EJECT_RUN_STEPS
+                and run_reached_datastore(active)
             ):
-                # Phase 5f: unplugged during a run (before the hand-off).
+                # Gone during a run AFTER the passthrough, datastore mounted: the
+                # copy may be damaged. Before the passthrough nothing was written.
                 disk_guards.mark_unsafe_removal(db, disk, reason="during_run")
+        if stays_ejected or becomes_ejected:
+            # Ejected until its USB device leaves the bus (unplugged) or the
+            # operator reactivates it: an agent/app restart never makes it usable.
+            disk.handoff_status = EJECTED
+            disk.connected = False
+            disk.presence_state = "present" if usb_there else "absent"
+            disk.reported_by_hostname = payload.hostname
+            db.add(disk)
+            continue
         if is_ejected(disk):
-            disk.handoff_status = None  # unplugged (or powered off) after its eject
+            disk.handoff_status = None  # its USB device left the bus: unplugged after its eject
         disk.connected = False
         disk.presence_state = "absent"
         disk.active = False

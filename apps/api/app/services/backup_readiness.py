@@ -96,7 +96,7 @@ def local_disk_reasons(db: Session, disk: ExternalDisk, *, smart_override: bool 
         )
     if is_ejected(disk):
         # B25: safely ejected, still plugged in: unplug and plug it back first.
-        reasons.append(_reason("disk_ejected", "The disk was ejected: unplug it, then plug it back in."))
+        reasons.append(_reason("disk_ejected", "The disk was ejected: reactivate it, or unplug it and plug it back in.", reactivable=True))
     elif not disk.connected:
         reasons.append(_reason("disk_not_connected", "The disk is not plugged in."))
     if not disk.trusted:

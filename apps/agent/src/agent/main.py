@@ -82,6 +82,8 @@ AGENT_CAPABILITIES = {
     "pbs-guest-mounts",
     # The app pushes its agent build (POST /self-update); see agent/self_update.py.
     "self-update",
+    # B49: re-enumerate an ejected USB disk without unplugging it.
+    "disk-reactivate",
 }
 
 
@@ -2165,6 +2167,38 @@ def disk_usb_location_result(serial: str | None, device: str | None) -> dict[str
         "usb_location": location,
         "message": f"/dev/{name} is at USB port {location['port_id']}." if location else f"/dev/{name} is not a USB disk.",
     }
+
+
+def disk_reactivate_result(settings: AgentSettings, serial: str, port_id: str, expected: dict[str, Any]) -> dict[str, Any]:
+    """B49: bring an ejected disk back (USB re-enumeration), then report the disks."""
+    from agent.usb_reset import ReactivateError, reactivate
+
+    def block_present() -> str | None:
+        try:
+            node, _ = resolve_disk(serial)
+        except FileNotFoundError:
+            return None
+        return str(node.get("kname") or node.get("name") or "") or None
+
+    def is_mounted() -> bool:
+        name = block_present()
+        if not name:
+            return False
+        try:
+            mounts = Path("/proc/mounts").read_text(encoding="utf-8")
+        except OSError:
+            return False
+        return any(line.split(" ", 1)[0].startswith(f"/dev/{name}") for line in mounts.splitlines())
+
+    try:
+        result = reactivate(port_id, expected, is_mounted=is_mounted, block_present=block_present)
+    except ReactivateError as exc:
+        return {"ok": False, "success": False, "error_code": exc.code, "message": str(exc)}
+    try:
+        post_real_disk_report(settings, track_hotplug=True)
+    except Exception as exc:  # noqa: BLE001 — the app also refreshes the disk itself
+        logger.warning("Disk report after reactivation failed: %s", exc)
+    return result
 
 
 def derive_partition_info(device: dict[str, Any], mount_lookup: dict[str, str]) -> dict[str, str | None]:

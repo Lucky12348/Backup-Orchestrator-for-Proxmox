@@ -649,6 +649,11 @@ export function decideDisk(diskId: number, decision: DiskDecision, confirmName?:
   });
 }
 
+/** B49: an ejected disk brought back without unplugging it (USB re-enumeration by the host agent). */
+export function reactivateDisk(diskId: number) {
+  return request<ExternalDisk>(`/disks/${diskId}/reactivate`, { method: "POST" });
+}
+
 export function rescanDisks() {
   return request<{ status: string }>("/disks/rescan", { method: "POST" });
 }

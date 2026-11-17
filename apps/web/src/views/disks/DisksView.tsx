@@ -5,6 +5,7 @@ import { Link, useLocation } from "react-router-dom";
 
 import {
   decideDisk,
+  reactivateDisk,
   getExternalBackupReadiness,
   rescanDisks,
   type DatastoreHealth,
@@ -506,6 +507,8 @@ export function DiskDetail({
                 return <DecisionButton key={action} disk={disk} decision="hide" label={text.action.hide} toastText={text.approval.hiddenToast} t={t} onChanged={onChanged} />;
               case "unhide":
                 return <DecisionButton key={action} disk={disk} decision="clear" label={text.action.unhide} toastText={text.approval.unhiddenToast} t={t} onChanged={onChanged} />;
+              case "reactivate":
+                return <ReactivateButton key={action} disk={disk} t={t} onChanged={onChanged} />;
               case "approveAnyway":
                 return <ApproveAnyway key={action} disk={disk} t={t} language={language} onChanged={onChanged} />;
             }
@@ -542,6 +545,30 @@ export function DiskDetail({
         </div>
       </details>
     </aside>
+  );
+}
+
+/** B49: "Reactivate" on an ejected disk (the host agent re-enumerates its USB device). */
+function ReactivateButton({ disk, t, onChanged }: { disk: ExternalDisk; t: TranslationDictionary; onChanged: () => Promise<void> | void }) {
+  const { toast } = useToast();
+  const [busy, setBusy] = useState(false);
+  async function run() {
+    setBusy(true);
+    try {
+      await reactivateDisk(disk.id);
+      toast({ tone: "success", title: fill(t.disksV2.action.reactivated, { name: disk.display_name }) });
+      await onChanged();
+    } catch (error) {
+      toast({ tone: "danger", title: errorText(error, t) });
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <button type="button" className={primary} disabled={busy} onClick={() => void run()} data-reactivate>
+      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+      {busy ? t.disksV2.action.reactivating : t.disksV2.action.reactivate}
+    </button>
   );
 }
 

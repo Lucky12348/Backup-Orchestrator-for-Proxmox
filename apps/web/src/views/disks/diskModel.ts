@@ -156,7 +156,7 @@ export function visibleRows<D extends DiskLike>(rows: readonly DiskRow<D>[], tab
 
 // --- Detail panel ----------------------------------------------------------------
 
-export type DiskAction = "backup" | "follow" | "eject" | "replug" | "rescan" | "unreject" | "approveAnyway" | "hide" | "unhide";
+export type DiskAction = "backup" | "follow" | "eject" | "replug" | "rescan" | "unreject" | "approveAnyway" | "hide" | "unhide" | "reactivate";
 
 /** Attached to the PBS VM (the eject has something to undo). */
 export function isAttachedToPbs(disk: DiskLike): boolean {
@@ -173,7 +173,8 @@ export function diskActions(disk: DiskLike, status: DiskUiStatus): DiskAction[] 
     case "approved":
       return ejectable && isAttachedToPbs(disk) ? ["backup", "eject", "rescan"] : ["backup", "rescan"];
     case "ejected":
-      return ["replug", "rescan"];
+      // B49: re-enumerated by the host agent instead of a physical unplug.
+      return ["reactivate", "replug", "rescan"];
     case "rejected": {
       // Phase 5g: a too-small disk can be approved anyway (risk confirmed); any rejected disk can be hidden.
       const reason = rejectReason(disk);

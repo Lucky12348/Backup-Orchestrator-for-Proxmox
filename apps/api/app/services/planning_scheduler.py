@@ -348,7 +348,7 @@ def _start_run(
     except Exception as exc:
         detail = getattr(exc, "detail", None)
         code = detail.get("code") if isinstance(detail, dict) else None
-        if getattr(exc, "status_code", None) == 409 and code in {"disk_ejected", "disk_not_connected"}:
+        if getattr(exc, "status_code", None) == 409 and code in {"disk_ejected", "disk_not_connected", "disk_not_present", "disk_not_present_reactivable"}:
             # Ejected (B25) or unplugged: wait for the disk to be plugged (again).
             run.status = ScheduledBackupRunStatus.WAITING_FOR_DISK
             run.updated_at = now

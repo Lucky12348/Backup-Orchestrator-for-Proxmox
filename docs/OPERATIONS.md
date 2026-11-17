@@ -135,6 +135,17 @@ findmnt /mnt/datastore/pbo-pbotesta      # one line per stacked layer
 umount -l /mnt/datastore/pbo-pbotesta    # repeat while the top layer is dead
 ```
 
+## Ejected disk: Reactivate instead of unplugging (B49)
+
+After an eject the disk is spun down or powered off: still plugged in, not
+usable. PBO shows it **Ejected** (also after an agent or app restart) until it
+is unplugged, or until **Reactivate** (Disks page): the host agent
+re-enumerates its USB device (`authorized` 0→1 in sysfs, or the hub port
+`disable` 1→0 when the device left the bus), waits up to 30 s for the block
+device, and the disk is usable again. If it does not come back: unplug it and
+plug it back in. A backup (button or planning) is only created after the host
+agent confirmed the disk is there at that moment.
+
 ## Replug and Rerun Backup
 
 For the next backup cycle:

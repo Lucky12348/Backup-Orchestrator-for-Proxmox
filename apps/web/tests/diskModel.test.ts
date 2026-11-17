@@ -65,7 +65,7 @@ test("disk statuses: new, approved, running, ejected, unplugged, rejected, ignor
 test("B25: an ejected disk offers 'unplug then replug' instead of a backup", () => {
   const ejected = disk({ connected: false, status: "ejected", handoff_status: "ejected" });
   const actions = diskActions(ejected, diskUiStatus(ejected));
-  assert.deepEqual(actions, ["replug", "rescan"]);
+  assert.deepEqual(actions, ["reactivate", "replug", "rescan"]);
   assert.ok(!actions.includes("backup"));
 });
 

@@ -253,6 +253,11 @@ def run_external_backup(
                 status_code=status.HTTP_409_CONFLICT,
                 detail={"message": reasons[0]["message"], "code": reasons[0]["code"], "reasons": reasons},
             )
+        # B49: the disk must be there NOW (asked to the host agent), not only
+        # in the last report: absent = no run (button and planning alike).
+        from app.services.disk_presence import require_present
+
+        require_present(db, disk)
 
         plan = build_external_backup_plan(disk)
         settings = get_settings()

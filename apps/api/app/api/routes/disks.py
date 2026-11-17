@@ -55,6 +55,18 @@ def rescan_disks_route(db: DbSession) -> dict[str, str]:
     return {"status": "ok"}
 
 
+@router.post("/{disk_id}/reactivate", response_model=ExternalDiskRead)
+def reactivate_disk_route(disk_id: int, db: DbSession) -> ExternalDisk:
+    """B49: an ejected disk brought back without unplugging it (the host agent
+    re-enumerates its USB device). 409 `reactivate_*` codes otherwise."""
+    from app.services.disk_presence import reactivate
+
+    disk = db.get(ExternalDisk, disk_id)
+    if disk is None:
+        raise HTTPException(status_code=404, detail="Disk not found")
+    return reactivate(db, disk)
+
+
 @router.post("/{disk_id}/decision", response_model=ExternalDiskRead)
 def disk_decision_route(disk_id: int, payload: ExternalDiskDecision, db: DbSession) -> ExternalDisk:
     """Approval flow of a detected disk: approve (name typed back), ignore

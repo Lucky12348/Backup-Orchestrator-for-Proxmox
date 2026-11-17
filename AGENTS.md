@@ -604,6 +604,30 @@ should reach them — and every call is additionally protected with an
   (status `hidden`, "Hidden" tab, no toast/notification, `clear` shows it
   again); reasons carry `size_gb` next to `min_size_gb`.
 
+## Disk presence after an eject (B49)
+
+- "USB device present" (report `usb_devices`) ≠ "disk usable" (block device
+  with the serial). `services/disks.py`: a disk whose block device is gone
+  while the agent still sees its USB device on its port stays/becomes
+  **Ejected** (`handoff_status="ejected"`); only the USB device leaving the
+  bus (unplugged) or **Reactivate** ends it, never an agent/app restart nor
+  the block device coming back. Without USB data (port unknown, old agent)
+  the B25 rule applies. A fresh plug (was absent) is never marked ejected.
+- Reactivate: `POST /disks/{id}/reactivate` (`services/disk_presence.py`) →
+  host agent `POST /disk/reactivate` (capability `disk-reactivate`,
+  `agent/usb_reset.py`): `authorized` 0→1 of the USB device, or the hub
+  port `disable` 1→0 when the device left the bus; guarded (recorded port,
+  vendor/product/USB serial, mass storage, not usbfs/VM, nothing mounted),
+  waits ≤ 30 s for the block device. Codes `reactivate_*`.
+- `run_external_backup` asks the host agent where the disk is NOW
+  (`disk_presence.require_present`, `/disk/usb-location`): absent → 409
+  `disk_not_present` / `disk_not_present_reactivable` (disk then shown
+  Ejected), no run; planning waits for the disk.
+- "Verification recommended" for a disk gone during a run only when the run
+  reached the datastore (`run_reached_datastore`: mount/sync/cleanup/verify
+  steps); `clear_mistaken_verify_flags` (startup) removes the flags left by
+  failures before the passthrough.
+
 ## Disk ↔ USB port (Phase 4.4, read before touching the USB passthrough)
 
 - The host agent reports, for each USB disk, its physical USB location read

@@ -121,6 +121,8 @@ ROUTE_ROLES: dict[str, frozenset[str]] = {
     "/pbs-guest/agent": _HOST,
     "/pbs-guest/mounts/cleanup": _HOST,
     # Self-update pushed by the app (agent/self_update.py).
+    # B49: ejected disk brought back without unplugging it (USB re-enumeration).
+    "/disk/reactivate": _HOST,
     "/self-update": _BOTH,
     "/self-update/status": _BOTH,
 }
@@ -237,6 +239,14 @@ class GuestAddressesRequest(BaseModel):
 class DiskUsbLocationRequest(BaseModel):
     serial: str | None = Field(default=None, max_length=255)
     device: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9]{1,31}$")
+
+
+class DiskReactivateRequest(BaseModel):
+    serial: str = Field(min_length=1, max_length=255)
+    port_id: str = Field(pattern=r"^\d+-\d+(?:\.\d+)*$", max_length=70)
+    vendor_id: str | None = Field(default=None, pattern=r"^[0-9a-fA-F]{4}$")
+    product_id: str | None = Field(default=None, pattern=r"^[0-9a-fA-F]{4}$")
+    usb_serial: str | None = Field(default=None, max_length=255)
 
 
 class VmAddressesRequest(BaseModel):
@@ -631,6 +641,18 @@ def disk_usb_location(
     _: None = Depends(require_agent_token),
 ) -> Response:
     return _run_endpoint("disk-usb-location", lambda: disk_usb_location_result(payload.serial, payload.device))
+
+
+@app.post("/disk/reactivate", response_model=None)
+def disk_reactivate(
+    payload: DiskReactivateRequest,
+    _: None = Depends(require_agent_token),
+    settings: AgentSettings = Depends(get_settings),
+) -> Response:
+    from agent.main import disk_reactivate_result
+
+    expected = {"vendor_id": payload.vendor_id, "product_id": payload.product_id, "usb_serial": payload.usb_serial}
+    return _run_endpoint("disk-reactivate", lambda: disk_reactivate_result(settings, payload.serial, payload.port_id, expected))
 
 
 @app.post("/pve/vm-addresses", response_model=None)

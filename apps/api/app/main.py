@@ -58,6 +58,13 @@ async def lifespan(_: FastAPI):
     except RuntimeError as exc:
         # Stored settings are fixable from the UI: report, don't refuse to start.
         logger.error("Notification settings are invalid: %s", exc)
+    try:
+        from app.services.disk_presence import clear_mistaken_verify_flags
+
+        with SessionLocal() as db:
+            clear_mistaken_verify_flags(db)  # B49: flags set by a failure before the passthrough
+    except Exception:  # noqa: BLE001 — never blocks the start
+        logger.exception("Could not review the verification flags")
     start_planning_scheduler(settings)
     presence_watcher = asyncio.create_task(run_events.watch_agent_presence(SessionLocal))
     # Phase 5f.2: disks handed to the PBS VM still plugged in? + orphan usbN at start.

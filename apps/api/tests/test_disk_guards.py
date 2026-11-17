@@ -356,11 +356,20 @@ def test_disk_seen_on_the_host_while_mounted_on_pbs_was_pulled_out(db):
 
 
 def test_unplugged_during_a_run(db):
+    """B49: only after the passthrough, datastore mounted, may the copy be damaged."""
     disk = _disk(db, pbs_visible=False, pbs_handoff_slot=None, reported_by_hostname="pve", presence_state="present")
-    _run(db, disk, status=BackupRunStatus.RUNNING)
+    _run(db, disk, status=BackupRunStatus.RUNNING, current_step="run_export")
     _report(db)  # the disk is gone
     db.refresh(disk)
     assert disk.verify_recommended is True
+
+
+def test_gone_before_the_passthrough_needs_no_verification(db):
+    disk = _disk(db, pbs_visible=False, pbs_handoff_slot=None, reported_by_hostname="pve", presence_state="present")
+    _run(db, disk, status=BackupRunStatus.RUNNING, current_step="handoff_disk")
+    _report(db)
+    db.refresh(disk)
+    assert not disk.verify_recommended
 
 
 def test_normal_handoff_is_not_an_unsafe_removal(db):
