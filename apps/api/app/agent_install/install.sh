@@ -392,7 +392,13 @@ install_agent_code() {
   ln -sfn "${release}" "${INSTALL_DIR}/current.new"
   mv -Tf "${INSTALL_DIR}/current.new" "${INSTALL_DIR}/current"
   # Other releases and the pre-self-update layout (${INSTALL_DIR}/app).
-  find "${INSTALL_DIR}/releases" -mindepth 1 -maxdepth 1 ! -name "${build}" -exec rm -rf {} +
+  # (a loop, not `find -exec rm`: rm stays a shell command, stubbed by the CI test)
+  local old
+  for old in "${INSTALL_DIR}/releases"/* "${INSTALL_DIR}/releases"/.*.tmp; do
+    if [[ -e "${old}" && "${old}" != "${release}" ]]; then
+      rm -rf "${old}"
+    fi
+  done
   rm -rf "${INSTALL_DIR}/app"
   info "Agent build ${build}"
 
