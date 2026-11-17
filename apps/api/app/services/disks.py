@@ -22,6 +22,9 @@ from app.services.planning_scheduler import handle_disk_detected
 
 
 logger = logging.getLogger(__name__)
+# B43: the run is ejecting this disk (detach, spin-down / power-off): it
+# disappearing from the host is expected, not a removal without eject.
+EJECT_RUN_STEPS = frozenset({"eject", "eject_flush", "auto_eject", "ejected", "release", "success"})
 ZERO_SIZE_DISK_MESSAGE = "Disque détecté mais taille 0B — port/câble/initialisation USB probablement défaillant."
 
 
@@ -258,7 +261,12 @@ def ingest_agent_disk_report(db: Session, payload: AgentDiskReportCreate) -> lis
 
         if disk.connected or disk.presence_state == "present":
             removed_disks.append(disk)
-            if disk.id is not None and disk_guards.active_run_for(db, disk.id) is not None:
+            active = disk_guards.active_run_for(db, disk.id) if disk.id is not None else None
+            if (
+                active is not None
+                and not is_ejected(disk)
+                and (active.current_step or "") not in EJECT_RUN_STEPS
+            ):
                 # Phase 5f: unplugged during a run (before the hand-off).
                 disk_guards.mark_unsafe_removal(db, disk, reason="during_run")
         if is_ejected(disk):

@@ -57,6 +57,10 @@ class ExternalBackupRun(Base):
     # verify-only runs (proposed after a removal without eject).
     verify_after_backup: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     verify_only: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Phase 5f.3 (B44): set when the disk is pulled out during the run
+    # ("during_sync" | "after_sync"): the run stops at once, the journal then
+    # only takes the interruption line.
+    interrupted: Mapped[str | None] = mapped_column(String(32), nullable=True)
     mode: Mapped[ExternalBackupMode] = mapped_column(
         SqlEnum(ExternalBackupMode, name="external_backup_mode", native_enum=False),
         nullable=False,

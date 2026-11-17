@@ -128,7 +128,11 @@ def test_pulled_during_a_run_fails_it_cleanly(db, session_factory):
     db.refresh(run)
     from app.services.run_log import run_journal
 
-    assert any(entry["code"] == "disk_pulled" and entry["level"] == "err" for entry in run_journal(run, disk)["entries"])
+    entries = run_journal(run, disk)["entries"]
+    assert any(entry["code"] == "disk_pulled_during_sync" and entry["level"] == "err" for entry in entries)
+    # B44: stopped at once, with the stage's message.
+    assert (run.status, run.current_step, run.interrupted) == (BackupRunStatus.FAILED, "disk_pulled", "during_sync")
+    assert run.message.startswith("Interrupted: the disk was pulled out during the copy")
     assert db.get(ExternalDisk, disk.id).handoff_status == "pulled"
 
 

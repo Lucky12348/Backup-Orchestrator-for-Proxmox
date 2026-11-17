@@ -184,7 +184,7 @@ function VerifyBanner({
   async function verify() {
     setBusy(true);
     try {
-      const result = await startDiskVerify(disk.id, true);
+      const result = await startDiskVerify(disk.id, false);
       openRunModal(result.run_id);
       await onChanged();
     } catch (error) {

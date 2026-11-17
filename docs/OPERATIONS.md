@@ -84,6 +84,23 @@ qm set 100 -delete usb0
 proxmox-backup-manager datastore unmount pbo-pbotesta
 ```
 
+### Stale mounts on PBS (B41)
+
+A disk pulled out leaves its ext4 mount on `/mnt/datastore/<datastore>` with
+the device gone (`shutdown` in `mount` output). PBS does not see it (its mount
+check reads the UUID of the mount source) and mounts the next disk on top. The
+PBS REST API can neither list those layers nor unmount them lazily, so PBO
+removes them through the **PBS agent** (role `pbs`), before every mount and
+every 30 s: dead layers only, from the top, `umount -l`; a live mount is never
+touched. Install it on PBS with the agent command of the Integrations page plus
+`--role pbs`. Without it, the run journal says the check was not possible; by
+hand on PBS:
+
+```bash
+findmnt /mnt/datastore/pbo-pbotesta      # one line per stacked layer
+umount -l /mnt/datastore/pbo-pbotesta    # repeat while the top layer is dead
+```
+
 ## Replug and Rerun Backup
 
 For the next backup cycle:

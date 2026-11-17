@@ -20,6 +20,8 @@ import {
   LEVEL_LABEL,
   resourceRows,
   RUN_STEPS,
+  runSteps,
+  type RunStepKey,
   runStats,
   stepIndex,
   stepStates,
@@ -85,21 +87,23 @@ export function RunView({ run, t, language }: { run: RunLike; t: TranslationDict
         ? text.title.ejectRunning
         : text.title.ejectSuccess
     : run.status === "failed"
-      ? text.title.failed
-      : run.status === "success"
-        ? run.verify_only
+      ? run.current_step === "disk_pulled"
+        ? text.title.interrupted
+        : text.title.failed
+      : run.verify_only
+        ? run.status === "success"
           ? text.title.verifyOk
-          : states[RUN_STEPS.indexOf("eject")] === "done"
+          : text.title.verify
+        : run.status === "success"
+          ? states[RUN_STEPS.indexOf("eject")] === "done"
             ? text.title.success
             : text.title.successKeep
-        : phase === RUN_STEPS.indexOf("eject")
-          ? text.title.ejecting
-          : phase === RUN_STEPS.indexOf("verify")
-            ? text.title.verify
-            : phase === RUN_STEPS.indexOf("cleanup")
-              ? text.title.cleanup
-              : run.verify_only
-                ? text.title.verify
+          : phase === RUN_STEPS.indexOf("eject")
+            ? text.title.ejecting
+            : phase === RUN_STEPS.indexOf("verify")
+              ? text.title.verify
+              : phase === RUN_STEPS.indexOf("cleanup")
+                ? text.title.cleanup
                 : text.title.running;
 
   const headerTone =
@@ -192,7 +196,7 @@ export function RunView({ run, t, language }: { run: RunLike; t: TranslationDict
         </div>
       </div>
 
-      <StepList states={states} t={t} />
+      <StepList states={states} steps={runSteps(run)} t={t} />
 
       <div className="flex min-h-0 flex-1 flex-wrap overflow-auto">
         <ResourceList rows={resources.rows} pending={resources.pending} t={t} lang={lang} groupName={monitor.groupName} />
@@ -281,22 +285,23 @@ const STEP_STYLE: Record<StepState, { circle: string; label: string }> = {
   upcoming: { circle: "border-border-strong text-faint", label: "text-faint" },
   failed: { circle: "border-transparent bg-danger/15 text-danger-text", label: "text-fg" },
   skipped: { circle: "border-dashed border-border-strong text-faint", label: "text-faint" },
+  not_run: { circle: "border-dashed border-border-strong text-faint", label: "text-faint line-through" },
 };
 
-export function StepList({ states, t }: { states: StepState[]; t: TranslationDictionary }) {
+export function StepList({ states, steps = RUN_STEPS, t }: { states: StepState[]; steps?: readonly RunStepKey[]; t: TranslationDictionary }) {
   const text = t.runModal;
   return (
     <ol aria-label={text.stepsLabel} className="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-2 border-y border-border bg-bg px-[22px] py-3.5">
-      {RUN_STEPS.map((key, index) => {
+      {steps.map((key, index) => {
         const state = states[index];
         return (
           <li key={key} className="flex items-center gap-2.5" data-state={state}>
             <span className={cn("flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full border text-xs font-semibold", STEP_STYLE[state].circle)}>
-              {state === "done" ? "✓" : state === "failed" ? "!" : state === "skipped" ? "–" : index + 1}
+              {state === "done" ? "✓" : state === "failed" ? "!" : state === "skipped" || state === "not_run" ? "–" : index + 1}
             </span>
             <span className="flex min-w-0 flex-col">
               <span className={cn("text-[13px] font-medium", STEP_STYLE[state].label)}>{text.steps[key]}</span>
-              <span className="text-[11px] text-faint">{state === "skipped" ? text.stepSub.skipped : text.stepSub[key]}</span>
+              <span className="text-[11px] text-faint">{state === "skipped" ? text.stepSub.skipped : state === "not_run" ? text.stepSub.notRun : text.stepSub[key]}</span>
             </span>
           </li>
         );

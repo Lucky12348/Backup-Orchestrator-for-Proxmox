@@ -152,6 +152,14 @@ def handoff_disk_to_pbs(
 
     try:
         _detach_usb_slot_via_host_agent(settings, slot)
+        from app.services.passthrough_watch import release_mappings
+
+        release_mappings(db, vmid=settings.pbs_execution_vm_id, slot=slot, reason="handoff_failed")
+        disk.pbs_handoff_slot = None
+        disk.proxmox_usb_mapping = None
+        disk.handoff_status = "detected_on_proxmox"
+        db.add(disk)
+        db.commit()
         _report(progress, "handoff_disk", f"Removed USB slot `{slot}` after failed PBS visibility checks.")
     except Exception as exc:
         _report(progress, "handoff_disk", f"Failed to remove USB slot `{slot}` after failed handoff: {exc}")

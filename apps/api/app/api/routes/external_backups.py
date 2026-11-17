@@ -211,6 +211,7 @@ def _build_summary(run, disk_name: str, disk=None) -> ExternalBackupRunSummaryRe
         current_step=run.current_step,
         verify_after_backup=run.verify_after_backup,
         verify_only=run.verify_only,
+        interrupted=run.interrupted,
         progress_message=run.progress_message,
         last_log_at=run.last_log_at,
         progress_percent=run.progress_percent,

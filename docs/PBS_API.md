@@ -140,6 +140,15 @@ Not available in API mode (explicit error, use `PBS_MODE=agent`): the
 coexistence / loop-image mode, `/prepare-disk` on the PBS side, PBS agent
 maintenance.
 
+### Stale mounts (B41): what the REST API cannot do
+
+Checked against the 4.x schema: no endpoint lists the mounts of a datastore
+path, `GET /admin/datastore` reports `mount-status` from the top mount's
+filesystem UUID only (a dead layer — device gone — reads as `notmounted`, and
+the next `mount` stacks on it), and `POST /admin/datastore/{store}/unmount`
+has no lazy option. PBO therefore uses the PBS agent for this (see
+docs/OPERATIONS.md); everything else stays on the REST API.
+
 ### Cleanup, contents and verification (Phase 5f)
 
 After the sync, in the same run (`services/post_sync.py`, API mode only;

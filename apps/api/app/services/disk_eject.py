@@ -150,6 +150,47 @@ def eject_disk_within_run(db: Session, disk: ExternalDisk, run: ExternalBackupRu
     return True
 
 
+RELEASED_MESSAGE = "Disk released: unmounted on PBS and detached from the PBS VM. It is connected to the Proxmox host again."
+
+
+def release_disk_within_run(db: Session, disk: ExternalDisk, run: ExternalBackupRun) -> bool:
+    """B45: end of a verification. Unmount the datastore on PBS and detach the
+    disk from the PBS VM — no spin-down, not "ejected": the disk is back on
+    the host, connected, ready for a backup or an eject. Never raises."""
+    datastore_name, mount_path = _eject_target(disk)
+    try:
+        append_external_backup_run_log(db, run.id, step="release", message="Releasing the disk: unmounting its datastore on PBS.")
+        result = get_external_backup_agent_bridge().eject_dedicated_pbs_datastore(
+            serial=disk.serial_number, datastore_name=datastore_name, mount_path=mount_path, run_id=run.id
+        )
+        db.refresh(run)
+        if not result.ok:
+            raise AgentCommandError(result.message, stdout_log=result.stdout_log, stderr_log=result.stderr_log)
+        slot = disk.pbs_handoff_slot
+        _detach_usb_passthrough_from_pbs_vm(disk)
+        if slot:
+            from app.services.passthrough_watch import release_mappings
+
+            release_mappings(db, vmid=get_settings().pbs_execution_vm_id, slot=slot, reason="released")
+    except Exception as exc:  # noqa: BLE001 — the verification itself is done
+        detail = str(getattr(exc, "detail", None) or exc)
+        append_external_backup_run_log(db, run.id, step="release", message=f"Release failed: {detail}", stream="stderr")
+        return False
+    disk.pbs_visible = False
+    disk.pbs_device_path = None
+    disk.pbs_handoff_slot = None
+    disk.proxmox_usb_mapping = None
+    disk.handoff_status = "detected_on_proxmox"
+    disk.connected = True
+    disk.presence_state = "present"
+    db.add(disk)
+    db.commit()
+    db.refresh(disk)
+    disk_events.publish_report_events([], [], [disk])
+    append_external_backup_run_log(db, run.id, step="released", message=RELEASED_MESSAGE)
+    return True
+
+
 def _log_auto_eject_failure(db: Session, run: ExternalBackupRun, detail: str) -> None:
     append_external_backup_run_log(
         db, run.id, step="eject", message=f"Automatic eject failed: {detail}", stream="stderr"

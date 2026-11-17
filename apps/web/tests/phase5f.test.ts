@@ -206,7 +206,7 @@ test("a disk pulled out while handed to PBS: own status, toasts, one-click verif
     const t = translations[lang];
     assert.ok(t.disksV2.status.pulled && t.disksV2.summary.pulled && t.diskSheet.verify.now && t.diskSheet.verify.failedText);
     assert.ok(t.guards.alert.verify_failed && t.guards.badge.verify_failed && t.guards.action.verify_failed);
-    for (const code of ["verify_requested", "disk_pulled", "verify_nothing"] as const) assert.ok(t.runLog[code], `${code} (${lang})`);
+    for (const code of ["verify_requested", "disk_pulled_during_sync", "disk_pulled_after_sync", "verify_nothing", "cleanup_gc_failed", "spin_down_unresolved", "released"] as const) assert.ok(t.runLog[code], `${code} (${lang})`);
   }
   assert.equal(translations.fr.runLog.verify_nothing, "Vérification sautée : aucune nouvelle version.");
   assert.match(translations.fr.guards.alert.verify_recommended, /peut-être incomplète.*Rebranchez-le/);

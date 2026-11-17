@@ -44,8 +44,11 @@ export interface JournalEntry {
 }
 
 export const RUN_STEPS = ["detect", "passthrough", "mount", "sync", "cleanup", "verify", "eject"] as const;
-export type RunStepKey = (typeof RUN_STEPS)[number];
-export type StepState = "done" | "active" | "upcoming" | "failed" | "skipped";
+/** B45: a verification is a run type of its own: no copy, ends by releasing the disk. */
+export const VERIFY_STEPS = ["detect", "passthrough", "mount", "verify", "release"] as const;
+export type RunStepKey = (typeof RUN_STEPS)[number] | "release";
+/** not_run (B44): steps after the one that failed were not executed. */
+export type StepState = "done" | "active" | "upcoming" | "failed" | "skipped" | "not_run";
 
 const STEP_OF: Record<string, RunStepKey> = {
   starting: "detect",
@@ -71,11 +74,41 @@ const STEP_OF: Record<string, RunStepKey> = {
   eject_flush: "eject",
   ejected: "eject",
   eject_not_finished: "eject",
+  // B45: end of a verification (unmount + detach, no spin-down).
+  release: "eject",
+  released: "eject",
+  release_failed: "eject",
 };
+
+export function runSteps(run: Pick<RunLike, "verify_only">): readonly RunStepKey[] {
+  return run.verify_only ? VERIFY_STEPS : RUN_STEPS;
+}
+
+function verifyStepIndex(step: string | null | undefined): number {
+  const key = step ? STEP_OF[step] : undefined;
+  if (!key) return -1;
+  return (VERIFY_STEPS as readonly string[]).indexOf(key === "eject" ? "release" : key);
+}
+
+function verifyStepStates(run: RunLike, entries: JournalEntry[]): StepState[] {
+  let reached = verifyStepIndex(run.current_step);
+  for (const entry of entries) reached = Math.max(reached, verifyStepIndex(entry.step));
+  reached = Math.max(0, reached);
+  const release = VERIFY_STEPS.indexOf("release");
+  return VERIFY_STEPS.map((_, index) => {
+    if (run.status === "success") {
+      if (index !== release) return "done";
+      return entries.some((entry) => verifyStepIndex(entry.step) === release && entry.level === "err") ? "failed" : "done";
+    }
+    if (index < reached) return "done";
+    if (index === reached) return run.status === "failed" ? "failed" : "active";
+    return run.status === "failed" ? "not_run" : "upcoming";
+  });
+}
 
 export function stepIndex(step: string | null | undefined): number | null {
   const key = step ? STEP_OF[step] : undefined;
-  return key ? RUN_STEPS.indexOf(key) : null;
+  return key ? (RUN_STEPS as readonly string[]).indexOf(key) : null;
 }
 
 /** Furthest step reached, from the journal (the run's own step may be a failure code). */
@@ -96,7 +129,7 @@ export function isEjectRun(run: RunLike, entries: JournalEntry[]): boolean {
 /** Steps this run does not do: no cleanup (agent mode), no verification
  *  (not asked), no copy (verify-only run). Old runs keep their verify step. */
 export function skippedSteps(run: RunLike, entries: JournalEntry[]): Set<number> {
-  const index = (key: RunStepKey) => RUN_STEPS.indexOf(key);
+  const index = (key: RunStepKey) => (RUN_STEPS as readonly string[]).indexOf(key);
   const own = (key: RunStepKey) => entries.filter((entry) => entry.step !== "success" && stepIndex(entry.step) === index(key));
   const reached = reachedIndex(run, entries);
   const skip = new Set<number>();
@@ -116,6 +149,7 @@ export function skippedSteps(run: RunLike, entries: JournalEntry[]): Set<number>
 }
 
 export function stepStates(run: RunLike, entries: JournalEntry[]): StepState[] {
+  if (run.verify_only) return verifyStepStates(run, entries);
   const states = rawStepStates(run, entries);
   const skip = skippedSteps(run, entries);
   return states.map((state, index) => (skip.has(index) && (state === "done" || state === "upcoming") ? "skipped" : state));
@@ -139,7 +173,7 @@ function rawStepStates(run: RunLike, entries: JournalEntry[]): StepState[] {
     }
     if (index < reached) return "done";
     if (index === reached) return run.status === "failed" ? "failed" : "active";
-    return "upcoming";
+    return run.status === "failed" ? "not_run" : "upcoming";
   });
 }
 

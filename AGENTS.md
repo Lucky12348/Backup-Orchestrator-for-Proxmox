@@ -508,6 +508,26 @@ should reach them — and every call is additionally protected with an
   disks no longer in use are removed (only if the VM line still equals what
   PBO wrote). A run with "Verify the copy" journals `verify_requested`, and
   `verify_nothing` ("Verification skipped: no new version") when nothing new.
+- **5f.3**: B41 stale mounts — a pulled disk leaves a dead ext4 layer
+  (device gone, `shutdown`) that PBS's mount check cannot see, so the next
+  mount stacks on top. The PBS REST API cannot list the mounts of a path nor
+  unmount lazily: `services/stale_mounts.py` uses the PBS agent (role `pbs`,
+  `/datastore/mounts[/cleanup]`, `apps/agent/src/agent/mounts.py`: mountinfo,
+  `umount -l` of dead layers from the top, never a live one) before every
+  mount (`_ensure_mounted`; live mount PBS does not know → `live_mount_present`)
+  and in the watch; without a PBS agent the run journals
+  `stale_mounts_unchecked`. B44 — `external_backup_runs.interrupted`
+  (Alembic `0012`): the watch sets it with the stage (`during_sync` /
+  `after_sync`), the run is FAILED at once (`current_step = disk_pulled`),
+  `append_external_backup_run_log` then only accepts `disk_pulled` lines and
+  `check_interrupted` stops the run thread at each checkpoint; the journal
+  merges stdout/stderr by time; prune and GC failures are distinct
+  (`prune_failed` / `gc_failed`). B43 — no removal alert while the run is
+  ejecting the disk; open mappings are closed at the end of every run when the
+  disk is no longer handed off. B45 — a verification has its own steps
+  (detect, passthrough, mount, verify, release): it ends with
+  `release_disk_within_run` (unmount + detach, no spin-down, disk back to
+  "connected"), auto-eject off by default.
 
 ## Disk ↔ USB port (Phase 4.4, read before touching the USB passthrough)
 

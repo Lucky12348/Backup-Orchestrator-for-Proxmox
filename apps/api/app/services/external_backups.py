@@ -183,6 +183,19 @@ def cleanup_external_export_objects() -> dict[str, object]:
 # and the SQLite test database.
 _external_backup_run_lock = Lock()
 
+# B44: the only journal steps accepted once a run is interrupted.
+INTERRUPTION_STEPS = frozenset({"disk_pulled"})
+
+
+class RunInterrupted(RuntimeError):
+    """The disk was pulled out during the run (`run.interrupted` is set)."""
+
+
+def check_interrupted(db: Session, run: ExternalBackupRun) -> None:
+    db.refresh(run, attribute_names=["interrupted", "status"])
+    if run.interrupted:
+        raise RunInterrupted(run.interrupted)
+
 
 def run_external_backup(
     db: Session,
@@ -379,6 +392,8 @@ def execute_external_backup_run(run_id: int) -> None:
             def log(**kwargs) -> None:
                 append_external_backup_run_log(db, run.id, **kwargs)
 
+            check_interrupted(db, run)
+
             if run.verify_only:
                 run.message = _execute_verify_only(db, run, disk, handoff_status.message, log)
                 run.current_step = "success"
@@ -437,10 +452,13 @@ def execute_external_backup_run(run_id: int) -> None:
                 _apply_progress_text(run, export_result.stdout_log)
                 # Phase 5f: Cleanup (retention + GC), contents, Verification.
                 store = execution_result.target_datastore_name
+                check_interrupted(db, run)
                 if store:
                     bridge = _post_sync_bridge(execution_service)
                     post_sync.cleanup(bridge, run, disk, store, log)
+                    check_interrupted(db, run)
                     after = post_sync.refresh_contents(db, bridge, run, disk, store, log)
+                    check_interrupted(db, run)
                     if run.verify_after_backup:
                         copied, verify_all = post_sync.copied_keys(execution_result.pre_sync_snapshots, after)
                         post_sync.verify(bridge, run, store, log, copied=copied, verify_all=verify_all)
@@ -450,9 +468,18 @@ def execute_external_backup_run(run_id: int) -> None:
                 run.progress_message = run.message
                 run.last_log_at = datetime.utcnow()
                 backup_message = run.message
+            check_interrupted(db, run)
             append_external_backup_run_log(db, run.id, step="success", message=run.message)
 
-            if run.auto_eject_after_success:
+            if run.verify_only and not run.auto_eject_after_success:
+                # B45: a verification ends by releasing the disk (unmount +
+                # detach, no spin-down): it is connected again, ready to use.
+                from app.services import disk_eject
+
+                disk_eject.release_disk_within_run(db, disk, run)
+                db.refresh(run)
+                db.refresh(disk)
+            elif run.auto_eject_after_success:
                 from app.services import disk_eject
 
                 if disk_eject.is_disk_auto_eject_eligible(disk):
@@ -529,6 +556,8 @@ def execute_external_backup_run(run_id: int) -> None:
                 stream="stderr",
                 line=None if code else technical,
             )
+        except RunInterrupted:
+            pass  # status, step and message were set when the removal was detected
         except post_sync.VerifyFailed as exc:
             run.status = BackupRunStatus.FAILED
             run.finished_at = datetime.utcnow()
@@ -582,6 +611,11 @@ def execute_external_backup_run(run_id: int) -> None:
             run.last_log_at = datetime.utcnow()
             append_external_backup_run_log(db, run.id, step="failure", message=str(exc), stream="stderr", line=str(exc))
 
+        db.refresh(run, attribute_names=["interrupted"])
+        if run.interrupted:
+            db.refresh(run, attribute_names=["stdout_log", "stderr_log"])  # the journal as written, not a stale merge
+            _apply_interruption(run)
+        _close_released_mappings(db, disk)
         db.add(run)
         db.commit()
         disk_label = _format_disk_notification_label(disk, run.datastore_name)
@@ -589,6 +623,32 @@ def execute_external_backup_run(run_id: int) -> None:
             notify_backup_success(disk_label)
         elif run.status == BackupRunStatus.FAILED:
             notify_backup_failure(disk_label, run.current_step, run.message)
+
+
+INTERRUPTION_MESSAGES = {
+    "during_sync": "Interrupted: the disk was pulled out during the copy. The copy is incomplete: start a new backup.",
+    "after_sync": "Interrupted: the disk was pulled out after the copy. The copy finished, the cleanup was interrupted: a verification is advised.",
+}
+
+
+def _apply_interruption(run: ExternalBackupRun) -> None:
+    message = INTERRUPTION_MESSAGES.get(run.interrupted or "", INTERRUPTION_MESSAGES["during_sync"])
+    run.status = BackupRunStatus.FAILED
+    run.current_step = "disk_pulled"
+    run.message = message
+    run.progress_message = message
+    run.finished_at = run.finished_at or datetime.utcnow()
+
+
+def _close_released_mappings(db: Session, disk: ExternalDisk) -> None:
+    """End of every run (B43): a disk no longer handed to PBS has no open USB mapping."""
+    if disk.pbs_handoff_slot:
+        return
+    from app.models import PbsUsbMapping
+
+    for row in db.scalars(select(PbsUsbMapping).where(PbsUsbMapping.disk_id == disk.id, PbsUsbMapping.released_at.is_(None))):
+        row.released_at = datetime.utcnow()
+        row.release_reason = "run_end"
 
 
 def _post_sync_bridge(execution_service):
@@ -602,7 +662,7 @@ def _execute_verify_only(db: Session, run: ExternalBackupRun, disk: ExternalDisk
     from app.services import disk_guards
     from app.services.external_backup_execution import build_dedicated_datastore_name
 
-    log(step="verify", message="Verify-only run: the disk's datastore is checked, nothing is copied.")
+    log(step="starting", message="Verify-only run: the disk's datastore is checked, nothing is copied.")
     bridge = get_external_backup_agent_bridge()
     store = disk.pbs_datastore_name or build_dedicated_datastore_name(disk.serial_number)
     inspect = bridge.inspect_disk_on_pbs(disk)
@@ -636,6 +696,12 @@ def append_external_backup_run_log(
     # callbacks): reload the logs before appending, or this session's copy
     # (expire_on_commit=False) would overwrite their lines. Pending changes
     # of this session are flushed first so the refresh cannot drop them.
+    db.refresh(run, attribute_names=["interrupted"])
+    if run.interrupted and step not in INTERRUPTION_STEPS:
+        # B44: the run stopped when the disk was pulled out: no normal step
+        # after, and an error handler's stale copy of the logs is dropped.
+        db.refresh(run, attribute_names=["stdout_log", "stderr_log"])
+        return run
     db.flush()
     db.refresh(run, attribute_names=["stdout_log", "stderr_log"])
     now = datetime.utcnow()

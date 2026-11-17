@@ -17,6 +17,7 @@ into entries every view can show:
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -96,7 +97,15 @@ PBO_MESSAGES: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
         ("verify_failed", r"^PBS verify failed: (?P<reason>.+)$"),
         ("verify_nothing", r"^(?:Verification skipped: no new version was copied|Nothing new was copied: no snapshot to verify)\.$"),
         ("verify_requested", r"^Verification of the copy requested: it runs after the sync\.$"),
-        ("disk_pulled", r"^The disk was unplugged during the run: the copy is stopped and the disk's last copy may be incomplete\.$"),
+        ("disk_pulled_during_sync", r"^Interrupted: the disk was pulled out during the copy\. The copy is incomplete: start a new backup\.$"),
+        ("disk_pulled_after_sync", r"^Interrupted: the disk was pulled out after the copy\. The copy finished, the cleanup was interrupted: a verification is advised\.$"),
+        ("cleanup_gc_failed", r"^Garbage collection warning: (?P<reason>.+)$"),
+        ("spin_down_unresolved", r"^Could not resolve disk `(?P<disk>[^`]+)` to spin it down"),
+        ("stale_mount_removed", r"^Stale mount removed from (?P<path>\S+): (?P<source>\S+) \((?P<reason>[^)]+)\), lazy unmount\.$"),
+        ("stale_mounts_unchecked", r"^Stale mounts of (?P<path>\S+) not checked: the PBS REST API does not list them \(needs the PBS agent\)\.$"),
+        ("release_start", r"^Releasing the disk: unmounting its datastore on PBS\.$"),
+        ("released", r"^Disk released: unmounted on PBS and detached from the PBS VM\. It is connected to the Proxmox host again\.$"),
+        ("release_failed", r"^Release failed: (?P<reason>.+)$"),
         ("verify_agent_mode", r"^Verification needs PBS_MODE=api: skipped\.$"),
         ("verify_only_start", r"^Verify-only run: the disk's datastore is checked, nothing is copied\.$"),
         ("pbs_token_cannot_create_datastore", r"^The PBO token cannot create a datastore on PBS \(missing: (?P<privileges>.+?)\)\. On PBS, run: (?P<command>.+)$"),
@@ -190,7 +199,9 @@ def build_entries(stdout_log: str | None, stderr_log: str | None = None) -> list
         add(LogEntry(text=text.strip(), source="pbs", at=at, step=step, level=_level(text, step, "pbs")))
 
     seen_pbo: set[str] = set()
+    starts: dict[str, int] = {}
     for stream, raw_log in (("stdout", stdout_log), ("stderr", stderr_log)):
+        starts[stream] = len(entries)
         current_step: str | None = None
         current_at: str | None = None
         for raw in (raw_log or "").splitlines():
@@ -222,7 +233,33 @@ def build_entries(stdout_log: str | None, stderr_log: str | None = None) -> list
                 seen_pbo.add(text)
                 # Every line is timestamped: the one of the entry it belongs to.
                 add(_pbo_entry(text, at=current_at, step=current_step))
-    return entries
+    return _timeline(entries, starts.get("stderr", len(entries)))
+
+
+def _instant(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+
+
+def _timeline(entries: list[LogEntry], stderr_start: int) -> list[LogEntry]:
+    """One timeline: the error lines (stderr) are merged with the others by
+    time instead of following them all (B44). Stable: same time = written order."""
+    if stderr_start >= len(entries):
+        return entries
+    keyed = []
+    last = datetime.min.replace(tzinfo=timezone.utc)
+    for index, entry in enumerate(entries):
+        if index == stderr_start:
+            last = datetime.min.replace(tzinfo=timezone.utc)
+        last = _instant(entry.at) or last
+        keyed.append((last, 0 if index < stderr_start else 1, index, entry))
+    keyed.sort(key=lambda item: (item[0], item[1], item[2]))  # same instant: the info lines first
+    return [entry for *_, entry in keyed]
 
 
 def _bytes(value: str, unit: str) -> int:

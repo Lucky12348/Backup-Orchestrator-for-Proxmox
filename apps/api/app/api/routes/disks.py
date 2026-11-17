@@ -258,7 +258,8 @@ def delete_disk_photo(disk_id: int, db: DbSession) -> ExternalDisk:
 
 class DiskVerifyRequest(BaseModel):
     confirmation: bool = False
-    auto_eject_after_success: bool = True
+    # B45: a verification releases the disk (it stays connected); eject on request.
+    auto_eject_after_success: bool = False
 
 
 @router.post("/{disk_id}/verify")

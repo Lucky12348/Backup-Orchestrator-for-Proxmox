@@ -15,6 +15,7 @@ import {
   monitorReducer,
   resourceRows,
   runStats,
+  runSteps,
   stepStates,
   type JournalEntry,
   type RunLike,
@@ -70,7 +71,7 @@ test("running sync: earlier steps done, sync active, time left estimated", () =>
 test("failure at the USB handoff: passthrough marked failed", () => {
   const entries: JournalEntry[] = journal("backup-reuse").entries.filter((entry) => ["starting", "handoff_disk"].includes(entry.step ?? ""));
   const failed = run({ status: "failed", current_step: "usb_device_not_found", progress_percent: 0 });
-  assert.deepEqual(stepStates(failed, entries), ["done", "failed", "upcoming", "upcoming", "upcoming", "upcoming", "upcoming"]);
+  assert.deepEqual(stepStates(failed, entries), ["done", "failed", "not_run", "not_run", "not_run", "not_run", "not_run"]);
 });
 
 test("real eject run: only the eject step applies", () => {
@@ -206,13 +207,32 @@ test("5f: cleanup between sync and verify; verify skipped when not asked", () =>
 test("5f: a failed verification fails the verify step", () => {
   const entries = [entry("handoff_disk"), entry("sync_job"), entry("cleanup", "info", "cleanup_done"), entry("verify_failed", "err", "verify_failed")];
   const failed = run({ status: "failed", current_step: "verify_failed", verify_after_backup: true });
-  assert.deepEqual(stepStates(failed, entries), ["done", "done", "done", "done", "done", "failed", "upcoming"]);
+  assert.deepEqual(stepStates(failed, entries), ["done", "done", "done", "done", "done", "failed", "not_run"]);
 });
 
-test("5f: agent mode skips cleanup and verification; a verify-only run skips the copy", () => {
+test("5f: agent mode skips cleanup and verification", () => {
   const agent = [entry("sync_job"), entry("cleanup", "info", "cleanup_agent_mode"), entry("verify", "info", "verify_agent_mode"), entry("success", "ok")];
   assert.deepEqual(stepStates(run({ status: "success", current_step: "success", verify_after_backup: true }), agent).slice(3, 6), ["done", "skipped", "skipped"]);
-  const verifyOnly = run({ status: "success", current_step: "success", verify_only: true, verify_after_backup: true });
-  const entries = [entry("handoff_disk"), entry("verify", "info", "verify_only_start"), entry("prepare_dedicated_datastore"), entry("verify", "ok", "verify_ok")];
-  assert.deepEqual(stepStates(verifyOnly, entries), ["done", "done", "done", "skipped", "skipped", "done", "upcoming"]);
+});
+
+test("B45: a verification has its own steps: detection, passthrough, mount, verification, release", () => {
+  const verifyOnly = run({ status: "success", current_step: "released", verify_only: true, verify_after_backup: true });
+  assert.deepEqual(runSteps(verifyOnly), ["detect", "passthrough", "mount", "verify", "release"]);
+  const entries = [
+    entry("starting", "info", "verify_only_start"),
+    entry("handoff_disk"),
+    entry("prepare_dedicated_datastore"),
+    entry("verify", "ok", "verify_ok"),
+    entry("release", "info", "release_start"),
+    entry("released", "ok", "released"),
+  ];
+  assert.deepEqual(stepStates(verifyOnly, entries), ["done", "done", "done", "done", "done"]);
+  const mounting = run({ status: "running", current_step: "prepare_dedicated_datastore", verify_only: true });
+  assert.deepEqual(stepStates(mounting, entries.slice(0, 3)), ["done", "done", "active", "upcoming", "upcoming"]);
+});
+
+test("B44: a run interrupted by a removal: the current step failed, the next ones not run", () => {
+  const interrupted = run({ status: "failed", current_step: "disk_pulled", verify_after_backup: true });
+  const entries = [entry("handoff_disk"), entry("prepare_dedicated_datastore"), entry("sync_job"), entry("disk_pulled", "err", "disk_pulled_during_sync")];
+  assert.deepEqual(stepStates(interrupted, entries), ["done", "done", "done", "failed", "not_run", "not_run", "not_run"]);
 });

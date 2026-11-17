@@ -45,6 +45,8 @@ from app.models import ExternalDisk, PbsUsbMapping
 logger = logging.getLogger(__name__)
 
 PORT_RE = re.compile(r"^\d+-\d+(?:\.\d+)*$")
+# Run steps after a successful sync (B44: "copy finished, cleanup interrupted").
+AFTER_SYNC_STEPS = frozenset({"cleanup", "verify", "verify_failed", "success", "auto_eject", "eject", "eject_flush", "ejected", "release"})
 PBS_MISSES_BEFORE_GONE = 2
 WATCH_INTERVAL_SECONDS = 30.0
 _pbs_misses: dict[int, int] = {}
@@ -171,14 +173,17 @@ def handle_pulled(
     pbs = pbs_client or (get_pbs_agent_client() if api else None)
     # 2. A run on that disk: stop its PBS task, fail it with a clear line.
     if run is not None:
+        from app.services.external_backups import INTERRUPTION_MESSAGES, _apply_interruption
+
         done["run_id"] = run.id
-        append_external_backup_run_log(
-            db,
-            run.id,
-            step="disk_pulled",
-            message="The disk was unplugged during the run: the copy is stopped and the disk's last copy may be incomplete.",
-            stream="stderr",
-        )
+        stage = "after_sync" if (run.current_step or "") in AFTER_SYNC_STEPS else "during_sync"
+        # The journal line first (the flag closes the journal to normal lines).
+        append_external_backup_run_log(db, run.id, step="disk_pulled", message=INTERRUPTION_MESSAGES[stage], stream="stderr")
+        db.refresh(run)
+        run.interrupted = stage
+        _apply_interruption(run)
+        db.add(run)
+        db.commit()
         client = getattr(pbs, "client", None)
         if api and run.pbs_task_upid and client is not None:
             try:
@@ -269,7 +274,7 @@ def reconcile(db: Session, *, host_client: Any | None = None, pbs_client: Any | 
     settings = get_settings()
     disks = handed_off(db)
     if not disks and not (cleanup_orphans and open_mappings(db)):
-        return {"pulled": [], "orphans": []}
+        return {"pulled": [], "orphans": [], "stale_mounts": clean_stale_mounts(db, settings)}
     _backfill(db, disks, settings.pbs_execution_vm_id)
     db.commit()
     host = host_client or get_host_agent_client()
@@ -291,7 +296,25 @@ def reconcile(db: Session, *, host_client: Any | None = None, pbs_client: Any | 
             handle_pulled(db, disk, reason="mounted_on_pbs", host_client=host, pbs_client=pbs_client)
             pulled.append(disk.id)
     orphans = cleanup_orphan_mappings(db, host_client=host, devices=devices) if cleanup_orphans else []
-    return {"pulled": pulled, "orphans": orphans}
+    stale = clean_stale_mounts(db, settings)
+    return {"pulled": pulled, "orphans": orphans, "stale_mounts": stale}
+
+
+def clean_stale_mounts(db: Session, settings: Any) -> list[str]:
+    """B41: dead mounts left on the datastores of disks PBS is not using now
+    (needs the PBS agent, see services/stale_mounts.py)."""
+    from app.services import disk_guards, stale_mounts
+
+    agent = stale_mounts.pbs_root_agent(settings)
+    if agent is None:
+        return []
+    removed: list[str] = []
+    for disk in db.scalars(select(ExternalDisk).where(ExternalDisk.pbs_datastore_name.is_not(None))):
+        if disk.pbs_handoff_slot or disk_guards.active_run_for(db, disk.id) is not None:
+            continue
+        result = stale_mounts.clean(disk.pbs_datastore_name, settings=settings, client=agent)
+        removed.extend(str(item.get("source")) for item in (result or {}).get("removed") or [])
+    return removed
 
 
 async def watch(session_factory, interval_seconds: float = WATCH_INTERVAL_SECONDS) -> None:

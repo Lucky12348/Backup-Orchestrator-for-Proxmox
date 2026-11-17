@@ -804,7 +804,7 @@ export function deleteDiskPhoto(diskId: number) {
   return request<ExternalDisk>(`/disks/${diskId}/photo`, { method: "DELETE" });
 }
 
-export function startDiskVerify(diskId: number, autoEject = true) {
+export function startDiskVerify(diskId: number, autoEject = false) {
   return request<{ run_id: number; status: string }>(`/disks/${diskId}/verify`, {
     method: "POST",
     body: JSON.stringify({ confirmation: true, auto_eject_after_success: autoEject }),

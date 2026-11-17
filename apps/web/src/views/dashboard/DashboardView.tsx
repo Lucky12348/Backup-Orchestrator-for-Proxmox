@@ -195,7 +195,7 @@ export function DashboardView(props: DashboardViewProps) {
                 <>
                   <Loader2 className="h-4 w-4 flex-none animate-spin text-accent-text" />
                   <span className="text-sm font-medium">
-                    {fill(runKind(current.run) === "eject" ? text.ejecting : text.running, { disk: current.run.disk_name })}
+                    {fill(runKind(current.run) === "eject" ? text.ejecting : runKind(current.run) === "verify" ? text.verifying : text.running, { disk: current.run.disk_name })}
                   </span>
                   <span className="block h-1.5 flex-[1_1_120px] overflow-hidden rounded-full bg-subtle">
                     <span className="block h-full rounded-full bg-accent" style={{ width: `${current.run.progress_percent ?? 0}%` }} />
@@ -395,7 +395,7 @@ export function DashboardView(props: DashboardViewProps) {
                   {tone === "ok" ? "✓" : tone === "err" ? "✕" : "•"}
                 </span>
                 <span className="min-w-0 flex-1 truncate text-sm">
-                  {fill(runKind(run) === "eject" ? text.runEject : text.runBackup, { disk: run.disk_name })}
+                  {fill(runKind(run) === "eject" ? text.runEject : runKind(run) === "verify" ? text.runVerify : text.runBackup, { disk: run.disk_name })}
                 </span>
                 <span className="text-xs text-faint">{tone === "run" ? text.inProgress : when(run.finished_at ?? run.started_at)}</span>
               </button>

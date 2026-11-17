@@ -44,7 +44,11 @@ def cleanup(bridge: Any, run: ExternalBackupRun, disk: ExternalDisk, store: str,
         result = bridge.pbs_command("/prune-datastore", {"datastore_name": store, "keep": keep}, run_id=run.id)
         log(step="cleanup", message=result.message)
     except AgentCommandError as exc:
-        log(step="cleanup", message=f"Retention warning: {exc}", stream="stderr")
+        code = (exc.payload or {}).get("error_code") if isinstance(getattr(exc, "payload", None), dict) else None
+        if code == "gc_failed":
+            log(step="cleanup", message=f"Garbage collection warning: {exc}", stream="stderr")
+        else:
+            log(step="cleanup", message=f"Retention warning: {exc}", stream="stderr")
 
 
 def refresh_contents(db: Session, bridge: Any, run: ExternalBackupRun | None, disk: ExternalDisk, store: str, log: Log | None) -> list[str] | None:

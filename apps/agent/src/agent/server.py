@@ -116,6 +116,9 @@ ROUTE_ROLES: dict[str, frozenset[str]] = {
     "/cleanup-legacy-external-export-objects": _PBS,
     "/external-export-objects/status": _PBS,
     "/external-export-objects/cleanup": _PBS,
+    # B41: stale (dead) mounts of a removable datastore path.
+    "/datastore/mounts": _PBS,
+    "/datastore/mounts/cleanup": _PBS,
 }
 
 
@@ -592,6 +595,24 @@ def pve_guest_addresses(
     _: None = Depends(require_agent_token),
 ) -> Response:
     return _run_endpoint("pve-guest-addresses", lambda: guest_addresses(payload.vmids))
+
+
+class DatastoreMountsRequest(BaseModel):
+    path: str = Field(max_length=255)
+
+
+@app.post("/datastore/mounts", response_model=None)
+def datastore_mounts(payload: DatastoreMountsRequest, _: None = Depends(require_agent_token)) -> Response:
+    from agent.mounts import mounts_result
+
+    return _run_endpoint("datastore-mounts", lambda: mounts_result(payload.path))
+
+
+@app.post("/datastore/mounts/cleanup", response_model=None)
+def datastore_mounts_cleanup(payload: DatastoreMountsRequest, _: None = Depends(require_agent_token)) -> Response:
+    from agent.mounts import cleanup_dead_mounts
+
+    return _run_endpoint("datastore-mounts-cleanup", lambda: cleanup_dead_mounts(payload.path))
 
 
 @app.get("/usb/devices", response_model=None)

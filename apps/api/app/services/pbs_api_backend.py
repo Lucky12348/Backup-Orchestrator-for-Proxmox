@@ -71,6 +71,7 @@ REUSED_MESSAGE = "Existing dedicated PBS datastore reused."  # compared by exter
 CREATED_MESSAGE = "Dedicated PBS datastore created."
 RECREATED_MESSAGE = "PBS configuration re-created from the existing data, no formatting."
 EJECT_OK_MESSAGE = "External datastore unmounted safely. Disk can be detached."
+STALE_MOUNTS_UNCHECKED = "Stale mounts of /mnt/datastore/{store} not checked: the PBS REST API does not list them (needs the PBS agent)."
 # Disk pulled out: unmount attempts (stacked stale mounts) and their timeout.
 OFFLINE_ATTEMPTS = 3
 OFFLINE_TIMEOUT_SECONDS = 120.0
@@ -353,6 +354,20 @@ class PBSApiBackend:
         state = self._mount_status(store)
         if state == "mounted":
             return
+        # B41: dead layers left by a disk pulled out are invisible to PBS; it
+        # would mount on top of them. Remove them first (PBS agent), and never
+        # mount over a live filesystem.
+        from app.services import stale_mounts
+
+        cleaned = stale_mounts.clean(store, settings=self.settings, log=lambda message: progress("mount_datastore", message))
+        if cleaned is None and state == "notmounted":
+            progress("mount_datastore", STALE_MOUNTS_UNCHECKED.format(store=store))
+        elif cleaned and cleaned.get("live_mount"):
+            raise GuardViolation(
+                "live_mount_present",
+                f"A filesystem PBS does not know is still mounted on /mnt/datastore/{store}: refusing to mount on top of it. "
+                f"Check `findmnt /mnt/datastore/{store}` on PBS.",
+            )
         if state != "notmounted":
             raise GuardViolation(
                 "datastore_not_removable",
@@ -524,17 +539,23 @@ class PBSApiBackend:
 
         options = " ".join(f"{key}={value}" for key, value in sorted(keep.items()))
         progress("cleanup", f"Applying retention on `{store}`: {options} (POST /admin/datastore/{store}/prune-datastore).")
-        self.client.wait_for_task(
-            self.client.prune_datastore(store, keep=keep),
-            timeout_seconds=self.settings.pbs_task_timeout_seconds,
-            on_line=on_line,
-        )
+        try:
+            self.client.wait_for_task(
+                self.client.prune_datastore(store, keep=keep),
+                timeout_seconds=self.settings.pbs_task_timeout_seconds,
+                on_line=on_line,
+            )
+        except (PBSApiError, PBSTaskError, PBSTaskTimeout) as exc:
+            raise GuardViolation("prune_failed", f"the prune failed: {exc}") from exc
         progress("cleanup", f"Garbage collection on `{store}` (POST /admin/datastore/{store}/gc).")
-        self.client.wait_for_task(
-            self.client.start_garbage_collection(store),
-            timeout_seconds=self.settings.pbs_task_timeout_seconds,
-            on_line=on_line,
-        )
+        try:
+            self.client.wait_for_task(
+                self.client.start_garbage_collection(store),
+                timeout_seconds=self.settings.pbs_task_timeout_seconds,
+                on_line=on_line,
+            )
+        except (PBSApiError, PBSTaskError, PBSTaskTimeout) as exc:
+            raise GuardViolation("gc_failed", f"the prune succeeded, the garbage collection failed: {exc}") from exc
         return {
             "ok": True,
             "datastore_name": store,
