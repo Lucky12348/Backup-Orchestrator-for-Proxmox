@@ -3,10 +3,10 @@
 export const SETUP_PATH = "/setup";
 
 // Every step the wizard knows, in order. "notifications" (optional, between
-// PBS and Done) is prepared but hidden until NOTIFICATIONS_STEP_ENABLED.
+// PBS and Done: a first channel + test, or "Later") is on since Phase 5j.
 export const ALL_WIZARD_STEPS = ["admin", "agent", "pve", "pbs", "notifications", "done"] as const;
 export type WizardStep = (typeof ALL_WIZARD_STEPS)[number];
-export const NOTIFICATIONS_STEP_ENABLED = false;
+export const NOTIFICATIONS_STEP_ENABLED = true;
 
 export function visibleSteps(notificationsEnabled: boolean = NOTIFICATIONS_STEP_ENABLED): WizardStep[] {
   return ALL_WIZARD_STEPS.filter((step) => step !== "notifications" || notificationsEnabled);

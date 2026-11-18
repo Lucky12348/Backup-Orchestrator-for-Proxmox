@@ -58,14 +58,6 @@ Edit `.env` and keep only the app VM bootstrap values active for Docker Compose:
 ```env
 APP_ENV=production
 API_PORT=8000
-MAINTENANCE_TIMEOUT_SECONDS=300
-APP_MAINTENANCE_AGENT_BASE_URL=http://host.docker.internal:8092
-APP_MAINTENANCE_AGENT_HOST=127.0.0.1
-APP_MAINTENANCE_AGENT_PORT=8092
-APP_MAINTENANCE_AGENT_TOKEN=<app-maintenance-agent-token>
-APP_REPO_PATH=/opt/proxmox_backup_orchestrator
-APP_COMPOSE_FILE=infra/docker/docker-compose.yml
-APP_MAINTENANCE_TIMEOUT_SECONDS=300
 
 POSTGRES_DB=proxmox_backup_orchestrator
 POSTGRES_USER=pbo
@@ -77,14 +69,14 @@ AUTH_SECRET_KEY=<random>
 AUTH_COOKIE_SECURE=true
 ```
 
-Proxmox VE, PBS, agent URLs/tokens and ntfy are **not** environment variables
+Proxmox VE, PBS, agent URLs/tokens and notifications are **not** environment variables
 anymore: they are stored in the database (secrets encrypted with a key derived
 from `AUTH_SECRET_KEY`) and set from the first-run setup (API:
 `/api/v1/setup/proxmox`, `/api/v1/setup/pbs`, `/api/v1/settings`). The
 administrator account is created on the first-run screen.
 
 Upgrading an install that still has those values in `.env`
-(`PVE_*`, `PBS_*`, `HOST_AGENT_*`, `PBS_AGENT_*`, `NTFY_*`, `NOTIFY_ON_*`,
+(`PVE_*`, `PBS_*`, `HOST_AGENT_*`, `PBS_AGENT_*`, legacy `NTFY_*` turned into a notification channel,
 `AUTH_USERNAME` / `AUTH_PASSWORD_HASH`…): they are imported into the database
 **once**, on the first start, then ignored. See the commented block in
 `.env.example`. A legacy `AUTH_PASSWORD_HASH` must still be Compose-escaped
@@ -94,29 +86,14 @@ Generate JWT and agent tokens:
 
 ```bash
 openssl rand -hex 32  # AUTH_SECRET_KEY
-openssl rand -hex 32  # APP_MAINTENANCE_AGENT_TOKEN
 openssl rand -hex 32  # HOST_AGENT_TOKEN and Proxmox AGENT_SERVER_TOKEN
 openssl rand -hex 32  # PBS_AGENT_TOKEN and PBS AGENT_SERVER_TOKEN
 ```
 
-Install the local App VM maintenance agent before using Settings > Maintenance:
-
-```bash
-cd /opt/proxmox_backup_orchestrator/apps/app-maintenance-agent
-python3 -m venv .venv
-.venv/bin/pip install -e .
-cp deploy/systemd/proxmox-backup-orchestrator-app-maintenance-agent.service \
-  /etc/systemd/system/proxmox-backup-orchestrator-app-maintenance-agent.service
-systemctl daemon-reload
-systemctl enable --now proxmox-backup-orchestrator-app-maintenance-agent.service
-systemctl status proxmox-backup-orchestrator-app-maintenance-agent.service
-```
-
-Health check on the App VM:
-
-```bash
-curl -H "X-Agent-Token: <app-maintenance-agent-token>" http://127.0.0.1:8092/health
-```
+Updates are done by hand on this legacy path (`git pull --ff-only` then the
+`docker compose --env-file .env … up --build -d --remove-orphans` above); the
+old in-app update center and its maintenance agent were removed in Phase 5j
+(see [MAINTENANCE.md](MAINTENANCE.md)).
 
 Start the app stack (run from the repository root; `--env-file .env` is
 required — see the note in `docs/setup.md` about why omitting it silently

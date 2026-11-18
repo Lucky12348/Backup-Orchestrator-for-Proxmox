@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -20,6 +20,7 @@ from app.models import (
     ScheduledBackupStartMode,
 )
 from app.services import recurrence
+from app.services import notifications
 from app.services.disk_identity import (
     disk_matches_serial,
     serial_aliases,
@@ -28,14 +29,6 @@ from app.services.disk_identity import (
 from app.services.external_backups import (
     execute_external_backup_run,
     run_external_backup,
-)
-from app.services.notifications import (
-    notify_backup_failure,
-    notify_expected_disk_detected,
-    notify_planned_backup_missed,
-    notify_planned_backup_reminder,
-    notify_planned_backup_started,
-    notify_planned_confirmation_required,
 )
 
 logger = logging.getLogger(__name__)
@@ -146,7 +139,6 @@ def handle_disk_detected(db: Session, disk: ExternalDisk, now: datetime | None =
             continue
         if run.disk_seen_at is None:
             run.disk_seen_at = current_time
-            notify_expected_disk_detected(_serial_label(db, run_disk_serial(event, run)), event.title)
         _advance_detected_run(db, event, run, current_time)
     db.commit()
 
@@ -261,11 +253,12 @@ def _process_run(db: Session, event: ScheduledBackupEvent, run: ScheduledBackupR
         return
 
     if run.reminder_sent_at is None and now >= run.window_starts_at - timedelta(minutes=event.notify_before_minutes):
-        notify_planned_backup_reminder(
-            _serial_label(db, run_disk_serial(event, run)),
+        serial = run_disk_serial(event, run)
+        notifications.disk_to_plug(
+            _disk_for_serial(db, serial),
             event.title,
-            run.window_starts_at.isoformat(timespec="minutes"),
-            run.window_ends_at.isoformat(timespec="minutes"),
+            _local_time(event, run.window_starts_at),
+            disk_label=_serial_label(db, serial),
         )
         run.reminder_sent_at = now
 
@@ -275,7 +268,8 @@ def _process_run(db: Session, event: ScheduledBackupEvent, run: ScheduledBackupR
         run.error = "Planned window expired."
         event.last_status = run.status.value
         event.last_completed_at = now
-        notify_planned_backup_missed(event.title)
+        serial = run_disk_serial(event, run)
+        notifications.rotation_missed(_disk_for_serial(db, serial), event.title, disk_label=_serial_label(db, serial), occurrence=str(run.id))
         db.add_all([event, run])
         return
     if now > run.window_ends_at:
@@ -296,7 +290,6 @@ def _process_run(db: Session, event: ScheduledBackupEvent, run: ScheduledBackupR
 
     if run.disk_seen_at is None:
         run.disk_seen_at = now
-        notify_expected_disk_detected(_serial_label(db, run_disk_serial(event, run)), event.title)
     _advance_detected_run(db, event, run, now)
 
 
@@ -306,7 +299,6 @@ def _advance_detected_run(db: Session, event: ScheduledBackupEvent, run: Schedul
     if event.start_mode == ScheduledBackupStartMode.MANUAL_CONFIRMATION:
         if run.status != ScheduledBackupRunStatus.WAITING_FOR_CONFIRMATION:
             run.status = ScheduledBackupRunStatus.WAITING_FOR_CONFIRMATION
-            notify_planned_confirmation_required(event.title)
         run.updated_at = now
         db.add(run)
         return
@@ -365,7 +357,7 @@ def _start_run(
         run.error = str(exc)
         event.last_status = run.status.value
         event.last_completed_at = now
-        notify_backup_failure(f"{event.disk_label_or_model or serial} ({event.title})", "planning_start", str(exc))
+        notifications.rotation_missed(_disk_for_serial(db, serial), event.title, disk_label=_serial_label(db, serial), occurrence=str(run.id))
         db.add_all([event, run])
         return
 
@@ -377,8 +369,6 @@ def _start_run(
     event.last_triggered_at = now
     db.add_all([event, run])
     db.commit()
-    if notify_auto_start:
-        notify_planned_backup_started(event.title)
     thread = threading.Thread(target=execute_external_backup_run, args=(backup_run.id,), daemon=True)
     thread.start()
 
@@ -503,6 +493,21 @@ def _days_in_month(year: int, month: int) -> int:
     else:
         next_month = datetime(year, month + 1, 1)
     return (next_month - timedelta(days=1)).day
+
+
+def _disk_for_serial(db: Session, serial: str) -> ExternalDisk | None:
+    return next((item for item in db.scalars(select(ExternalDisk)) if disk_matches_serial(item, serial)), None)
+
+
+def _local_time(event: ScheduledBackupEvent, moment: datetime) -> str:
+    """"14:00" in the planning's time zone (naive datetimes are UTC)."""
+    from zoneinfo import ZoneInfo
+
+    aware = moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+    try:
+        return aware.astimezone(ZoneInfo(event.timezone or "UTC")).strftime("%H:%M")
+    except Exception:  # noqa: BLE001
+        return aware.strftime("%H:%M UTC")
 
 
 def _serial_label(db: Session, serial: str) -> str:

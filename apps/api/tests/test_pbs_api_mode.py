@@ -268,8 +268,7 @@ def _eject_through_disk_eject(db, disk, backend):
         patch("app.services.disk_eject._detach_usb_slot_via_host_agent", return_value=SimpleNamespace(message="ok")) as detach,
         patch("app.services.disk_eject._get_qemu_config_usb_map", return_value={}),
         patch("app.services.disk_eject._attempt_disk_spin_down", return_value=None),
-        patch("app.services.disk_eject.notify_disk_eject_not_finished") as not_finished,
-        patch("app.services.disk_eject.notify_disk_eject_ready"),
+        patch("app.services.disk_eject.notifications.run_finished") as not_finished,
     ):
         try:
             outcome = eject_dedicated_external_disk(db, disk.id)

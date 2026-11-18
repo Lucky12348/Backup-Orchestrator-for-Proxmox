@@ -122,7 +122,7 @@ def test_a_removal_stops_the_run_at_once(db, session_factory, hook, stage, messa
     interrupt = _interrupt_during(stage, session_factory)
     with ExitStack() as stack:
         _flow(stack, fake, session_factory)
-        stack.enter_context(patch("app.services.notifications.notify_unsafe_removal", lambda *a: None))
+        stack.enter_context(patch("app.services.notifications.unsafe_removal", lambda *a: None))
         if stage == "sync_job":
             def failing_execute(self, **kwargs):
                 interrupt(kwargs["run_id"])

@@ -7,6 +7,32 @@ export type Lang = "fr" | "en";
 
 const locale = (lang: Lang) => (lang === "fr" ? "fr-FR" : "en-GB");
 
+/** Settings › General (Phase 5j): date order and 12/24 h clock, set by the shell. */
+export interface FormatPreferences {
+  dateOrder: "auto" | "dmy" | "mdy" | "ymd";
+  timeFormat: "24h" | "12h";
+}
+let preferences: FormatPreferences = { dateOrder: "auto", timeFormat: "24h" };
+
+export function setFormatPreferences(next: FormatPreferences): void {
+  preferences = { ...next };
+}
+
+/** Day / month (/ year) in the chosen order; "auto" keeps the language's. */
+function shortDate(date: Date, lang: Lang, options: Intl.DateTimeFormatOptions): string {
+  const format = new Intl.DateTimeFormat(locale(lang), options);
+  if (preferences.dateOrder === "auto") return format.format(date);
+  const parts = format.formatToParts(date);
+  const pick = (type: string) => parts.find((part) => part.type === type)?.value;
+  const day = pick("day");
+  const month = pick("month");
+  const year = pick("year");
+  const weekday = pick("weekday");
+  const order = { dmy: [day, month, year], mdy: [month, day, year], ymd: [year, month, day] }[preferences.dateOrder];
+  const body = order.filter(Boolean).join(" ");
+  return weekday ? `${weekday} ${body}` : body;
+}
+
 function sameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
@@ -18,7 +44,12 @@ export function serverDate(iso: string): Date {
 }
 
 export function formatTime(iso: string, lang: Lang, timeZone?: string): string {
-  return new Intl.DateTimeFormat(locale(lang), { hour: "2-digit", minute: "2-digit", timeZone }).format(serverDate(iso));
+  return new Intl.DateTimeFormat(locale(lang), {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: preferences.timeFormat === "12h" ? "h12" : "h23",
+    timeZone,
+  }).format(serverDate(iso));
 }
 
 /** B38: "Read today at 04:10" / "Read yesterday at 23:50" / "Read on 8 Nov at 09:00", local time. */
@@ -32,11 +63,11 @@ export function formatReadAt(
   const time = formatTime(iso, lang);
   if (sameDay(date, now)) return texts.readToday.replace("{time}", time);
   if (sameDay(date, new Date(now.getTime() - 24 * 3600 * 1000))) return texts.readYesterday.replace("{time}", time);
-  const day = new Intl.DateTimeFormat(locale(lang), {
+  const day = shortDate(date, lang, {
     day: "numeric",
     month: "short",
     year: date.getFullYear() === now.getFullYear() ? undefined : "numeric",
-  }).format(date);
+  });
   return texts.readOn.replace("{date}", day).replace("{time}", time);
 }
 
@@ -54,17 +85,17 @@ export function formatWhen(
   if (sameDay(date, now)) return texts.today.replace("{time}", time);
   const yesterday = new Date(now.getTime() - 24 * 3600 * 1000);
   if (sameDay(date, yesterday)) return texts.yesterday.replace("{time}", time);
-  return new Intl.DateTimeFormat(locale(lang), {
+  return shortDate(date, lang, {
     day: "numeric",
     month: "short",
     year: date.getFullYear() === now.getFullYear() ? undefined : "numeric",
     timeZone,
-  }).format(date);
+  });
 }
 
 /** "Dimanche 22 nov." / "Sunday 22 Nov". */
 export function formatDay(iso: string, lang: Lang, timeZone?: string): string {
-  const text = new Intl.DateTimeFormat(locale(lang), { weekday: "long", day: "numeric", month: "short", timeZone }).format(new Date(iso));
+  const text = shortDate(new Date(iso), lang, { weekday: "long", day: "numeric", month: "short", timeZone });
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 

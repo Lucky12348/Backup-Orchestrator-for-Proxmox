@@ -25,7 +25,7 @@ AUTH_SECRET_KEY=<random>     # signs sessions + derives the settings encryption 
 AUTH_COOKIE_SECURE=true      # false only for plain-HTTP access on a trusted LAN
 ```
 
-Proxmox/PBS API tokens, agent tokens and the ntfy password are stored in the
+Proxmox/PBS API tokens, agent tokens and the notification channel secrets are stored in the
 `app_settings` table, encrypted (Fernet, key derived from `AUTH_SECRET_KEY`
 with HKDF-SHA256), and never returned by the API. Rotating `AUTH_SECRET_KEY`
 makes them unreadable: re-enter them afterwards.
@@ -309,7 +309,7 @@ JWT/login rotation:
 1. Generate a new `AUTH_SECRET_KEY`.
 2. Restart the API.
 3. Log in again.
-4. Re-enter the stored secrets (Proxmox/PBS API token secrets, agent tokens, ntfy password): they were encrypted with a key derived from the old `AUTH_SECRET_KEY` and are now ignored (logged as unreadable).
+4. Re-enter the stored secrets (Proxmox/PBS API token secrets, agent tokens, notification channel secrets): they were encrypted with a key derived from the old `AUTH_SECRET_KEY` and are now ignored (logged as unreadable).
 
 Changing `AUTH_SECRET_KEY` invalidates existing sessions and stored secrets.
 

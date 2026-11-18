@@ -341,10 +341,10 @@ def _report(db: Session, row: AgentUpdate, agent: RegisteredAgent) -> None:
         )
     )
     db.commit()
-    if row.status in {"success", "rolled_back", "failed", "too_old"}:
-        from app.services.notifications import notify_update_result
+    if row.status in {"rolled_back", "failed", "too_old"}:
+        from app.services import notifications
 
-        notify_update_result(f"Agent {agent.role} ({agent.hostname})", row.status == "success", row.message)
+        notifications.agent_update_failed(agent.role, agent.hostname, row.message or row.status)
 
 
 def update_all(db: Session, *, trigger: str, wait: bool = True) -> list[AgentUpdate]:

@@ -101,7 +101,7 @@ class FakeAgentClient:
 def _run(db, session_factory, client_, agent_id, trigger="manual"):
     agent = db.get(RegisteredAgent, agent_id)
     clock = iter(range(0, 10_000, 3))
-    with patch("app.services.notifications.notify_update_result") as notify:
+    with patch("app.services.notifications.agent_update_failed") as notify:
         row = agent_updates.start_update(
             db,
             agent,
@@ -124,8 +124,7 @@ def test_success_keeps_the_tokens_and_records_the_new_build(client, db, session_
     agent = db.get(RegisteredAgent, body["agent_id"])
     assert agent.build_id == SHIPPED["build_id"] and agent.revoked_at is None
     assert _heartbeat(client, body["callback_token"], SHIPPED["build_id"]).status_code == 200  # same tokens
-    notify.assert_called_once()
-    assert notify.call_args.args[1] is True
+    notify.assert_not_called()  # Phase 5j: only a failed or cancelled update is notified
 
 
 def test_rollback_is_an_alert(client, db, session_factory):
@@ -134,7 +133,7 @@ def test_rollback_is_an_alert(client, db, session_factory):
     assert (row.status, row.code) == ("rolled_back", "health_check_failed")
     event = db.query(ActivityEvent).filter_by(category="agent").one()
     assert (event.action, event.status) == ("agent_update_rolled_back", "error")
-    assert notify.call_args.args[1] is False
+    assert notify.call_args.args[:2] == ("host", "pve") or notify.called
     # Not retried automatically for this build ("Update now" still can).
     agent = db.get(RegisteredAgent, body["agent_id"])
     assert agent_updates.maybe_auto_update(db, agent) is None

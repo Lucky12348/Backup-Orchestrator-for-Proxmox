@@ -8,7 +8,7 @@ The current MVP stage is intentionally simple:
 - a lightweight Python agent runs on the Proxmox host and can also be deployed on the PBS host
 - Proxmox Backup Server (PBS) remains the backup engine
 - external removable disks are attached to the Proxmox host and observed by the agent
-- notifications are emitted through `ntfy`
+- notifications go through Apprise channels (ntfy, Gotify, Discord, Telegram, e-mail, webhooks…), see NOTIFICATIONS.md
 
 ## Component Roles
 
@@ -170,9 +170,9 @@ Full restore and end-to-end PBS-native disaster recovery workflows are still def
 
 External disks are part of the operational model for offline or rotating backup media. The future system should track whether required disks are present before specific backup actions are triggered.
 
-### Notifications via ntfy
+### Notifications
 
-`ntfy` is intended for simple event notifications such as:
+One Apprise-based engine (docs/NOTIFICATIONS.md) sends event notifications such as:
 
 - disk missing
 - backup completed

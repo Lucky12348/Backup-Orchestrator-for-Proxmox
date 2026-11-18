@@ -147,9 +147,6 @@ def test_run_failure_keeps_code_and_technical_detail(session_factory, monkeypatc
     monkeypatch.setattr(external_backups, "handoff_disk_to_pbs", boom)
     monkeypatch.setattr(external_backups, "SessionLocal", session_factory)
     monkeypatch.setattr(external_backups, "get_external_backup_execution_service", lambda: None)
-    for name in ("notify_backup_failure", "notify_backup_success"):
-        if hasattr(external_backups, name):
-            monkeypatch.setattr(external_backups, name, lambda *a, **k: None)
     external_backups.execute_external_backup_run(run_id)
     with session_factory() as db:
         run = db.get(ExternalBackupRun, run_id)
@@ -192,8 +189,6 @@ def test_unplugged_disk_failure_is_a_single_translated_error_line(session_factor
     monkeypatch.setattr(disk_handoff, "ProxmoxClient", lambda *a, **k: SimpleNamespace(list_usb_devices=lambda node: []))
     monkeypatch.setattr(external_backups, "SessionLocal", session_factory)
     monkeypatch.setattr(external_backups, "get_external_backup_execution_service", lambda: None)
-    for name in ("notify_backup_failure", "notify_backup_success"):
-        monkeypatch.setattr(external_backups, name, lambda *a, **k: None)
     external_backups.execute_external_backup_run(run_id)
     with session_factory() as db:
         run = db.get(ExternalBackupRun, run_id)

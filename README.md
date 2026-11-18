@@ -45,8 +45,6 @@ App VM: proxmox_backup_orchestrator
     - apps/web  -> React + Vite UI
     - apps/api  -> FastAPI control plane
     - Postgres  -> persisted state
-  Local helper
-    - apps/app-maintenance-agent -> repo update / compose maintenance API
   |
   | HTTP + shared tokens
   v
@@ -69,7 +67,6 @@ Operationally important defaults:
 
 - App VM API + web UI (same origin, the API serves the built UI): `8000`
 - Vite dev server (local development only): `5173`
-- App maintenance agent: `8092`
 - Proxmox host agent: `8090`
 - PBS agent: `8091`
 
@@ -78,9 +75,8 @@ Agent ports are intended to be tightly firewalled. The app VM should be the only
 ## Repository Map
 
 - `apps/api`: FastAPI backend, database models, schemas, routes, orchestration services, auth.
-- `apps/web`: React + Vite frontend for dashboards, disks, planning, integrations, maintenance, and activity views.
+- `apps/web`: React + Vite frontend for dashboards, disks, planning, integrations, notifications, settings, and activity views.
 - `apps/agent`: root-capable Python agent used on both the Proxmox host and PBS VM.
-- `apps/app-maintenance-agent`: local maintenance API for checking git state and rebuilding the app stack on the app VM.
 - `infra/docker`: Dockerfiles and the main `docker-compose.yml` used by the app VM.
 - `infra/scripts`: bootstrap helpers for local setup.
 - `docs`: production-oriented runbooks and architecture/operations documentation.
@@ -103,11 +99,19 @@ Agent ports are intended to be tightly firewalled. The app VM should be the only
 2. The API asks the Proxmox host agent to detach the USB device from the PBS VM.
 3. The UI exposes the disk as safe to unplug.
 
-### Maintenance workflow
+### Updates
 
-1. The API or UI checks the local app maintenance agent for repository status.
-2. The maintenance agent validates `.env`, checks git state, and can rebuild the Docker Compose stack.
-3. The host-side agent codebase has a similar maintenance surface for its own checkout.
+LXC: `update` inside the container. Host agent: automatic self-update. Legacy
+Docker app VM: `git pull` + `docker compose … up --build` by hand. The old
+in-app "git pull" update center was removed in Phase 5j (see
+[docs/MAINTENANCE.md](docs/MAINTENANCE.md)).
+
+### Notifications
+
+One engine on Apprise: ntfy, Gotify, Discord, Telegram, SMTP e-mail, JSON
+webhooks or any Apprise URL, several channels, per-channel events, level,
+quiet hours and daily summary, retries and a sending journal (see
+[docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md)).
 
 ## Local Development
 
@@ -141,7 +145,7 @@ docker compose --env-file .env -f infra/docker/docker-compose.yml up --build
 `${VAR}` references inside `docker-compose.yml`'s `environment:` block against
 its own default env-file lookup (next to the compose file, i.e.
 `infra/docker/.env`, which doesn't exist) instead of the real `.env` at the
-repo root — silently blanking out settings like the ntfy notification config
+repo root — silently blanking out bootstrap settings
 even though `env_file: ../../.env` loaded them correctly one line earlier.
 
 ### Generate the admin password hash
@@ -168,7 +172,7 @@ Fresh installs do not need it: the administrator is created on the first-run scr
 ## Safety Notes
 
 - Dedicated PBS datastore preparation can format the selected disk. Treat it as destructive until proven otherwise.
-- Do not expose ports `8090`, `8091`, or `8092` broadly. Restrict them to the app VM or localhost as appropriate.
+- Do not expose ports `8090` or `8091` broadly. Restrict them to the app VM or localhost as appropriate.
 - Never commit `.env` or agent environment files. Shared tokens and API secrets are the trust boundary for privileged actions.
 - Bcrypt hashes in Docker Compose env files must escape `$` as `$$`, or the API may receive a truncated hash and reject login.
 - The agents execute host-local commands such as mount, partition, QEMU USB attach/detach, and `proxmox-backup-manager`. Read the relevant docs before changing those paths.

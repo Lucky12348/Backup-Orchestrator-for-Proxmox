@@ -28,12 +28,12 @@ infra/docker/docker-compose.yml up ...` from the repository root. The `api`
 and `web` services also declare `env_file: - ../../.env`, which loads that
 root `.env` into the container runtime — but the compose file's own
 `environment:` block re-references several of those same variables as
-`${VAR}` (e.g. `NOTIFICATIONS_ENABLED`, `NTFY_BASE_URL`), and Compose resolves
+`${VAR}` (e.g. `DATABASE_URL`, `PLANNING_SCHEDULER_ENABLED`), and Compose resolves
 those specific references using its own env-file lookup, independent of
 `env_file:`. Without `--env-file .env`, Compose looks for a `.env` next to the
 compose file (`infra/docker/.env`, which doesn't exist), resolves those
 references to empty strings, and **that empty value overwrites the correct
-one `env_file:` just loaded** — silently reverting settings like ntfy
+one `env_file:` just loaded** — silently reverting bootstrap settings
 notifications to their defaults on every rebuild.
 
 For read-only Proxmox inventory sync, configure these variables in `.env`:

@@ -71,7 +71,7 @@ def _patches(stack, host, fake, session_factory):
     stack.enter_context(patch("app.services.passthrough_watch.get_settings", lambda: SETTINGS))
     stack.enter_context(patch("app.services.host_agent.get_host_agent_client", lambda: host))
     stack.enter_context(patch("app.services.host_agent.get_pbs_agent_client", lambda: backend))
-    stack.enter_context(patch("app.services.notifications.notify_unsafe_removal", lambda *a: None))
+    stack.enter_context(patch("app.services.notifications.unsafe_removal", lambda *a: None))
     return backend
 
 

@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -18,8 +18,6 @@ from agent.main import (
     filesystem_usage_result,
     inspect_disk_result,
     log_source_datastore_state,
-    maintenance_check_result,
-    maintenance_update_result,
     prepare_disk_result,
     prepare_external_datastore_result,
     prepare_dedicated_pbs_datastore_result,
@@ -36,18 +34,6 @@ from agent.main import (
     version_payload,
 )
 from agent.pve_access import guest_addresses, provision_pve_access, vm_addresses
-from agent.ntfy_notif import (
-    HISTORY_DEFAULT_LIMIT,
-    HISTORY_MAX_LIMIT,
-    NtfyNotifNotFoundError,
-    NtfyNotifPermissionError,
-    NtfyNotifValidationError,
-    read_history_result,
-    read_queue_result,
-    read_templates_result,
-    send_test_result,
-    write_templates_result,
-)
 
 
 logger = logging.getLogger("agent.server")
@@ -86,8 +72,6 @@ ROUTE_ROLES: dict[str, frozenset[str]] = {
     "/health": _BOTH,
     "/version": _BOTH,
     "/capabilities": _BOTH,
-    "/maintenance/check": _BOTH,
-    "/maintenance/update": _BOTH,
     # Used by the API through both clients (host: disk_preparation_agent, PBS: bridge).
     "/prepare-disk": _BOTH,
     "/qemu/usb/attach": _HOST,
@@ -103,10 +87,6 @@ ROUTE_ROLES: dict[str, frozenset[str]] = {
     "/pve/provision-access": _HOST,
     "/pve/guest-addresses": _HOST,
     "/pve/vm-addresses": _HOST,
-    "/notifications/templates": _HOST,
-    "/notifications/test": _HOST,
-    "/notifications/history": _HOST,
-    "/notifications/queue": _HOST,
     "/prepare-external-datastore": _PBS,
     "/prepare-dedicated-pbs-datastore": _PBS,
     "/eject-dedicated-pbs-datastore": _PBS,
@@ -255,13 +235,6 @@ class VmAddressesRequest(BaseModel):
 
 class SpinDownDiskRequest(BaseModel):
     disk: str = Field(min_length=1)
-
-
-class NotificationTestRequest(BaseModel):
-    # Detailed validation (code pattern, var keys/values) lives in agent.ntfy_notif
-    # so the rules are shared with the unit tests and return one clear error list.
-    event: str
-    vars: dict[str, Any] = Field(default_factory=dict)
 
 
 def get_settings() -> AgentSettings:
@@ -519,79 +492,6 @@ def cleanup_external_export_objects(
     settings: AgentSettings = Depends(get_settings),
 ) -> Response:
     return _run_endpoint("external-export-objects-cleanup", lambda: cleanup_external_export_objects_result(settings))
-
-
-@app.post("/maintenance/check", response_model=None)
-def maintenance_check(
-    _: None = Depends(require_agent_token),
-    settings: AgentSettings = Depends(get_settings),
-) -> Response:
-    return _run_endpoint("maintenance-check", lambda: maintenance_check_result(settings))
-
-
-@app.post("/maintenance/update", response_model=None)
-def maintenance_update(
-    _: None = Depends(require_agent_token),
-    settings: AgentSettings = Depends(get_settings),
-) -> Response:
-    return _run_endpoint("maintenance-update", lambda: maintenance_update_result(settings))
-
-
-@app.get("/notifications/templates", response_model=None)
-def notifications_templates(_: None = Depends(require_agent_token)) -> Response:
-    return _run_notifications_endpoint("notifications-templates-read", read_templates_result)
-
-
-@app.put("/notifications/templates", response_model=None)
-def notifications_templates_update(
-    payload: Any = Body(...),
-    _: None = Depends(require_agent_token),
-) -> Response:
-    # Raw body on purpose: validate_templates() rejects unknown keys at every level.
-    return _run_notifications_endpoint("notifications-templates-write", lambda: write_templates_result(payload))
-
-
-@app.post("/notifications/test", response_model=None)
-def notifications_test(
-    payload: NotificationTestRequest,
-    _: None = Depends(require_agent_token),
-) -> Response:
-    return _run_notifications_endpoint("notifications-test", lambda: send_test_result(payload.event, payload.vars))
-
-
-@app.get("/notifications/history", response_model=None)
-def notifications_history(
-    limit: int = Query(default=HISTORY_DEFAULT_LIMIT, ge=1, le=HISTORY_MAX_LIMIT),
-    event: str | None = Query(default=None, max_length=64),
-    status_filter: str | None = Query(default=None, alias="status", max_length=16),
-    _: None = Depends(require_agent_token),
-) -> Response:
-    return _run_notifications_endpoint(
-        "notifications-history",
-        lambda: read_history_result(limit=limit, event=event, status=status_filter),
-    )
-
-
-@app.get("/notifications/queue", response_model=None)
-def notifications_queue(_: None = Depends(require_agent_token)) -> Response:
-    return _run_notifications_endpoint("notifications-queue", read_queue_result)
-
-
-def _run_notifications_endpoint(command_name: str, action) -> Response:
-    try:
-        return JSONResponse(content=action())
-    except NtfyNotifValidationError as exc:
-        payload = build_command_failure_payload(command_name, exc)
-        payload["errors"] = exc.errors
-        return JSONResponse(status_code=422, content=payload)
-    except NtfyNotifNotFoundError as exc:
-        return JSONResponse(status_code=404, content=build_command_failure_payload(command_name, exc))
-    except NtfyNotifPermissionError as exc:
-        logger.error("Agent HTTP command %s refused: %s", command_name, exc)
-        return JSONResponse(status_code=403, content=build_command_failure_payload(command_name, exc))
-    except Exception as exc:
-        logger.exception("Agent HTTP command %s failed", command_name)
-        return JSONResponse(status_code=500, content=build_command_failure_payload(command_name, exc))
 
 
 @app.post("/pve/provision-access", response_model=None)

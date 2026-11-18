@@ -9,6 +9,7 @@ import {
 } from "../../api";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../../components/ui/dialog";
 import { cn } from "../../components/ui/utils";
+import { useAppearance } from "../../ui/AppearanceProvider";
 import { CloseButton } from "../../ui/CloseButton";
 import type { Language, TranslationDictionary } from "../../i18n";
 import { reasonText } from "../../readiness";
@@ -49,8 +50,10 @@ export function LaunchBackupDialog({
   const text = t.launch;
   const [readiness, setReadiness] = useState<ExternalBackupReadiness | null>(initialReadiness ?? null);
   const [preview, setPreview] = useState<ExternalBackupPreview | null>(initialPreview ?? null);
-  const [autoEject, setAutoEject] = useState(true);
-  const [verify, setVerify] = useState(false);
+  // Phase 5j: Settings › Backups › defaults.
+  const { prefs } = useAppearance();
+  const [autoEject, setAutoEject] = useState(prefs.defaultEject);
+  const [verify, setVerify] = useState(prefs.defaultVerify);
   const [smartOverride, setSmartOverride] = useState(false);
 
   useEffect(() => {
@@ -58,8 +61,8 @@ export function LaunchBackupDialog({
     let cancelled = false;
     setReadiness(null);
     setPreview(null);
-    setAutoEject(true);
-    setVerify(false);
+    setAutoEject(prefs.defaultEject);
+    setVerify(prefs.defaultVerify);
     setSmartOverride(false);
     getExternalBackupReadiness(disk.id).then(
       (result) => !cancelled && setReadiness(result),
@@ -72,6 +75,7 @@ export function LaunchBackupDialog({
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [disk, initialReadiness]);
 
   if (!disk) return null;

@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, fields, replace
 from typing import Any
@@ -29,6 +30,8 @@ from app.models.app_setting import AppSetting
 logger = logging.getLogger(__name__)
 
 ENV_IMPORT_MARKER_KEY = "meta.env_import_done"
+RUN_HISTORY_DAY_CHOICES = (30, 90, 180, 365)
+RETENTION_LIMIT = 1000
 MAX_AUTH_TOKEN_EXPIRE_MINUTES = 180
 
 
@@ -50,21 +53,6 @@ PBS_MODE_AGENT = "agent"
 PBS_MODE_API = "api"
 
 
-_NOTIFY_FLAGS = (
-    "NOTIFY_ON_BACKUP_SUCCESS",
-    "NOTIFY_ON_BACKUP_FAILURE",
-    "NOTIFY_ON_DISK_EJECT_READY",
-    "NOTIFY_ON_UPDATE_RESULT",
-    "NOTIFY_ON_AGENT_DEGRADED",
-    "NOTIFY_ON_LOW_COVERAGE",
-    "NOTIFY_ON_DISK_NEW_DETECTED",
-    "NOTIFY_ON_DISK_KNOWN_DETECTED",
-    "NOTIFY_ON_PLANNED_DISK_DETECTED",
-    "NOTIFY_ON_PLANNED_BACKUP_REMINDER",
-    "NOTIFY_ON_PLANNED_BACKUP_STARTED",
-    "NOTIFY_ON_PLANNED_CONFIRMATION_REQUIRED",
-    "NOTIFY_ON_PLANNED_BACKUP_MISSED",
-)
 
 SETTING_SPECS: tuple[SettingSpec, ...] = (
     _spec("AUTH_TOKEN_EXPIRE_MINUTES", int, "auth"),
@@ -99,17 +87,30 @@ SETTING_SPECS: tuple[SettingSpec, ...] = (
     _spec("AGENT_STALE_AFTER_MINUTES", int, "agents"),
     _spec("AUTO_UPDATE_AGENTS", bool, "agents"),
     SettingSpec("AGENT_LOOP_DATASTORE_SIZE_GB", "external_loop_datastore_size_gb", int, "agents"),
-    # Notifications (ntfy)
-    _spec("NOTIFICATIONS_ENABLED", bool, "notifications"),
-    _spec("NTFY_BASE_URL", str, "notifications"),
-    _spec("NTFY_TOPIC", str, "notifications"),
-    _spec("NTFY_USERNAME", str, "notifications"),
-    _spec("NTFY_PASSWORD", str, "notifications", secret=True),
-    *(_spec(flag, bool, "notifications") for flag in _NOTIFY_FLAGS),
-    _spec("LOW_COVERAGE_THRESHOLD_PERCENT", float, "notifications"),
-    _spec("DISK_DETECTION_NOTIFY_COOLDOWN_SECONDS", int, "notifications"),
-    _spec("ROTATION_STALE_DAYS", int, "general"),
-    _spec("MIN_DISK_SIZE_GIB", int, "general"),
+    # General (Phase 5j)
+    _spec("UI_DATE_FORMAT", str, "general", choices=("auto", "dmy", "mdy", "ymd")),
+    _spec("UI_TIME_FORMAT", str, "general", choices=("24h", "12h")),
+    _spec("UI_HOME_PAGE", str, "general", choices=("dashboard", "disks", "planning", "activity", "resources")),
+    _spec("PUBLIC_URL", str, "general"),
+    # Appearance
+    _spec("UI_THEME", str, "appearance", choices=("system", "light", "dark")),
+    _spec("UI_ACCENT", str, "appearance", choices=("steel", "teal", "green", "amber", "rose", "violet")),
+    _spec("UI_DENSITY", str, "appearance", choices=("comfortable", "compact")),
+    _spec("UI_SIDEBAR_COLLAPSED", bool, "appearance"),
+    _spec("UI_REDUCE_MOTION", str, "appearance", choices=("system", "on", "off")),
+    # Backups
+    _spec("DEFAULT_VERIFY_AFTER_BACKUP", bool, "backups"),
+    _spec("DEFAULT_EJECT_AT_END", bool, "backups"),
+    _spec("DEFAULT_RETENTION_KEEP_LAST", int, "backups"),
+    _spec("DEFAULT_RETENTION_KEEP_WEEKLY", int, "backups"),
+    _spec("DEFAULT_RETENTION_KEEP_MONTHLY", int, "backups"),
+    _spec("ROTATION_STALE_DAYS", int, "backups"),
+    _spec("MIN_DISK_SIZE_GIB", int, "backups"),
+    # History retention
+    _spec("RUN_HISTORY_MODE", str, "retention", choices=("keep_all", "days", "per_disk")),
+    _spec("RUN_HISTORY_DAYS", int, "retention"),
+    _spec("RUN_HISTORY_KEEP_PER_DISK", int, "retention"),
+    _spec("RUN_LOG_DETAIL_DAYS", int, "retention"),
     # Inventory sync
     _spec("AUTO_SYNC_ENABLED", bool, "sync"),
     _spec("PROXMOX_SYNC_INTERVAL_SECONDS", int, "sync"),
@@ -163,6 +164,16 @@ def coerce_value(spec: SettingSpec, raw: Any) -> Any:
         raise SettingValidationError(f"{spec.key}: must be between 1 and 365")
     if spec.key == "MIN_DISK_SIZE_GIB" and not 1 <= value <= 65536:
         raise SettingValidationError(f"{spec.key}: must be between 1 and 65536")
+    if spec.key == "PUBLIC_URL" and value and not re.match(r"^https?://[^\s/]+(/[^\s]*)?$", value):
+        raise SettingValidationError(f"{spec.key}: must be an http(s) URL")
+    if spec.key == "RUN_HISTORY_DAYS" and value not in RUN_HISTORY_DAY_CHOICES:
+        raise SettingValidationError(f"{spec.key}: must be one of {', '.join(map(str, RUN_HISTORY_DAY_CHOICES))}")
+    if spec.key == "RUN_HISTORY_KEEP_PER_DISK" and not 1 <= value <= 10000:
+        raise SettingValidationError(f"{spec.key}: must be between 1 and 10000")
+    if spec.key == "RUN_LOG_DETAIL_DAYS" and not 0 <= value <= 3650:
+        raise SettingValidationError(f"{spec.key}: must be between 0 and 3650")
+    if spec.key.startswith("DEFAULT_RETENTION_KEEP_") and value > RETENTION_LIMIT:
+        raise SettingValidationError(f"{spec.key}: must be at most {RETENTION_LIMIT}")
     return value
 
 
@@ -352,3 +363,11 @@ def activate_settings_store(session_factory) -> None:  # noqa: ANN001
             return load_all_overrides(db)
 
     set_settings_overlay_loader(_load)
+
+
+def validate_section(settings: Settings) -> None:
+    """Rules across several settings, checked after a section is saved."""
+    retention = (settings.default_retention_keep_last, settings.default_retention_keep_weekly, settings.default_retention_keep_monthly)
+    if not any(retention):
+        # A prune without any keep-* option would delete every snapshot.
+        raise SettingValidationError("DEFAULT_RETENTION_KEEP_LAST: at least one keep option is required")

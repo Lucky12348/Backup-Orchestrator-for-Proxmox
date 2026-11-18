@@ -74,39 +74,35 @@ class Settings:
         os.getenv("EXTERNAL_BACKUP_LEGACY_COEXISTENCE_ENABLED"),
         default=False,
     )
-    # Docker-era app maintenance agent (git pull + compose rebuild).
-    maintenance_timeout_seconds: float = float(os.getenv("MAINTENANCE_TIMEOUT_SECONDS", "120"))
-    app_maintenance_agent_base_url: str = os.getenv(
-        "APP_MAINTENANCE_AGENT_BASE_URL",
-        "http://127.0.0.1:8092",
-    )
-    app_maintenance_agent_token: str = os.getenv("APP_MAINTENANCE_AGENT_TOKEN", "")
 
     # --- Operator values: stored in `app_settings` ---------------------------
     # Keep this block in sync with SETTING_SPECS in app/services/settings_service.py.
     auth_token_expire_minutes: int = 180
     # IANA zone of new plannings (set by the setup wizard from the browser).
     timezone: str = "Europe/Paris"
-    notifications_enabled: bool = False
-    ntfy_base_url: str = "https://ntfy.sh"
-    ntfy_topic: str = ""
-    ntfy_username: str = ""
-    ntfy_password: str = ""
-    notify_on_backup_success: bool = True
-    notify_on_backup_failure: bool = True
-    notify_on_disk_eject_ready: bool = True
-    notify_on_update_result: bool = True
-    notify_on_agent_degraded: bool = True
-    notify_on_low_coverage: bool = True
-    notify_on_disk_new_detected: bool = True
-    notify_on_disk_known_detected: bool = True
-    notify_on_planned_disk_detected: bool = True
-    notify_on_planned_backup_reminder: bool = True
-    notify_on_planned_backup_started: bool = True
-    notify_on_planned_confirmation_required: bool = True
-    notify_on_planned_backup_missed: bool = True
-    low_coverage_threshold_percent: float = 100.0
-    disk_detection_notify_cooldown_seconds: int = 1800
+    # Phase 5j — General: how dates/times read, the first page, PBO's public
+    # URL (links in notifications; empty = no link).
+    ui_date_format: str = "auto"
+    ui_time_format: str = "24h"
+    ui_home_page: str = "dashboard"
+    public_url: str = ""
+    # Appearance (one admin: stored for the account, applied at login).
+    ui_theme: str = "system"
+    ui_accent: str = "steel"
+    ui_density: str = "comfortable"
+    ui_sidebar_collapsed: bool = False
+    ui_reduce_motion: str = "system"
+    # Backups: defaults of the launch dialog and of new disks.
+    default_verify_after_backup: bool = False
+    default_eject_at_end: bool = True
+    default_retention_keep_last: int = 4
+    default_retention_keep_weekly: int = 0
+    default_retention_keep_monthly: int = 0
+    # History retention (services/run_retention.py, daily task).
+    run_history_mode: str = "keep_all"
+    run_history_days: int = 180
+    run_history_keep_per_disk: int = 50
+    run_log_detail_days: int = 0
     # Phase 5f: an approved disk without a successful backup for this many days
     # is listed in "To do" (forgotten rotation).
     rotation_stale_days: int = 30

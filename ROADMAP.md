@@ -359,6 +359,19 @@ wired to an npm script; see §3).
 - The `beforeunload` guard covers tab close/reload, not in-app navigation
   (the app uses a non-data `BrowserRouter`, so `useBlocker` is unavailable).
 
+### 1.7 One notification engine, settings by section — Done — 2026-11-18 (Phase 5j)
+
+Supersedes 1.2 (the in-app `git pull` update center: removed with
+`apps/app-maintenance-agent` and the agents' `/maintenance/*` routes; LXC
+`update` + agent self-update instead, see docs/MAINTENANCE.md) and 1.6 (the
+app no longer manages the Proxmox host's own ntfy engine). Notifications now
+go through Apprise channels (ntfy, Gotify, Discord, Telegram, SMTP, JSON
+webhook, any Apprise URL) with per-channel events, level, quiet hours, daily
+summary, retries, dedup and a sending journal; the old NTFY_*/NOTIFY_ON_*
+settings (B9 duplicates) are migrated once to a channel. Settings page in
+sections (General, Appearance, Backups, Retention, Agents, About) with a
+daily history retention. See docs/NOTIFICATIONS.md and AGENTS.md.
+
 ## 2. CI/CD — Not started
 
 - No `.github/workflows` exists. Add a pipeline that at minimum lints and tests

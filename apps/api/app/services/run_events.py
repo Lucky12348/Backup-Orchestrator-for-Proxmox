@@ -156,6 +156,10 @@ def update_agent_presence(connected: bool, hostname: str | None = None) -> None:
         return  # startup with no agent: nothing went offline
     if previous != connected:
         events.publish("agent.online" if connected else "agent.offline", {"hostname": hostname})
+        if not connected:
+            from app.services import notifications
+
+            notifications.agent_offline("host", hostname)
 
 
 def reset_agent_presence() -> None:

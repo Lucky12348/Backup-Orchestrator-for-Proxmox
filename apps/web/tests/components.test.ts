@@ -28,6 +28,10 @@ before(async () => {
         'export { StatusIcon } from "./src/ui/StatusIcon";',
         'export { StatusDot } from "./src/ui/StatusDot";',
         'export { Logo } from "./src/ui/Logo";',
+        'export { ChannelForm } from "./src/views/notifications/ChannelForm";',
+        'export { SettingsView } from "./src/views/settings/SettingsView";',
+        'export { AuthProvider } from "./src/AuthContext";',
+        'export { NotificationsView } from "./src/views/notifications/NotificationsView";',
         'export { PageTitle } from "./src/ui/PageTitle";',
         'export { wantsIdentityPanel } from "./src/views/disks/DiskSheetView";',
         'export { PageHeader } from "./src/components/PageHeader";',
@@ -790,4 +794,44 @@ test("CapacityCard: real values, '< 1 %', no chart below 3 measures over 2 days"
   const markup = html(inApp(createElement(ui.CapacityCard, { disk, runs: [], language: "fr", t: translations.fr })));
   assert.ok(markup.includes("Capacité") && markup.includes("184 Mio utilisés sur 491 Gio") && markup.includes("&lt; 1\u202f%"));
   assert.ok(markup.includes("Pas encore estimable") && !markup.includes("data-capacity-chart"));
+});
+
+// --- Phase 5j --------------------------------------------------------------------------------
+
+const CATALOG = {
+  events: [
+    { key: "run_failed", group: "runs", level: "error" },
+    { key: "disk_new", group: "disks", level: "info" },
+  ],
+  groups: ["runs", "disks", "agents", "integrations"],
+  levels: ["info", "warning", "error"],
+  kinds: {},
+};
+
+function channelDraft(kind: string, extra: Record<string, unknown> = {}) {
+  return {
+    id: null, name: "Phone", kind, enabled: true, values: {}, storedSecrets: [], clearSecrets: [], headers: [],
+    events: ["run_failed"], minLevel: "info", quiet: false, quietStart: "22:00", quietEnd: "07:00", digest: false, digestTime: "08:00", ...extra,
+  };
+}
+
+test("ChannelForm: dedicated fields per kind, Telegram help, secret 'set' never shows a value", () => {
+  const telegram = html(createElement(ui.ChannelForm, { draft: channelDraft("telegram"), onChange: () => undefined, catalog: CATALOG, t: translations.fr }));
+  assert.ok(telegram.includes('data-channel-form="telegram"') && telegram.includes("Jeton du bot") && telegram.includes("Identifiant du chat"));
+  assert.ok(telegram.includes("@BotFather") && telegram.includes("getUpdates"), "how to get the token and chat id");
+  assert.ok(telegram.includes("Envoyer un test") && telegram.includes("Sauvegarde en échec") && telegram.includes("Heures calmes") && telegram.includes("Résumé quotidien"));
+  const stored = html(createElement(ui.ChannelForm, { draft: channelDraft("ntfy", { id: 2, values: { topic: "pbo" }, storedSecrets: ["token"] }), onChange: () => undefined, catalog: CATALOG, t: translations.en, kindLocked: true }));
+  assert.ok(stored.includes('data-secret="set"') && stored.includes("Set — leave empty to keep it") && stored.includes("Remove the stored value"));
+  assert.match(stored, /<select[^>]*disabled=""/, "the kind of an existing channel is locked");
+  const webhook = html(createElement(ui.ChannelForm, { draft: channelDraft("webhook", { headers: [{ name: "Authorization", value: "", stored: true }] }), onChange: () => undefined, catalog: CATALOG, t: translations.en }));
+  assert.ok(webhook.includes("data-headers") && webhook.includes('value="Authorization"') && webhook.includes("docs/NOTIFICATIONS.md"));
+  const wizard = html(createElement(ui.ChannelForm, { draft: channelDraft("discord"), onChange: () => undefined, catalog: CATALOG, t: translations.en, compact: true }));
+  assert.ok(!wizard.includes("data-events"), "the wizard keeps the short form");
+});
+
+test("Settings and Notifications pages render their loading state (data comes from the API)", () => {
+  const settings = html(inApp(createElement(ui.AuthProvider, null, createElement(ui.SettingsView, { language: "fr", t: translations.fr }))));
+  assert.ok(settings.includes("Réglages") && settings.includes("Chargement des réglages"));
+  const notifications = html(inApp(createElement(ui.NotificationsView, { language: "en", t: translations.en })));
+  assert.ok(notifications.includes("Notifications") && notifications.includes("Add a channel") && notifications.includes("Sending journal"));
 });

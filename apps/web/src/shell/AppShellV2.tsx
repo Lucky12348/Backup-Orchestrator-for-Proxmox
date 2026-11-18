@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   Activity,
   Bell,
@@ -29,10 +29,12 @@ import { RunPill } from "../runs/RunPill";
 import type { ExternalDisk, VirtualMachine } from "../types";
 import { ConfirmProvider } from "../ui/confirm";
 import { Popover } from "../ui/Popover";
-import { Logo } from "../ui/Logo";
+import { Logo, LogoMark } from "../ui/Logo";
 import { PortalContainerContext } from "../ui/portal";
 import { StatusDot } from "../ui/StatusDot";
-import { useTheme } from "../ui/theme";
+import { homeRedirect } from "../ui/appearance";
+import { AppearanceProvider, useAppearance } from "../ui/AppearanceProvider";
+import { nextThemePreference } from "../setup/logic";
 import { ToastProvider, useToast } from "../ui/toast";
 import { DiskAvatar } from "../views/disks/DiskBits";
 import { DiskDirectoryProvider } from "../views/disks/DiskTag";
@@ -76,8 +78,38 @@ export function LegacyPage({ children }: { children: ReactNode }) {
  * the language selector. Legacy pages render inside `<LegacyPage>`
  * (`.pbo-legacy`) until their own redesign; redesigned ones (src/views) do not.
  */
-export function AppShellV2({ children, language, onLanguageChange, t, disks, vms }: AppShellV2Props) {
-  const { theme, preference, cycle, set: setPreference } = useTheme();
+export function AppShellV2(props: AppShellV2Props) {
+  return (
+    <AppearanceProvider>
+      <ShellRoot {...props} />
+    </AppearanceProvider>
+  );
+}
+
+const HOME_REDIRECT_KEY = "pbo:home-redirected";
+
+function ShellRoot({ children, language, onLanguageChange, t, disks, vms }: AppShellV2Props) {
+  // Phase 5j: theme, accent, density, sidebar, motion = the account's settings.
+  const { prefs, attributes, loaded, update } = useAppearance();
+  const preference = prefs.theme;
+  const setPreference = (theme: typeof preference) => void update({ theme });
+  const cycle = () => setPreference(nextThemePreference(preference));
+  const location = useLocation();
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (!loaded) return;
+    let done = false;
+    try {
+      done = window.sessionStorage.getItem(HOME_REDIRECT_KEY) === "1";
+      window.sessionStorage.setItem(HOME_REDIRECT_KEY, "1");
+    } catch {
+      /* private mode */
+    }
+    const target = homeRedirect(location.pathname, prefs, done);
+    if (target) navigate(target, { replace: true });
+    // Only on the first page of the session, once the settings are known.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded]);
   const [portal, setPortal] = useState<HTMLElement | null>(null);
   const diskNames = Object.fromEntries(disks.map((disk) => [disk.id, disk.display_name]));
   const groupNames = Object.fromEntries(
@@ -85,7 +117,7 @@ export function AppShellV2({ children, language, onLanguageChange, t, disks, vms
   );
 
   return (
-    <div className="pbo-ui min-h-screen" data-theme={theme}>
+    <div className="pbo-ui min-h-screen" {...attributes}>
       <PortalContainerContext.Provider value={portal}>
         <DiskDirectoryProvider disks={disks}>
         <ToastProvider
@@ -106,6 +138,7 @@ export function AppShellV2({ children, language, onLanguageChange, t, disks, vms
                 onThemeCycle={cycle}
                 onThemeChange={setPreference}
                 newDisks={newDiskCount(disks)}
+                collapsed={prefs.sidebarCollapsed}
               >
                 {children}
               </ShellLayout>
@@ -131,6 +164,7 @@ function ShellLayout({
   onThemeCycle,
   onThemeChange,
   newDisks,
+  collapsed = false,
 }: {
   children: ReactNode;
   t: TranslationDictionary;
@@ -140,6 +174,8 @@ function ShellLayout({
   onThemeCycle: () => void;
   onThemeChange: (preference: "system" | "light" | "dark") => void;
   newDisks: number;
+  /** Phase 5j: icons only (desktop); the mobile drawer is always full. */
+  collapsed?: boolean;
 }) {
   const location = useLocation();
   const { username, logout } = useAuth();
@@ -162,25 +198,29 @@ function ShellLayout({
   const current = [...OVERVIEW, ...CONFIGURATION].find((item) => (item.to === "/" ? location.pathname === "/" : location.pathname.startsWith(item.to)));
   const label = (key: NavKey | "resources") => (key === "resources" ? t.shell.resources : t.nav[key]);
 
-  const sidebar = (
+  const renderSidebar = (mini: boolean) => (
     // No text caret / selection in the menu (a caret showed under "Settings").
-    <aside className="flex h-full w-[248px] select-none flex-col gap-0.5 border-r border-border bg-surface px-4 pb-4 pt-5 [caret-color:transparent]">
-      <div className="flex items-center gap-2 px-1.5 pb-5">
-        <Logo />
-      </div>
-      <SectionLabel>{t.shell.overview}</SectionLabel>
+    <aside
+      className={cn(
+        "flex h-full select-none flex-col gap-0.5 border-r border-border bg-surface pb-4 pt-5 [caret-color:transparent]",
+        mini ? "w-16 items-center px-2" : "w-[248px] px-4",
+      )}
+      data-collapsed={mini ? "" : undefined}
+    >
+      <div className={cn("flex items-center gap-2 pb-5", mini ? "justify-center" : "px-1.5")}>{mini ? <LogoMark /> : <Logo />}</div>
+      {mini ? null : <SectionLabel>{t.shell.overview}</SectionLabel>}
       {OVERVIEW.map((item) => (
-        <NavItem key={item.to} to={item.to} icon={item.icon} label={label(item.key)}>
-          {item.key === "disks" && newDisks > 0 ? (
+        <NavItem key={item.to} to={item.to} icon={item.icon} label={label(item.key)} mini={mini} badge={item.key === "disks" && newDisks > 0}>
+          {item.key === "disks" && newDisks > 0 && !mini ? (
             <StatusDot tone="warn" className="text-xs">
               {t.shell.newDisks.replace("{n}", String(newDisks))}
             </StatusDot>
           ) : null}
         </NavItem>
       ))}
-      <SectionLabel className="pt-4">{t.shell.configuration}</SectionLabel>
+      {mini ? <div className="my-2 h-px w-8 bg-border" /> : <SectionLabel className="pt-4">{t.shell.configuration}</SectionLabel>}
       {CONFIGURATION.map((item) => (
-        <NavItem key={item.to} to={item.to} icon={item.icon} label={label(item.key)} />
+        <NavItem key={item.to} to={item.to} icon={item.icon} label={label(item.key)} mini={mini} />
       ))}
       <div className="min-h-6 flex-1" />
       <UserMenu
@@ -191,16 +231,17 @@ function ShellLayout({
         themePreference={themePreference}
         onThemeChange={onThemeChange}
         onLogout={() => void logout()}
+        mini={mini}
       />
     </aside>
   );
 
   return (
     <div className="flex min-h-screen">
-      <div className="sticky top-0 hidden h-screen shrink-0 lg:block">{sidebar}</div>
+      <div className="sticky top-0 hidden h-screen shrink-0 lg:block">{renderSidebar(collapsed)}</div>
       {mobileOpen ? (
         <div className="fixed inset-0 z-40 flex lg:hidden">
-          <div className="h-full">{sidebar}</div>
+          <div className="h-full">{renderSidebar(false)}</div>
           <button type="button" aria-label={t.shell.close} className="flex-1 bg-black/50" onClick={() => setMobileOpen(false)}>
             <X className="ml-auto mr-4 mt-4 h-5 w-5 text-white" />
           </button>
@@ -248,6 +289,7 @@ function ShellLayout({
         </header>
         {/* B27: fluid content, side padding, a wide cap centred only beyond it. */}
         <div
+          data-shell-content
           className={cn(
             // B27: the whole useful width (side padding only), up to ~2200 px; no centring.
             "w-full px-4 py-5 sm:px-7 sm:py-7 2xl:px-10",
@@ -273,6 +315,7 @@ export function UserMenu({
   themePreference,
   onThemeChange,
   onLogout,
+  mini = false,
 }: {
   t: TranslationDictionary;
   username: string;
@@ -281,6 +324,8 @@ export function UserMenu({
   themePreference: "system" | "light" | "dark";
   onThemeChange: (preference: "system" | "light" | "dark") => void;
   onLogout: () => void;
+  /** Collapsed sidebar: the avatar only. */
+  mini?: boolean;
 }) {
   const option = (active: boolean) =>
     cn(
@@ -299,11 +344,11 @@ export function UserMenu({
           <span className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-full bg-hover text-[13px] font-semibold">
             {username.slice(0, 1).toUpperCase()}
           </span>
-          <span className="flex min-w-0 flex-1 flex-col">
+          <span className={mini ? "sr-only" : "flex min-w-0 flex-1 flex-col"}>
             <span className="truncate text-[13px] font-medium">{username}</span>
             <span className="truncate text-xs text-faint">{t.shell.administrator}</span>
           </span>
-          <ChevronsUpDown className="h-4 w-4 flex-none text-faint" />
+          {mini ? null : <ChevronsUpDown className="h-4 w-4 flex-none text-faint" />}
         </>
       }
     >
@@ -371,20 +416,37 @@ function SectionLabel({ children, className }: { children: ReactNode; className?
   return <div className={cn("px-2.5 pb-1.5 pt-2 text-[11px] font-medium uppercase tracking-[0.04em] text-faint", className)}>{children}</div>;
 }
 
-function NavItem({ to, icon: Icon, label, children }: { to: string; icon: typeof LayoutDashboard; label: string; children?: ReactNode }) {
+function NavItem({
+  to,
+  icon: Icon,
+  label,
+  children,
+  mini = false,
+  badge = false,
+}: {
+  to: string;
+  icon: typeof LayoutDashboard;
+  label: string;
+  children?: ReactNode;
+  mini?: boolean;
+  badge?: boolean;
+}) {
   return (
     <NavLink
       to={to}
       end={to === "/"}
+      title={mini ? label : undefined}
       className={({ isActive }) =>
         cn(
-          "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors hover:bg-hover",
+          "relative flex items-center gap-2.5 rounded-md text-sm transition-colors hover:bg-hover",
+          mini ? "h-9 w-9 justify-center" : "px-2.5 py-2",
           isActive ? "bg-hover font-medium text-fg" : "text-muted",
         )
       }
     >
-      <Icon className="h-[18px] w-[18px]" />
-      <span className="flex-1">{label}</span>
+      <Icon className="h-4 w-4" />
+      <span className={mini ? "sr-only" : "flex-1"}>{label}</span>
+      {mini && badge ? <span aria-hidden className="absolute right-1.5 top-1.5 h-[7px] w-[7px] rounded-full bg-warning" /> : null}
       {children}
     </NavLink>
   );

@@ -1,211 +1,177 @@
-# Notifications ntfy
+# Notifications
 
-PBO sends best-effort notifications through ntfy. Delivery errors are logged without secrets and never stop backup, eject, sync, planning, or update workflows.
+PBO sends its alerts through one engine built on
+[Apprise](https://github.com/caronc/apprise). The dependency is pinned to
+`apprise==2.1.0` (BSD-2-Clause) in `apps/api/pyproject.toml`; the channel URLs
+are built for that version's syntax. You configure everything on the
+**Notifications** page, or in the optional "Notifications" step of the
+first-run wizard. Nothing is read from `.env` any more, except for the
+[one-time migration](#migration-from-the-old-ntfy-settings).
 
-## Environment
+Code:
 
-Configure the App VM API environment:
-
-```env
-NOTIFICATIONS_ENABLED=true
-NTFY_BASE_URL=https://ntfy.YOURDOMAINE.com
-NTFY_TOPIC=replace-with-secret-topic
-NTFY_USERNAME=pbo
-NTFY_PASSWORD=replace-with-ntfy-password
-NOTIFY_ON_BACKUP_SUCCESS=true
-NOTIFY_ON_BACKUP_FAILURE=true
-NOTIFY_ON_DISK_EJECT_READY=true
-NOTIFY_ON_UPDATE_RESULT=true
-NOTIFY_ON_AGENT_DEGRADED=true
-NOTIFY_ON_LOW_COVERAGE=true
-NOTIFY_ON_DISK_NEW_DETECTED=true
-NOTIFY_ON_DISK_KNOWN_DETECTED=true
-NOTIFY_ON_PLANNED_DISK_DETECTED=true
-NOTIFY_ON_PLANNED_BACKUP_REMINDER=true
-NOTIFY_ON_PLANNED_BACKUP_STARTED=true
-NOTIFY_ON_PLANNED_CONFIRMATION_REQUIRED=true
-NOTIFY_ON_PLANNED_BACKUP_MISSED=true
-LOW_COVERAGE_THRESHOLD_PERCENT=100
-DISK_DETECTION_NOTIFY_COOLDOWN_SECONDS=1800
-```
-
-`NTFY_TOPIC` should be treated as a secret. Use a long random topic name and do not publish it in documentation, screenshots, logs, or issue reports.
-
-`NTFY_PASSWORD` is only used server-side for ntfy basic auth. The API status endpoint and UI never return or display it.
-
-Provider configuration stays environment-only:
-
-- `NTFY_BASE_URL`
-- `NTFY_TOPIC`
-- `NTFY_USERNAME`
-- `NTFY_PASSWORD`
-
-The Settings UI can edit only non-sensitive preferences. Those preferences are stored in the database and override the event toggles, low coverage threshold, and disk detection cooldown from the environment. If no database preference exists, PBO uses the environment defaults. If `NOTIFICATIONS_ENABLED=false`, the UI cannot force notifications on.
-
-## ntfy Auth
-
-The API posts to:
-
-```text
-{NTFY_BASE_URL}/{NTFY_TOPIC}
-```
-
-When `NTFY_USERNAME` or `NTFY_PASSWORD` is set, requests use HTTP basic authentication. The ntfy server should restrict publish access for the configured topic to this account.
-
-## API
-
-All notification settings endpoints are behind the normal admin JWT auth:
-
-- `GET /api/v1/notifications/status`
-- `GET /api/v1/notifications/preferences`
-- `PATCH /api/v1/notifications/preferences`
-- `POST /api/v1/notifications/preferences/reset`
-- `POST /api/v1/notifications/test`
-
-The status endpoint returns whether notifications are enabled, whether ntfy is configured, the base URL, a masked topic, the username, event toggles, and the low coverage threshold. It never returns the password.
-
-## Events
-
-PBO sends notifications for these events when enabled:
-
-- External backup success.
-- External backup failure, including disk, failed step, and a short error.
-- Dedicated external disk safe eject success.
-- Maintenance update success or failure.
-- Host agent degraded or disconnected status, rate-limited to avoid repeated alerts.
-- Low PBS backup coverage after a PBS sync when coverage is below `LOW_COVERAGE_THRESHOLD_PERCENT`.
-- New USB disk first seen by the agent.
-- Known USB disk changing from absent to present, rate-limited by `DISK_DETECTION_NOTIFY_COOLDOWN_SECONDS`.
-- Expected disk detected for an active planned backup window.
-- Planned backup reminders, auto-starts, confirmation requests, and missed windows.
-
-Disk detection uses the exact disk serial reported by the agent. PBO stores `presence_state` as `present` or `absent` and only notifies on transitions into `present`.
-
-## Troubleshooting
-
-If the Settings test works but real events do not fire, check that the API container has the notification and planning env vars, then inspect API logs for `notification event=<name> sent=true|false`.
-
-If disk detection notifications repeat, verify the agent is not reporting changing serial numbers and that `DISK_DETECTION_NOTIFY_COOLDOWN_SECONDS` is present inside the API container.
-
-If planned disk detection does not trigger a backup, confirm the scheduled event uses the exact serial number shown in the Disks page and that the current time is inside the event window.
-
-If a phone receives notifications only on Wi-Fi and not 5G, verify the public ntfy URL is reachable externally and that DNS does not resolve to a LAN-only address outside the network.
-
-## Host notification engine (Proxmox host, file-driven)
-
-Separate from the app's own ntfy sender above. The Proxmox host runs its own
-file-driven ntfy engine (installed outside this repo) for host-level events
-(boot, UPS, network, disk space, logins, fail2ban). The **Notifications** page
-of the web UI edits it through the **Proxmox host agent** (port `8090`,
-`X-Agent-Token`). No new port is exposed, and the app VM never talks to ntfy
-for these events.
-
-Host files (owned by the host engine; the agent only uses them):
-
-| Path | Used by the agent for |
+| File | Role |
 | --- | --- |
-| `/etc/ntfy-notif/templates.json` (`root:nut`, `0664`) | read / validated atomic write |
-| `/etc/ntfy-notif/backups/templates-<UTC timestamp>.json` | copy of the previous version on every save (10 most recent kept) |
-| `/usr/local/bin/ntfy-send <code> [key=value ...]` | "Test" button (argument list, never a shell, 30 s timeout) |
-| `/var/log/ntfy-notif/history.jsonl` | History tab (read backwards from the end of the file) |
-| `/var/spool/ntfy-queue/*.json` | queue badge (count + age of the oldest message, payload never returned) |
-| `/etc/ntfy-notif/ntfy.conf` | **never read**: it holds the ntfy token. No code path opens it. |
+| `apps/api/app/services/notification_catalog.py` | Events, levels, messages (EN/FR) |
+| `apps/api/app/services/notification_channels.py` | Forms, validation, secrets, Apprise URLs |
+| `apps/api/app/services/notification_engine.py` | Queue, deduplication, quiet hours, summary, retries, journal |
+| `apps/api/app/services/notifications.py` | The hooks the rest of PBO calls |
+| `apps/api/app/services/notification_migration.py` | Old ntfy settings → one channel |
 
-Paths can be overridden in the agent `.env` for non-standard installs:
-`NTFY_NOTIF_TEMPLATES_PATH`, `NTFY_NOTIF_BACKUPS_DIR`,
-`NTFY_NOTIF_HISTORY_PATH`, `NTFY_NOTIF_QUEUE_DIR`, `NTFY_NOTIF_SEND_COMMAND`.
+## Channels
 
-### Template format and validation
+You can configure several channels. For each one you choose:
+
+- a **name**;
+- the **events** it receives;
+- a **minimum level**: information, warning or error;
+- **quiet hours**, optional: only errors are sent inside them, everything
+  else waits until they end;
+- a **daily summary**, optional: information and warnings are grouped in one
+  message a day at the chosen time, errors are still sent at once;
+- **Send a test**: the result is shown in the form. A test ignores events,
+  level and quiet hours, so it checks the channel only.
+
+| Type | Fields | Apprise URL built |
+| --- | --- | --- |
+| ntfy | server (default `https://ntfy.sh`), topic, optional token *or* user + password | `ntfys://host/topic?auth=token&token=…&priority=…&click=<link>` |
+| Gotify | server, application token | `gotifys://host/path/<token>?priority=…` |
+| Discord | webhook URL | `discord://<id>/<token>` |
+| Telegram | bot token, chat id | `tgram://<token>/<chat_id>` |
+| E-mail (SMTP) | server, security (STARTTLS / TLS / none), port, user, password, from, to | `mailtos://user:pass@host:port?mode=starttls&from=…&to=…` |
+| Webhook (JSON) | URL, HTTP headers | `jsons://host/path?+Header=value&:event=…` |
+| Apprise URL (advanced) | any [Apprise URL](https://github.com/caronc/apprise/wiki) | as typed |
+
+**Telegram**: send `/newbot` to @BotFather to get the bot token, then send any
+message to the bot. Open `https://api.telegram.org/bot<token>/getUpdates`; the
+chat id is in `"chat":{"id":…}`. A group's id is negative. A public channel can
+be given as `@name`.
+
+**ntfy.sh**: anyone who knows a topic can read it, so pick a long random one,
+or use your own ntfy server with a token.
+
+### Webhook JSON
+
+PBO posts Apprise's JSON document, with PBO's own keys added:
 
 ```json
 {
-  "defaults": {"topic": "pve-alerts", "click": "https://pve.lan:8006", "icon": "", "late_after_sec": 300},
-  "events": {
-    "ups.onbatt": {"enabled": true, "priority": 4, "emoji": "battery",
-                   "title": "UPS on battery", "message": "Charge {charge}% - {runtime}s left"}
-  }
+  "version": "1.0",
+  "title": "Backup failed",
+  "message": "🔵 Rotation A: PBS refused the sync job",
+  "attachments": [],
+  "type": "failure",
+  "event": "run_failed",
+  "level": "error",
+  "link": "https://pbo.example.lan/disks/3"
 }
 ```
 
-The agent (`apps/agent/src/agent/ntfy_notif.py`) is the source of truth and
-rejects the whole save if any rule fails. The API and the web page check the
-same rules first so mistakes show up before anything reaches the host.
+- `type`: `info`, `success`, `warning` or `failure`.
+- `level`: PBO's level (`info`, `warning` or `error`).
+- `link`: empty when no [public address](#links) is set.
+- **Headers** you add are sent as is, e.g. `Authorization: Bearer …`. Their
+  values are stored as secrets.
 
-- Unknown keys are rejected at every level. `defaults.topic` and the event keys
-  `enabled`, `priority`, `emoji`, `title`, `message` are required. `topic`,
-  `click`, `icon` (event) and `click`, `icon`, `late_after_sec` (defaults) are optional.
-- Event code `^[a-z0-9_]+(\.[a-z0-9_]+)*$` (max 64). Priority: integer 1–5
-  (1 Min · 2 Low · 3 Default · 4 High · 5 Urgent). Emoji: ntfy shortcode
-  `^[a-z0-9_+-]{1,40}$`. Topic `^[A-Za-z0-9_-]{1,64}$`.
-- Title: not empty, max 60 characters, single line. Message: max 200 characters.
-- `click` / `icon`: empty or an `http(s)` URL. `late_after_sec`: 0–86400.
-- Variables are written `{name}` in title/message.
+## Events
 
-Writes are atomic: a temporary file in `/etc/ntfy-notif/`, `fsync`, `chown
-root:nut`, `chmod 0664`, then `os.replace`. A failed validation leaves the
-file and the backups untouched.
+| Group | Event | Level | Identical alerts folded for |
+| --- | --- | --- | --- |
+| Runs | `run_success`: backup done | info | never (one per run) |
+| | `run_failed`: backup failed (also an eject that did not finish) | error | never |
+| | `run_interrupted`: disk unplugged during the run | error | never |
+| | `verify_failed`: verification failed | error | never |
+| | `repair_completed`: repair finished | info | never |
+| Disks | `unsafe_removal`: disk removed without eject | warning | 6 h |
+| | `disk_to_plug`: disk expected for a planned rotation | info | 12 h |
+| | `rotation_missed`: rotation missed (disk absent) | warning | 12 h |
+| | `backup_stale`: N days without a backup (Settings › Backups) | warning | 24 h |
+| | `disk_space`: disk 80 % (warning) / 90 % (error) full | warning / error | 24 h |
+| | `smart_degraded`: SMART warning / failing | warning / error | 24 h |
+| | `disk_new`: new disk detected | info | 1 h |
+| Agents | `agent_offline`: host agent stops answering | error | 6 h |
+| | `agent_update_failed`: agent update failed, rolled back or too old | warning | 12 h |
+| Proxmox | `pve_unreachable` / `pbs_unreachable`: inventory sync failed | error | 6 h |
+| | `guest_agent_missing`: PBS VM without QEMU guest agent (stale mounts unchecked) | warning | 24 h |
 
-**Privileges.** The agent HTTP service must run as root (`User=root`, as in
-`apps/agent/deploy/systemd/`). If it runs as another user, saving is refused
-with HTTP 403 and an explicit message. It is not worked around. A non-root
-agent would need write access to `/etc/ntfy-notif/` and
-`/etc/ntfy-notif/backups/`, plus `CAP_CHOWN` to keep `root:nut`. Reading the
-history and queue only needs read access to those paths.
+Messages:
 
-### Built-in events and variables
+- They are short, in the account's language (English or French).
+- They name the disk with its colour as a dot, e.g. « 🔵 Rotation A ».
 
-These codes are produced by the host scripts. They can be edited or disabled
-but not deleted from the UI. Custom events can be added and deleted.
+### Links
 
-| Code | Variables |
+Set the **public address of PBO** in Settings › General (for example
+`https://pbo.example.lan`). Each message then carries a link to the screen
+concerned: the disk sheet, Planning or Integrations. ntfy uses it as the
+click action, the webhook as `link`, and the other channels add it to the
+text. With no public address, messages have no link.
+
+## Reliability
+
+- **Queue**: `emit()` writes one delivery per matching channel and never
+  raises into the code that called it. A worker started in the API lifespan
+  sends what is due every 15 s, or at once when something is queued.
+- **Retries**: a failed send is retried after 1 min, 5 min, 15 min and 1 h.
+  After that it is marked *failed* with a readable error; the secrets are
+  removed from the error text. **Try again** in the journal re-queues it.
+- **Deduplication**: the same alert (same event and subject) inside the
+  event's window is not sent again. The first message counts the duplicates
+  instead, shown as "×N" in the journal.
+- **Journal**: the Notifications page lists the last messages: sent, waiting,
+  in the daily summary, failed (with the error) or cancelled. Entries are
+  kept 30 days.
+- **Disabled channel**: its messages wait until it is enabled again.
+  Deleting a channel cancels its waiting messages.
+
+## Secrets
+
+Tokens, passwords, webhook URLs, header values and Apprise URLs are encrypted
+with the same Fernet key as the secret `app_settings` (derived from
+`AUTH_SECRET_KEY`).
+
+They are never returned by the API: `GET /notifications/channels` lists only
+`secrets_set`, the names of the secrets that are stored. On update:
+
+- a value replaces the secret;
+- `null` removes it;
+- an absent key keeps it.
+
+## API
+
+All routes need a session.
+
+| Route | Purpose |
 | --- | --- |
-| `test` | `texte` |
-| `system.boot`, `system.boot_unclean` | `kernel` |
-| `system.shutdown` | none |
-| `ups.onbatt` | `charge`, `runtime` |
-| `ups.online`, `ups.lowbatt`, `ups.shutdown` | `charge` |
-| `ups.fsd`, `ups.commbad`, `ups.commok`, `ups.replbatt` | none |
-| `net.restored` | `debut`, `fin`, `duree` |
-| `disk.space` | `details` |
-| `auth.web_ok` | `user` |
-| `auth.web_fail`, `auth.ssh_ok`, `auth.ssh_fail` | `user`, `ip` |
-| `f2b.ban` | `ip`, `jail` |
+| `GET /api/v1/notifications/catalog` | Events, groups, levels, form fields |
+| `GET` / `POST /api/v1/notifications/channels` | List / create |
+| `PUT` / `DELETE /api/v1/notifications/channels/{id}` | Update / delete |
+| `POST /api/v1/notifications/channels/{id}/test` | Test a stored channel |
+| `POST /api/v1/notifications/test` | Test the form before saving; `channel_id` reuses the stored secrets |
+| `GET /api/v1/notifications/deliveries` | The journal |
+| `POST /api/v1/notifications/deliveries/{id}/retry` | Re-queue a failed message |
 
-The UI groups events by code prefix: system, ups, net, disk, auth, f2b, test,
-and "other" for anything else. A disabled event is not sent: `ntfy-send` logs it
-as `muted` in the history.
+Errors are `{"code", "field"}` objects, translated by the UI.
 
-### HTTP surface
+## Migration from the old ntfy settings
 
-Proxmox host agent (`X-Agent-Token` required):
+The previous engine read `NTFY_BASE_URL`, `NTFY_TOPIC`, `NTFY_USERNAME`,
+`NTFY_PASSWORD`, `NOTIFICATIONS_ENABLED` and the `NOTIFY_ON_*` flags (B9:
+they were also duplicated in a `notification_preferences` table). It is gone,
+and so is the relay to the Proxmox host's own ntfy engine.
 
-| Method | Path | Notes |
-| --- | --- | --- |
-| `GET` | `/notifications/templates` | `{templates, path, modified_at}`; 404 if the file is missing |
-| `PUT` | `/notifications/templates` | body = whole document; 422 `{errors: [...]}` on validation failure, 403 if the agent is not root |
-| `POST` | `/notifications/test` | `{"event": code, "vars": {key: value}}`; keys `^[A-Za-z0-9_]+$`, values ≤ 100 chars, no line break; returns `return_code` |
-| `GET` | `/notifications/history?limit=200&event=&status=` | most recent first, `limit` 1–1000, `status` ∈ `queued`/`sent`/`muted` |
-| `GET` | `/notifications/queue` | `{count, oldest_ts, oldest_age_seconds}` |
+On the first start of this version, `migrate_legacy_ntfy()` turns an existing
+configuration into one **ntfy** channel:
 
-The agent advertises the `ntfy-notifications` capability in `/version`.
+- **Values read**: the stored settings, the `notification_preferences` row
+  when present, or the environment of an install whose `.env` was never
+  imported.
+- **Enabled**: as before.
+- **Events**: follow the old flags. Disk space, SMART, removal without eject
+  and the stale reminder were always sent before; they stay on.
 
-App API (logged-in operator), relaying to the host agent:
-`GET|PUT /api/v1/notifications/host/templates`,
-`POST /api/v1/notifications/host/test`,
-`GET /api/v1/notifications/host/history`,
-`GET /api/v1/notifications/host/queue`.
-Every save and every test, successful or not, adds a line to the
-**Operations journal** (`GET /api/v1/activity-events`, shown on the Activity
-page). The line lists which events were added, changed or removed. This is a new
-`activity_events` table, created automatically at API startup. It is kept apart
-from `backup_runs` so the dashboard's "latest backup" status is not affected.
+It runs once (marker `meta.notifications_migrated`). The old rows and table
+are left in place, so an older PBO still works after a rollback.
 
-### Troubleshooting
-
-- *"The Proxmox host agent does not know the /notifications endpoints"*: the
-  host agent still runs older code. Update it (see `docs/MAINTENANCE.md`) and
-  check that `AGENT_HTTP_SERVICE_NAME` is set so it restarts.
-- *403 "not running as root"* on save: see **Privileges** above.
-- *404 templates file not found*: the host engine is not installed, or
-  `NTFY_NOTIF_TEMPLATES_PATH` points elsewhere.
-- The "Test" button sends the version **saved on the host**. Save first, then test.
+The Proxmox host's own ntfy engine (`/etc/ntfy-notif`, `ntfy-send`) is not
+part of PBO and is left untouched. PBO no longer manages it.

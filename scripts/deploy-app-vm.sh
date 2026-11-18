@@ -3,7 +3,6 @@ set -euo pipefail
 
 APP_REPO_PATH="${APP_REPO_PATH:-/opt/proxmox_backup_orchestrator}"
 APP_COMPOSE_FILE="${APP_COMPOSE_FILE:-infra/docker/docker-compose.yml}"
-APP_MAINTENANCE_AGENT_SERVICE="${APP_MAINTENANCE_AGENT_SERVICE:-proxmox-backup-orchestrator-app-maintenance-agent.service}"
 PROXMOX_AGENT_VENV="${PROXMOX_AGENT_VENV:-/opt/proxmox-backup-orchestrator-agent/.venv}"
 PROXMOX_AGENT_SERVICE="${PROXMOX_AGENT_SERVICE:-proxmox-backup-orchestrator-agent-api.service}"
 PROXMOX_AGENT_URL="${PROXMOX_AGENT_URL:-http://127.0.0.1:8081}"
@@ -70,7 +69,6 @@ if command -v systemctl >/dev/null 2>&1; then
   else
     echo "Warning: PBS agent venv not found at $PBS_AGENT_VENV" >&2
   fi
-  systemctl restart "$APP_MAINTENANCE_AGENT_SERVICE"
 else
   echo "systemctl not found; restart app and agent services manually" >&2
 fi

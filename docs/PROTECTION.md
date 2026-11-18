@@ -17,7 +17,7 @@ Ignored assets are excluded from backup coverage:
 coverage = protected non-ignored assets / total non-ignored assets
 ```
 
-Ignored assets do not count as unprotected, and low-coverage ntfy notifications use the same non-ignored total.
+Ignored assets do not count as unprotected.
 
 ### Infrastructure (ignored by default)
 

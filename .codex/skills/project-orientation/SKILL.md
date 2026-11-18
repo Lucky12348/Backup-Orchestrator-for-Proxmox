@@ -12,7 +12,6 @@ Use this repository map:
 - Read `apps/api` for FastAPI routes, services, models, schemas, auth, and orchestration logic.
 - Read `apps/web` for React pages, UI components, hooks, and frontend API calls.
 - Read `apps/agent` for root-capable host and PBS agent behavior.
-- Read `apps/app-maintenance-agent` for app-VM git and Docker Compose maintenance endpoints.
 - Read `scripts/install/` for the documented install (Debian 13 LXC, `update`) and `apps/api/app/agent_install/install.sh` for the one-line host agent.
 - Read `infra/docker/docker-compose.yml` and `infra/docker/*.Dockerfile` for the legacy Docker app-stack wiring.
 - Read `docs/*.md` for production behavior, security assumptions, and operator workflows.
@@ -25,7 +24,6 @@ Use these likely entrypoints first:
 - `apps/web/src/App.tsx`
 - `apps/agent/src/agent/main.py`
 - `apps/agent/src/agent/server.py`
-- `apps/app-maintenance-agent/src/app_maintenance_agent/main.py`
 
 Route yourself by task:
 

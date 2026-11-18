@@ -10,6 +10,10 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "alembic>=1.13,<2.0",
+  # Notifications (Phase 5j): one engine for ntfy, Gotify, Discord, Telegram,
+  # SMTP, webhooks and any Apprise URL. BSD-2-Clause. Pinned: channel URLs are
+  # built for this version's syntax (services/notification_channels.py).
+  "apprise==2.1.0",
   "bcrypt>=4.0.1,<5",
   "cryptography>=42",
   "fastapi>=0.115,<1.0",

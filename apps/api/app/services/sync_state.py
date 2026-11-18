@@ -13,8 +13,6 @@ import httpx
 
 from app.core.config import Settings, get_settings
 from app.db.session import SessionLocal
-from app.services.notifications import notify_low_coverage
-from app.services.overview import get_overview_metrics
 from app.services.pbs_sync import PBSSyncSummary, sync_pbs_inventory
 from app.services.proxmox_sync import ProxmoxSyncSummary, sync_proxmox_inventory
 
@@ -125,15 +123,20 @@ def _run_guarded(
 
 def _sync_proxmox() -> ProxmoxSyncSummary:
     with SessionLocal() as db:
-        summary = sync_proxmox_inventory(db)
-        _notify_low_coverage_from_db(db)
-        return summary
+        try:
+            return sync_proxmox_inventory(db)
+        except Exception as exc:
+            _notify_unreachable("pve", exc)
+            raise
 
 
 def _sync_pbs() -> PBSSyncSummary:
     with SessionLocal() as db:
-        summary = sync_pbs_inventory(db)
-        _notify_low_coverage_from_db(db)
+        try:
+            summary = sync_pbs_inventory(db)
+        except Exception as exc:
+            _notify_unreachable("pbs", exc)
+            raise
         # Phase 6c: consistency of the source and rotation datastores.
         try:
             from app.services.datastore_health import check as check_datastores
@@ -154,6 +157,12 @@ def _as_aware_utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
-def _notify_low_coverage_from_db(db) -> None:
-    metrics = get_overview_metrics(db)
-    notify_low_coverage(metrics.coverage_percent, metrics.protected_vms, metrics.total_vms)
+def _notify_unreachable(target: str, exc: Exception) -> None:
+    """PVE / PBS did not answer (or refused): one alert per 6 h (engine dedup).
+    A connection that is simply not configured yet is not an alert."""
+    text = str(exc)
+    if "not configured" in text.lower():
+        return
+    from app.services import notifications
+
+    notifications.integration_unreachable(target, text)

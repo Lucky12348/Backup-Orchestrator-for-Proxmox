@@ -95,8 +95,10 @@ const fr = {
   },
   notifications: {
     title: "Notifications",
-    description: "Recevez une alerte quand une sauvegarde se termine ou échoue (étape facultative).",
+    description: "Facultatif : recevez les sauvegardes en échec, les disques à brancher, les agents hors ligne… Ajoutez un canal et testez-le, ou faites-le plus tard dans Notifications.",
     skip: "Passer",
+    later: "Plus tard",
+    add: "Ajouter et continuer",
   },
   done: {
     title: "Tout est prêt",
@@ -270,8 +272,10 @@ const en: WizardText = {
   },
   notifications: {
     title: "Notifications",
-    description: "Get an alert when a backup finishes or fails (optional step).",
+    description: "Optional: get failed backups, disks to plug in, agents offline… Add a channel and test it, or do it later in Notifications.",
     skip: "Skip",
+    later: "Later",
+    add: "Add and continue",
   },
   done: {
     title: "All set",

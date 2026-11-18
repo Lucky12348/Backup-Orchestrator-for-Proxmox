@@ -29,7 +29,6 @@ def test_a_disk_plugged_into_the_host_only_is_spun_down_and_ejected(db):
     disk = _disk(db)
     with (
         patch("app.services.disk_eject._attempt_disk_spin_down", return_value="Disk spin-down/power-off attempted.") as spin,
-        patch("app.services.disk_eject.notify_disk_eject_ready"),
         patch("app.services.disk_eject.get_external_backup_agent_bridge") as bridge,
     ):
         disk = eject_dedicated_external_disk(db, disk.id)

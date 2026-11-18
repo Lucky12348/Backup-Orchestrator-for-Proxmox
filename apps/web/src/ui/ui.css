@@ -167,11 +167,20 @@
   color: var(--t1);
 }
 
+/* Settings › Appearance › Reduce animations: "system" follows the OS,
+   "on" (data-motion=reduce) always, "off" (data-motion=full) never. */
 @media (prefers-reduced-motion: reduce) {
-  .pbo-ui * {
+  .pbo-ui:not([data-motion="full"]) * {
     animation: none !important;
     transition: none !important;
   }
+}
+.pbo-ui[data-motion="reduce"] *,
+.pbo-ui[data-motion="reduce"] *::before,
+.pbo-ui[data-motion="reduce"] *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
 }
 
 /* Planning: a running event is striped and the stripes move (planning.html). */
@@ -186,7 +195,7 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .pbo-ui .pbo-stripes {
+  .pbo-ui:not([data-motion="full"]) .pbo-stripes {
     animation: none;
   }
 }
@@ -194,9 +203,9 @@
 /* Phase 5h: the system's "reduce motion" setting is respected everywhere in
    the new UI (fades, progress bars, spinners, smooth scrolling). */
 @media (prefers-reduced-motion: reduce) {
-  .pbo-ui *,
-  .pbo-ui *::before,
-  .pbo-ui *::after {
+  .pbo-ui:not([data-motion="full"]) *,
+  .pbo-ui:not([data-motion="full"]) *::before,
+  .pbo-ui:not([data-motion="full"]) *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
@@ -221,4 +230,64 @@
   to {
     background-position: 150% 0;
   }
+}
+
+/* Settings › Appearance › Accent (Phase 5j): steel blue by default, five
+   predefined alternatives. Every pair is AA (docs/DESIGN.md): white text on
+   the accent ≥ 4.7:1, accent text ≥ 6.8:1, focus ring ≥ 5.7:1. */
+.pbo-ui:not([data-theme="light"])[data-accent="teal"] {
+  --pbo-accent: 42 122 122;
+  --pbo-accent-text: 124 196 194;
+  --pbo-focus: 79 163 161;
+}
+.pbo-ui[data-theme="light"][data-accent="teal"] {
+  --pbo-accent: 31 107 107;
+  --pbo-accent-text: 28 99 99;
+  --pbo-focus: 31 107 107;
+}
+.pbo-ui:not([data-theme="light"])[data-accent="green"] {
+  --pbo-accent: 58 122 82;
+  --pbo-accent-text: 134 196 155;
+  --pbo-focus: 90 166 118;
+}
+.pbo-ui[data-theme="light"][data-accent="green"] {
+  --pbo-accent: 47 107 69;
+  --pbo-accent-text: 42 99 64;
+  --pbo-focus: 47 107 69;
+}
+.pbo-ui:not([data-theme="light"])[data-accent="amber"] {
+  --pbo-accent: 154 106 30;
+  --pbo-accent-text: 224 179 106;
+  --pbo-focus: 201 154 74;
+}
+.pbo-ui[data-theme="light"][data-accent="amber"] {
+  --pbo-accent: 138 90 18;
+  --pbo-accent-text: 125 82 16;
+  --pbo-focus: 138 90 18;
+}
+.pbo-ui:not([data-theme="light"])[data-accent="rose"] {
+  --pbo-accent: 168 72 98;
+  --pbo-accent-text: 235 154 176;
+  --pbo-focus: 210 120 145;
+}
+.pbo-ui[data-theme="light"][data-accent="rose"] {
+  --pbo-accent: 161 58 85;
+  --pbo-accent-text: 150 53 80;
+  --pbo-focus: 161 58 85;
+}
+.pbo-ui:not([data-theme="light"])[data-accent="violet"] {
+  --pbo-accent: 107 87 170;
+  --pbo-accent-text: 181 166 234;
+  --pbo-focus: 149 133 214;
+}
+.pbo-ui[data-theme="light"][data-accent="violet"] {
+  --pbo-accent: 94 74 158;
+  --pbo-accent-text: 87 67 148;
+  --pbo-focus: 94 74 158;
+}
+
+/* Settings › Appearance › Density "compact": the page content is drawn at 90 %
+   (one rule instead of a second set of spacings); the shell keeps its size. */
+.pbo-ui[data-density="compact"] [data-shell-content] {
+  zoom: 0.9;
 }

@@ -180,9 +180,9 @@ def mark_unsafe_removal(db: Session, disk: ExternalDisk, *, reason: str, now: da
             details={"serial": disk.serial_number, "disk_id": disk.id, "reason": reason},
         )
     )
-    from app.services.notifications import notify_unsafe_removal
+    from app.services import notifications
 
-    notify_unsafe_removal(disk.display_name or disk.serial_number)
+    notifications.unsafe_removal(disk)
     return True
 
 

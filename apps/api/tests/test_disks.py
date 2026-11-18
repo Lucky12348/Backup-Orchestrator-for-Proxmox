@@ -217,13 +217,11 @@ class DiskInventoryTests(TestCase):
         )
 
         with (
-            patch("app.services.disks.notify_new_disk_detected") as new_notify,
-            patch("app.services.disks.notify_known_disk_detected") as known_notify,
+            patch("app.services.disks.notifications.disk_new") as new_notify,
         ):
             ingest_agent_disk_report(self.session, report)
 
         new_notify.assert_not_called()
-        known_notify.assert_called_once()
         disks = self.session.query(ExternalDisk).filter(ExternalDisk.serial_number.not_like("agent-report::%")).all()
         self.assertEqual(len(disks), 1)
         self.assertEqual(disks[0].canonical_serial_number, "WXD2DA1L1E7C")
@@ -270,8 +268,7 @@ class DiskInventoryTests(TestCase):
         )
 
         with (
-            patch("app.services.disks.notify_new_disk_detected") as new_notify,
-            patch("app.services.disks.notify_known_disk_detected") as known_notify,
+            patch("app.services.disks.notifications.disk_new") as new_notify,
         ):
             ingest_agent_disk_report(self.session, report)
 
@@ -293,12 +290,6 @@ class DiskInventoryTests(TestCase):
         self.assertTrue(refreshed.dedicated_backup_disk)
         self.assertEqual(refreshed.planning_notes, "keep me")
         new_notify.assert_not_called()
-        known_notify.assert_called_once()
-        description = known_notify.call_args.args[0]
-        self.assertIn("Serie reportee: 575844324441314C31453743", description)
-        self.assertIn("Serie canonique: WXD2DA1L1E7C", description)
-        self.assertIn("Serie existante: WD-WXD2DA1L1E7C", description)
-        self.assertIn("Detection: usb port 1-2", description)
 
     def test_agent_report_persists_filesystem_usage_metrics(self):
         report = AgentDiskReportCreate(
@@ -324,8 +315,7 @@ class DiskInventoryTests(TestCase):
         )
 
         with (
-            patch("app.services.disks.notify_new_disk_detected"),
-            patch("app.services.disks.notify_known_disk_detected"),
+            patch("app.services.disks.notifications.disk_new"),
         ):
             ingest_agent_disk_report(self.session, report)
 
@@ -358,8 +348,7 @@ class DiskInventoryTests(TestCase):
         )
 
         with (
-            patch("app.services.disks.notify_new_disk_detected"),
-            patch("app.services.disks.notify_known_disk_detected"),
+            patch("app.services.disks.notifications.disk_new"),
         ):
             ingest_agent_disk_report(self.session, report)
 
@@ -404,8 +393,7 @@ class DiskInventoryTests(TestCase):
         )
 
         with (
-            patch("app.services.disks.notify_new_disk_detected"),
-            patch("app.services.disks.notify_known_disk_detected"),
+            patch("app.services.disks.notifications.disk_new"),
         ):
             ingest_agent_disk_report(self.session, report)
 
@@ -471,8 +459,7 @@ class DiskInventoryTests(TestCase):
         )
 
         with (
-            patch("app.services.disks.notify_new_disk_detected") as new_notify,
-            patch("app.services.disks.notify_known_disk_detected") as known_notify,
+            patch("app.services.disks.notifications.disk_new") as new_notify,
             patch("app.services.disks.handle_disk_detected") as handle_detected,
         ):
             ingest_agent_disk_report(self.session, report)
@@ -488,7 +475,6 @@ class DiskInventoryTests(TestCase):
         self.assertFalse(disk.dedicated_backup_disk)
         self.assertFalse(disk.allow_existing_data)
         new_notify.assert_not_called()
-        known_notify.assert_not_called()
         handle_detected.assert_not_called()
 
     def test_zero_size_disk_cannot_be_marked_trusted_or_dedicated(self):
@@ -550,10 +536,7 @@ class DiskInventoryTests(TestCase):
         )
 
         with (
-            patch("app.services.disks.notify_new_disk_detected"),
-            patch("app.services.disks.notify_known_disk_detected"),
-            patch("app.services.planning_scheduler.notify_expected_disk_detected"),
-            patch("app.services.planning_scheduler.notify_planned_backup_started"),
+            patch("app.services.disks.notifications.disk_new"),
             patch("app.services.planning_scheduler.run_external_backup", return_value=SimpleNamespace(id=123)),
             patch("app.services.planning_scheduler.threading.Thread", return_value=SimpleNamespace(start=lambda: None)),
         ):

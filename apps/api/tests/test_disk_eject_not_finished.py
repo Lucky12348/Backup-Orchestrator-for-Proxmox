@@ -16,7 +16,6 @@ from app.services.disk_eject import (
 )
 from app.services.external_backup_agent import AgentCommandError, AgentCommandResult
 from app.services.external_backups import append_external_backup_run_log
-from app.services.notifications import notify_disk_eject_not_finished
 
 AGENT_TIMEOUT_MESSAGE = (
     "Éjection non terminée : l'écriture des données sur le disque n'est pas finie après 1800 s "
@@ -110,14 +109,14 @@ class EjectNotFinishedTests(TestCase):
             patch("app.services.disk_eject._detach_usb_slot_via_host_agent", return_value=SimpleNamespace(message="ok")) as detach,
             patch("app.services.disk_eject._get_qemu_config_usb_map", return_value={}),
             patch("app.services.disk_eject._attempt_disk_spin_down", return_value=None) as spin_down,
-            patch("app.services.disk_eject.notify_disk_eject_not_finished") as notify_not_finished,
-            patch("app.services.disk_eject.notify_disk_eject_ready") as notify_ready,
+            # Phase 5j: an eject that did not finish is a failed run for the notifications.
+            patch("app.services.disk_eject.notifications.run_finished") as notify_not_finished,
         ):
             try:
                 outcome = eject_dedicated_external_disk(self.session, self.disk.id)
             except HTTPException as exc:
                 outcome = exc
-        return outcome, detach, spin_down, notify_not_finished, notify_ready
+        return outcome, detach, spin_down, notify_not_finished
 
     def _runs(self) -> list[ExternalBackupRun]:
         return list(self.session.scalars(select(ExternalBackupRun).order_by(ExternalBackupRun.id)))
@@ -125,7 +124,7 @@ class EjectNotFinishedTests(TestCase):
     def test_flush_timeout_keeps_disk_attached_and_reports_do_not_unplug(self):
         bridge = _NotFinishedBridge(self.engine)
 
-        outcome, detach, spin_down, notify_not_finished, notify_ready = self._eject(bridge)
+        outcome, detach, spin_down, notify_not_finished = self._eject(bridge)
 
         self.assertIsInstance(outcome, HTTPException)
         self.assertEqual(outcome.status_code, 504)
@@ -133,8 +132,8 @@ class EjectNotFinishedTests(TestCase):
         self.assertIn("NE PAS débrancher le disque", EJECT_NOT_FINISHED_MESSAGE)
         detach.assert_not_called()
         spin_down.assert_not_called()
-        notify_ready.assert_not_called()
-        notify_not_finished.assert_called_once_with("Western Digital Game Drive (WD-WXD2DA1L1E7C)", "PBS agent returned 500: " + AGENT_TIMEOUT_MESSAGE)
+        notify_not_finished.assert_called_once()
+        self.assertEqual(notify_not_finished.call_args.args[1].id, self.disk.id)
 
         disk = self.session.get(ExternalDisk, self.disk.id)
         self.assertTrue(disk.connected)
@@ -153,45 +152,15 @@ class EjectNotFinishedTests(TestCase):
     def test_retrying_the_eject_after_a_timeout_succeeds(self):
         self._eject(_NotFinishedBridge(self.engine))
 
-        outcome, detach, _, notify_not_finished, notify_ready = self._eject(_SuccessBridge(self.engine))
+        outcome, detach, _, notify_not_finished = self._eject(_SuccessBridge(self.engine))
 
         self.assertIsInstance(outcome, ExternalDisk)
         self.assertEqual(outcome.handoff_status, "ejected")
         detach.assert_called_once()
         notify_not_finished.assert_not_called()
-        notify_ready.assert_called_once_with("Western Digital Game Drive (WD-WXD2DA1L1E7C)")
         first, retry = self._runs()
         self.assertEqual(first.current_step, EJECT_NOT_FINISHED_STEP)
         self.assertEqual(retry.status, BackupRunStatus.SUCCESS)
         # Flush progress streamed during the retry survives the final run update.
         self.assertIn("Écriture en cours (15 s écoulées).", retry.stdout_log)
         self.assertIn("Cache d'écriture vidé en 3 s.", retry.stdout_log)
-
-
-class EjectNotFinishedNotificationTests(TestCase):
-    def _send(self, enabled_events: set[str]):
-        settings = Settings(notifications_enabled=True, ntfy_base_url="https://ntfy.example.test", ntfy_topic="topic")
-        with (
-            patch("app.services.notifications.get_settings", return_value=settings),
-            patch("app.services.notifications._event_enabled", side_effect=lambda name, _settings: name in enabled_events),
-            patch("app.services.notifications.get_notification_service") as service_factory,
-        ):
-            service_factory.return_value.send.return_value = True
-            notify_disk_eject_not_finished("WD-WXD2DA1L1E7C", "Dirty 2.0 GiB")
-        return service_factory.return_value.send
-
-    def test_sends_high_priority_do_not_unplug_alert(self):
-        send = self._send({"disk_eject_ready"})
-
-        send.assert_called_once()
-        title, body = send.call_args.args
-        self.assertIn("NE PAS debrancher", title)
-        self.assertIn("NE PAS debrancher le disque", body)
-        self.assertIn("WD-WXD2DA1L1E7C", body)
-        self.assertEqual(send.call_args.kwargs["priority"], "high")
-
-    def test_sent_when_only_failure_alerts_are_enabled(self):
-        self._send({"backup_failure"}).assert_called_once()
-
-    def test_not_sent_when_eject_and_failure_alerts_are_disabled(self):
-        self._send(set()).assert_not_called()

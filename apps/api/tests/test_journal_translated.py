@@ -42,7 +42,7 @@ def _setup(db, session_factory):
 def _runs(stack, fake, session_factory):
     _flow(stack, fake, session_factory)
     stack.enter_context(patch("app.services.disk_eject._detach_usb_passthrough_from_pbs_vm", lambda disk: "detached"))
-    stack.enter_context(patch("app.services.notifications.notify_unsafe_removal", lambda *a: None))
+    stack.enter_context(patch("app.services.notifications.unsafe_removal", lambda *a: None))
     visible = SimpleNamespace(message="Disk is now visible on PBS as /dev/sdb.")
     stack.enter_context(patch("app.services.external_backups.handoff_disk_to_pbs", lambda *a, **k: visible))
 

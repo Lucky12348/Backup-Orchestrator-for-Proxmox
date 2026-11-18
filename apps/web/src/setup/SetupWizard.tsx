@@ -189,7 +189,7 @@ export function SetupWizard({
                   />
                 ) : null}
                 {step === "notifications" && NOTIFICATIONS_STEP_ENABLED ? (
-                  <NotificationsStep onBack={back} onNext={() => void goTo(nextStep("notifications") ?? "done")} />
+                  <NotificationsStep language={language} onBack={back} onNext={() => void goTo(nextStep("notifications") ?? "done")} />
                 ) : null}
                 {step === "done" && progress ? <DoneStep progress={progress} language={language} onFinish={onFinished} /> : null}
                 {error && progress ? (

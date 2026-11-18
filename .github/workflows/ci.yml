@@ -21,7 +21,7 @@ jobs:
         # 3.11 = Debian 12 (bookworm), 3.13 = Debian 13 (trixie): the two targets
         # of the future native LXC / agent install.
         python: ["3.11", "3.13"]
-        component: [api, agent, app-maintenance-agent]
+        component: [api, agent]
     defaults:
       run:
         working-directory: apps/${{ matrix.component }}

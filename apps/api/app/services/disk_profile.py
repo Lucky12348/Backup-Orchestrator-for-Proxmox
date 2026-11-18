@@ -19,6 +19,19 @@ USAGE_WARN_PERCENT = 80
 USAGE_CRITICAL_PERCENT = 90
 USB2_MAX_MBPS = 480
 DEFAULT_RETENTION: dict[str, int | None] = {"keep_last": 4, "keep_weekly": None, "keep_monthly": None}
+
+
+def default_retention() -> dict[str, int | None]:
+    """Retention of a disk without its own (Settings › Backups, Phase 5j)."""
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    value = {
+        "keep_last": settings.default_retention_keep_last or None,
+        "keep_weekly": settings.default_retention_keep_weekly or None,
+        "keep_monthly": settings.default_retention_keep_monthly or None,
+    }
+    return value if any(value.values()) else dict(DEFAULT_RETENTION)
 RETENTION_KEYS = ("keep_last", "keep_weekly", "keep_monthly")
 RETENTION_MAX = 1000
 
@@ -74,7 +87,7 @@ class RetentionError(ValueError):
 
 def normalize_retention(value: dict[str, Any] | None) -> dict[str, int | None]:
     if value is None:
-        return dict(DEFAULT_RETENTION)
+        return default_retention()
     result: dict[str, int | None] = {}
     for key in RETENTION_KEYS:
         raw = value.get(key)
@@ -98,7 +111,7 @@ def retention_of(disk: ExternalDisk) -> dict[str, int | None]:
     try:
         return normalize_retention(disk.retention if isinstance(disk.retention, dict) else None)
     except RetentionError:
-        return dict(DEFAULT_RETENTION)
+        return default_retention()
 
 
 def prune_options(retention: dict[str, int | None]) -> dict[str, int]:
@@ -143,9 +156,9 @@ def record_usage(disk: ExternalDisk, *, now: datetime | None = None, notify: boo
     disk.usage_alert_level = level
     if level is not None and (previous is None or level > previous):
         if notify:
-            from app.services.notifications import notify_disk_space
+            from app.services import notifications
 
-            notify_disk_space(disk.display_name or disk.serial_number, level, int(used), int(total))
+            notifications.disk_space(disk, level, int(used), int(total))
         return level
     return None
 

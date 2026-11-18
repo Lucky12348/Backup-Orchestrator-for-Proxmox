@@ -10,18 +10,6 @@ import type {
   ExternalBackupPreview,
   ExternalBackupRun,
   ExternalDisk,
-  HostNotifHistory,
-  HostNotifHistoryStatus,
-  HostNotifQueue,
-  HostNotifTemplates,
-  HostNotifTemplatesResponse,
-  HostNotifTestResult,
-  MaintenanceAction,
-  MaintenanceComponentStatus,
-  MaintenanceStatus,
-  NotificationPreferences,
-  NotificationStatus,
-  NotificationTestResult,
   ScheduledBackupEvent,
   ScheduledBackupEventPayload,
   ScheduledBackupCalendarOccurrence,
@@ -306,20 +294,8 @@ export function getUnplannedAssets() {
   return request<UnplannedAsset[]>("/planning/unplanned-assets");
 }
 
-export function getNotificationPreferences() {
-  return request<NotificationPreferences>("/notifications/preferences");
-}
 
-export function updateNotificationPreferences(payload: Partial<NotificationPreferences>) {
-  return request<NotificationPreferences>("/notifications/preferences", {
-    method: "PATCH",
-    body: JSON.stringify(payload),
-  });
-}
 
-export function resetNotificationPreferences() {
-  return request<NotificationPreferences>("/notifications/preferences/reset", { method: "POST" });
-}
 
 export function getExternalBackupPreview(diskId: number) {
   return request<ExternalBackupPreview>(`/external-backups/preview/${diskId}`);
@@ -462,67 +438,16 @@ export function triggerAutoSync() {
   return request<AutoSyncResult>("/system/auto-sync", { method: "POST" });
 }
 
-export function getMaintenanceStatus() {
-  return request<MaintenanceStatus>("/maintenance/updates/status");
-}
 
-export function checkMaintenanceComponent(component: "app" | "proxmox-agent" | "pbs-agent") {
-  return request<MaintenanceComponentStatus>(`/maintenance/updates/${component}/check`, {
-    method: "POST",
-  });
-}
 
-export function updateMaintenanceComponent(component: "app" | "proxmox-agent" | "pbs-agent") {
-  return request<MaintenanceAction>(`/maintenance/updates/${component}/update`, {
-    method: "POST",
-  });
-}
 
-export function updateAllMaintenanceComponents() {
-  return request<MaintenanceAction[]>("/maintenance/updates/update-all", {
-    method: "POST",
-  });
-}
 
-export function getNotificationStatus() {
-  return request<NotificationStatus>("/notifications/status");
-}
 
-export function sendTestNotification() {
-  return request<NotificationTestResult>("/notifications/test", {
-    method: "POST",
-  });
-}
 
-export function getHostNotifTemplates() {
-  return request<HostNotifTemplatesResponse>("/notifications/host/templates");
-}
 
-export function saveHostNotifTemplates(templates: HostNotifTemplates) {
-  return request<HostNotifTemplatesResponse>("/notifications/host/templates", {
-    method: "PUT",
-    body: JSON.stringify(templates),
-  });
-}
 
-export function testHostNotifEvent(event: string, vars: Record<string, string>) {
-  return request<HostNotifTestResult>("/notifications/host/test", {
-    method: "POST",
-    body: JSON.stringify({ event, vars }),
-  });
-}
 
-export function getHostNotifHistory(filters: { limit?: number; event?: string; status?: HostNotifHistoryStatus | "" }) {
-  const params = new URLSearchParams();
-  params.set("limit", String(filters.limit ?? 200));
-  if (filters.event) params.set("event", filters.event);
-  if (filters.status) params.set("status", filters.status);
-  return request<HostNotifHistory>(`/notifications/host/history?${params.toString()}`);
-}
 
-export function getHostNotifQueue() {
-  return request<HostNotifQueue>("/notifications/host/queue");
-}
 
 export function getActivityEvents(limit = 100) {
   return request<ActivityEvent[]>(`/activity-events?limit=${limit}`);
@@ -595,22 +520,7 @@ export function updateAgentNow(agentId: number) {
 }
 
 /** Settings › Agents and disks: AUTO_UPDATE_AGENTS (agents) and MIN_DISK_SIZE_GIB (general). */
-export async function getAgentAndDiskSettings(): Promise<{ autoUpdate: boolean; minSizeGib: number }> {
-  const [agents, general] = await Promise.all([
-    request<{ key: string; value: unknown }[]>("/settings?group=agents"),
-    request<{ key: string; value: unknown }[]>("/settings?group=general"),
-  ]);
-  const auto = agents.find((item) => item.key === "AUTO_UPDATE_AGENTS")?.value;
-  const min = general.find((item) => item.key === "MIN_DISK_SIZE_GIB")?.value;
-  return { autoUpdate: auto !== false, minSizeGib: typeof min === "number" ? min : 32 };
-}
 
-export function saveAgentAndDiskSettings(autoUpdate: boolean, minSizeGib: number) {
-  return request<unknown>("/settings", {
-    method: "PATCH",
-    body: JSON.stringify({ values: { AUTO_UPDATE_AGENTS: autoUpdate, MIN_DISK_SIZE_GIB: minSizeGib } }),
-  });
-}
 
 export interface ReadinessReason {
   code: string;
@@ -920,18 +830,157 @@ export function dismissDiskVerify(diskId: number) {
   return request<ExternalDisk>(`/disks/${diskId}/verify/dismiss`, { method: "POST" });
 }
 
-interface SettingItem {
+export interface SettingItem {
   key: string;
   value: unknown;
 }
 
 /** Forgotten-rotation reminder (ROTATION_STALE_DAYS, all disks). */
 export async function getRotationStaleDays(): Promise<number> {
-  const items = await request<SettingItem[]>("/settings?group=general");
+  const items = await request<SettingItem[]>("/settings?group=backups");
   const value = items.find((item) => item.key === "ROTATION_STALE_DAYS")?.value;
   return typeof value === "number" ? value : 30;
 }
 
 export function setRotationStaleDays(days: number) {
   return request<SettingItem[]>("/settings", { method: "PATCH", body: JSON.stringify({ values: { ROTATION_STALE_DAYS: days } }) });
+}
+
+// --- Notifications (Phase 5j: Apprise channels) -------------------------------------------
+
+export type NotificationKind = "ntfy" | "gotify" | "discord" | "telegram" | "email" | "webhook" | "apprise";
+export type NotificationLevel = "info" | "warning" | "error";
+
+export interface NotificationChannel {
+  id: number;
+  name: string;
+  kind: NotificationKind;
+  enabled: boolean;
+  config: Record<string, unknown>;
+  /** Names of the secrets stored for this channel; their values are never returned. */
+  secrets_set: string[];
+  events: string[];
+  min_level: NotificationLevel;
+  quiet_start: string | null;
+  quiet_end: string | null;
+  digest: boolean;
+  digest_time: string;
+}
+
+/** Create / update / test body. `secrets`: a string replaces, null clears, absent keeps. */
+export interface NotificationChannelInput {
+  channel_id?: number;
+  name: string;
+  kind: NotificationKind;
+  enabled: boolean;
+  config: Record<string, unknown>;
+  secrets: Record<string, string | null>;
+  events: string[];
+  min_level: NotificationLevel;
+  quiet_start: string | null;
+  quiet_end: string | null;
+  digest: boolean;
+  digest_time: string;
+}
+
+export interface NotificationCatalog {
+  events: { key: string; group: string; level: NotificationLevel }[];
+  groups: string[];
+  levels: NotificationLevel[];
+  kinds: Record<NotificationKind, { name: string; secret: boolean; required: boolean }[]>;
+}
+
+export interface NotificationDelivery {
+  id: number;
+  channel_id: number | null;
+  channel_name: string;
+  event: string;
+  level: NotificationLevel;
+  title: string;
+  body: string;
+  link: string | null;
+  status: "pending" | "digest" | "sent" | "failed" | "cancelled";
+  attempts: number;
+  duplicates: number;
+  next_attempt_at: string | null;
+  last_error: string | null;
+  created_at: string;
+  sent_at: string | null;
+}
+
+export interface NotificationTestResult {
+  ok: boolean;
+  error: string | null;
+}
+
+export function getNotificationCatalog() {
+  return request<NotificationCatalog>("/notifications/catalog");
+}
+
+export function getNotificationChannels() {
+  return request<NotificationChannel[]>("/notifications/channels");
+}
+
+export function createNotificationChannel(payload: NotificationChannelInput) {
+  return request<NotificationChannel>("/notifications/channels", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function updateNotificationChannel(id: number, payload: NotificationChannelInput) {
+  return request<NotificationChannel>(`/notifications/channels/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+}
+
+export function deleteNotificationChannel(id: number) {
+  return request<void>(`/notifications/channels/${id}`, { method: "DELETE" });
+}
+
+export function testNotificationChannel(id: number) {
+  return request<NotificationTestResult>(`/notifications/channels/${id}/test`, { method: "POST" });
+}
+
+/** "Send a test" from the form, before saving (reuses the stored secrets when editing). */
+export function testNotificationDraft(payload: NotificationChannelInput) {
+  return request<NotificationTestResult>("/notifications/test", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function getNotificationDeliveries(limit = 100) {
+  return request<NotificationDelivery[]>(`/notifications/deliveries?limit=${limit}`);
+}
+
+export function retryNotificationDelivery(id: number) {
+  return request<NotificationDelivery>(`/notifications/deliveries/${id}/retry`, { method: "POST" });
+}
+
+// --- Settings (Phase 5j: sections saved one by one) ----------------------------------------
+
+export function getSettingsGroups(groups: string[]) {
+  const query = groups.map((group) => `group=${encodeURIComponent(group)}`).join("&");
+  return request<SettingItem[]>(`/settings?${query}`);
+}
+
+export function patchSettings(values: Record<string, unknown>) {
+  return request<SettingItem[]>("/settings", { method: "PATCH", body: JSON.stringify({ values }) });
+}
+
+export interface RetentionPreview {
+  runs: number;
+  logs: number;
+  protected: number;
+}
+
+export function previewRetention(policy: { mode: string; days: number; keep_per_disk: number; log_detail_days: number }) {
+  return request<RetentionPreview>("/settings/retention/preview", { method: "POST", body: JSON.stringify(policy) });
+}
+
+export interface AboutInfo {
+  version: string;
+  latest: { version: string; url: string; published_at: string | null } | null;
+  update_available: boolean | null;
+  agent_build: { version: string; build_id: string } | null;
+  agents: { role: string; hostname: string; version: string | null; build_id: string | null; up_to_date: boolean; last_seen_at: string | null }[];
+  links: { repository: string; releases: string; docs: string };
+  update_command: string;
+}
+
+export function getAbout(refresh = false) {
+  return request<AboutInfo>(`/system/about${refresh ? "?refresh=true" : ""}`);
 }

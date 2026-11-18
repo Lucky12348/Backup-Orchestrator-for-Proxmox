@@ -36,9 +36,10 @@ def test_validate_secret_key_rejects_default_and_short_keys():
 
 def test_registry_covers_settings_fields():
     fields = {spec.field for spec in SETTING_SPECS}
-    assert {"pve_api_token_secret", "pbs_datastore", "host_agent_token", "ntfy_password"} <= fields
+    assert {"pve_api_token_secret", "pbs_datastore", "host_agent_token", "public_url", "run_history_mode"} <= fields
     secrets = {spec.key for spec in SETTING_SPECS if spec.secret}
-    assert secrets == {"PVE_API_TOKEN_SECRET", "PBS_TOKEN_SECRET", "HOST_AGENT_TOKEN", "PBS_AGENT_TOKEN", "NTFY_PASSWORD"}
+    # Phase 5j: notification secrets live with their channel, not in app_settings.
+    assert secrets == {"PVE_API_TOKEN_SECRET", "PBS_TOKEN_SECRET", "HOST_AGENT_TOKEN", "PBS_AGENT_TOKEN"}
 
 
 def test_update_encrypts_secrets_and_types_values(db, secret_key):
@@ -88,11 +89,11 @@ def test_view_never_exposes_secrets(db, secret_key):
 
 
 def test_unreadable_secret_is_skipped_not_fatal(db, secret_key, monkeypatch):
-    update_settings(db, {"NTFY_PASSWORD": "pw", "NTFY_TOPIC": "topic"})
+    update_settings(db, {"PBS_TOKEN_SECRET": "pw", "PBS_DATASTORE": "main"})
     monkeypatch.setenv("AUTH_SECRET_KEY", "rotated-secret-key-0123456789abcdef0123")
     overrides = load_overrides(db)
-    assert "ntfy_password" not in overrides
-    assert overrides["ntfy_topic"] == "topic"
+    assert "pbs_token_secret" not in overrides
+    assert overrides["pbs_datastore"] == "main"
 
 
 def test_env_import_runs_once(db, secret_key):

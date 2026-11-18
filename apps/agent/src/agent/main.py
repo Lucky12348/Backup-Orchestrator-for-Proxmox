@@ -69,7 +69,6 @@ AGENT_CAPABILITIES = {
     "qemu-usb-attach",
     "qemu-usb-detach",
     "disk-spin-down",
-    "ntfy-notifications",
     "pve-provision-access",
     "pve-guest-addresses",
     "pve-vm-addresses",
@@ -130,14 +129,7 @@ class AgentSettings:
     server_port: int = int(os.getenv("AGENT_SERVER_PORT", "8081"))
     server_token: str = os.getenv("AGENT_SERVER_TOKEN", "")
     repo_path: str = os.getenv("AGENT_REPO_PATH", os.getcwd())
-    maintenance_timeout_seconds: float = float(os.getenv("AGENT_MAINTENANCE_TIMEOUT_SECONDS", "120"))
-    # systemd unit for this agent's own long-running HTTP server (e.g.
-    # proxmox-backup-orchestrator-agent-http.service). Used to self-restart
-    # after a successful `git pull` so a code update actually takes effect
-    # without a manual `systemctl restart`. Empty means "not configured" and
-    # the restart step is skipped with a clear error in the maintenance log.
-    http_service_name: str = os.getenv("AGENT_HTTP_SERVICE_NAME", "")
-    # "host" (Proxmox VE host: QEMU USB passthrough, spin-down, ntfy engine) or
+    # "host" (Proxmox VE host: QEMU USB passthrough, spin-down) or
     # "pbs" (PBS VM: disk preparation, export, eject). Only the routes of that
     # role are served (see agent.server.ROUTE_ROLES). Empty = every route, the
     # legacy behaviour, logged as a warning at startup.
@@ -3315,155 +3307,6 @@ def cleanup_legacy_external_export_objects(settings: AgentSettings | None = None
         "stdout_log": "\n\n".join(stdout_logs) or None,
         "stderr_log": "\n\n".join([*stderr_logs, *errors]) or None,
         "return_code": 0 if not errors else 1,
-    }
-
-
-def maintenance_check_result(settings: AgentSettings | None = None) -> dict[str, Any]:
-    settings = settings or AgentSettings()
-    status_payload = _maintenance_git_status(
-        Path(settings.repo_path),
-        settings.maintenance_timeout_seconds,
-    )
-    return {
-        "ok": status_payload["status"] != "error",
-        "message": "Maintenance status checked.",
-        "status": status_payload,
-    }
-
-
-def maintenance_update_result(settings: AgentSettings | None = None) -> dict[str, Any]:
-    settings = settings or AgentSettings()
-    repo = Path(settings.repo_path)
-    current_status = _maintenance_git_status(repo, settings.maintenance_timeout_seconds)
-    if current_status["status"] == "error":
-        return {
-            "ok": False,
-            "message": current_status["error"] or "Maintenance check failed.",
-            "action_status": "error",
-            "status": current_status,
-            "logs": current_status["logs"],
-            "return_code": 1,
-        }
-    if current_status["local_commit"] == current_status["remote_commit"]:
-        return {
-            "ok": True,
-            "message": "Already up to date.",
-            "action_status": "up_to_date",
-            "status": current_status,
-            "logs": current_status["logs"],
-            "return_code": 0,
-        }
-
-    logs = _maintenance_run_sequence(
-        repo,
-        [
-            ["git", "status", "--short"],
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            ["git", "rev-parse", "HEAD"],
-            ["git", "rev-parse", "@{u}"],
-            ["git", "pull", "--ff-only"],
-        ],
-        settings.maintenance_timeout_seconds,
-    )
-    status_payload = _maintenance_git_status(repo, settings.maintenance_timeout_seconds)
-    if all(item["return_code"] == 0 for item in logs) and status_payload["status"] != "error":
-        logs.append(_maintenance_restart_http_service(repo, settings))
-    ok = all(item["return_code"] == 0 for item in logs) and status_payload["status"] != "error"
-    return {
-        "ok": ok,
-        "message": "Agent update completed." if ok else "Agent update failed.",
-        "action_status": "success" if ok else "error",
-        "status": status_payload,
-        "logs": logs,
-        "return_code": 0 if ok else 1,
-    }
-
-
-def _maintenance_restart_http_service_command(settings: AgentSettings) -> list[str]:
-    if shutil.which("systemd-run"):
-        return [
-            "systemd-run",
-            "--on-active=10",
-            "--unit",
-            "pbo-agent-http-restart",
-            "systemctl",
-            "restart",
-            settings.http_service_name,
-        ]
-    return ["systemctl", "try-restart", settings.http_service_name, "--no-block"]
-
-
-def _maintenance_restart_http_service(repo: Path, settings: AgentSettings) -> dict[str, Any]:
-    if not settings.http_service_name:
-        return {
-            "command": "systemctl restart <AGENT_HTTP_SERVICE_NAME>",
-            "stdout": None,
-            "stderr": (
-                "AGENT_HTTP_SERVICE_NAME is not configured; code was pulled but the "
-                "running agent HTTP service was not restarted. Restart it manually."
-            ),
-            "return_code": 1,
-        }
-    if not shutil.which("systemctl"):
-        return {
-            "command": "systemctl restart " + settings.http_service_name,
-            "stdout": None,
-            "stderr": "systemctl is not available; restart the agent HTTP service manually.",
-            "return_code": 1,
-        }
-    # This request's own process is a child of the -http.service being restarted, so the
-    # restart is scheduled a few seconds out (systemd-run --on-active) rather than run inline
-    # — otherwise systemctl would tear down the process handling this very HTTP response.
-    return _maintenance_run(
-        repo,
-        _maintenance_restart_http_service_command(settings),
-        settings.maintenance_timeout_seconds,
-    )
-
-
-def _maintenance_git_status(repo: Path, timeout_seconds: float) -> dict[str, Any]:
-    logs = _maintenance_run_sequence(repo, [["git", "fetch"], ["git", "status", "--short"]], timeout_seconds)
-    branch = _maintenance_run(repo, ["git", "rev-parse", "--abbrev-ref", "HEAD"], timeout_seconds)
-    local = _maintenance_run(repo, ["git", "rev-parse", "HEAD"], timeout_seconds)
-    remote = _maintenance_run(repo, ["git", "rev-parse", "@{u}"], timeout_seconds)
-    logs.extend([branch, local, remote])
-    error = next((item["stderr"] or item["stdout"] for item in logs if item["return_code"] != 0), None)
-    status = "error" if error else ("up_to_date" if local["stdout"] == remote["stdout"] else "update_available")
-    return {
-        "branch": branch["stdout"],
-        "local_commit": local["stdout"],
-        "remote_commit": remote["stdout"],
-        "status": status,
-        "error": error,
-        "logs": logs,
-    }
-
-
-def _maintenance_run_sequence(repo: Path, commands: list[list[str]], timeout_seconds: float) -> list[dict[str, Any]]:
-    logs: list[dict[str, Any]] = []
-    for command in commands:
-        result = _maintenance_run(repo, command, timeout_seconds)
-        logs.append(result)
-        if result["return_code"] != 0:
-            break
-    return logs
-
-
-def _maintenance_run(repo: Path, command: list[str], timeout_seconds: float) -> dict[str, Any]:
-    try:
-        result = run_subprocess_with_cwd(command, repo, timeout_seconds)
-    except RuntimeError as exc:
-        return {
-            "command": redact_command(command),
-            "stdout": None,
-            "stderr": str(exc),
-            "return_code": 1,
-        }
-    return {
-        "command": redact_command(result.command),
-        "stdout": result.stdout or None,
-        "stderr": result.stderr or None,
-        "return_code": result.returncode,
     }
 
 

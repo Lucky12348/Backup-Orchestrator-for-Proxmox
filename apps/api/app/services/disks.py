@@ -6,22 +6,19 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.models import AgentHeartbeat, ExternalDisk, ScheduledBackupEvent
+from app.models import AgentHeartbeat, ExternalDisk
 from app.schemas.agent import AgentDiskReportCreate, AgentHeartbeatCreate
+from app.services import notifications
 from app.services import disk_events, disk_guards
 from app.services.disk_events import is_ejected
 from app.services.host_agent import HostAgentError, get_host_agent_client, get_pbs_agent_client
 from app.services.disk_identity import canonical_serial_number, serial_aliases, serials_match
-from app.services.notifications import (
-    notify_disk_health,
-    get_disk_detection_notify_cooldown_seconds,
-    notify_known_disk_detected,
-    notify_new_disk_detected,
-)
 from app.services.planning_scheduler import handle_disk_detected
 
 
 logger = logging.getLogger(__name__)
+# A disk plugged in again within 30 min is not detected again.
+DISK_DETECTION_COOLDOWN_SECONDS = 1800
 # B43: the run is ejecting this disk (detach, spin-down / power-off): it
 # disappearing from the host is expected, not a removal without eject.
 EJECT_RUN_STEPS = frozenset({"eject", "eject_flush", "auto_eject", "ejected", "release", "success"})
@@ -95,7 +92,7 @@ def ingest_agent_disk_report(db: Session, payload: AgentDiskReportCreate) -> lis
     removed_disks: list[ExternalDisk] = []
     updated_disks: list[ExternalDisk] = []
     before_snapshots: dict[int, tuple] = {}
-    health_notifications: list[tuple[str, str, str | None]] = []
+    health_notifications: list[tuple[ExternalDisk, str, str | None]] = []
     pulled_disks: list[ExternalDisk] = []
 
     report_marker = db.scalar(
@@ -315,23 +312,13 @@ def ingest_agent_disk_report(db: Session, payload: AgentDiskReportCreate) -> lis
         except Exception:
             logger.exception("Could not handle disk %s pulled out while handed to PBS", disk.id)
 
-    for label, smart_status, detail in health_notifications:
-        notify_disk_health(label, smart_status, detail)
+    for smart_disk, smart_status, detail in health_notifications:
+        notifications.smart_degraded(smart_disk, smart_status, detail)
 
     for detection_type, disk in detection_notifications:
         try:
-            matched_planned_disk = bool(
-                any(_disk_matches_event_serial(disk, event.disk_serial) for event in db.scalars(select(ScheduledBackupEvent)))
-            )
-            description = _format_disk_detection_description(
-                disk,
-                matched_planned_disk=matched_planned_disk,
-                matched_existing_serial=disk.serial_number,
-            )
             if detection_type == "new":
-                notify_new_disk_detected(description)
-            else:
-                notify_known_disk_detected(description)
+                notifications.disk_new(disk)
         except Exception:
             continue
 
@@ -348,7 +335,7 @@ def _apply_hardware(
     disk: ExternalDisk,
     item,
     observed_at: datetime,
-    health_notifications: list[tuple[str, str, str | None]],
+    health_notifications: list[tuple[ExternalDisk, str, str | None]],
 ) -> None:
     """Phase 5f: rotation/transport (disk kind), USB link speed and SMART."""
     if item.rotational is not None:
@@ -367,7 +354,7 @@ def _apply_hardware(
     disk.smart_checked_at = smart.checked_at.replace(tzinfo=None) if smart.checked_at else observed_at
     if smart.status in {"warning", "danger"} and smart.status != previous:
         detail = ", ".join(smart.reasons) or smart.message
-        health_notifications.append((disk.display_name or disk.serial_number, smart.status, detail))
+        health_notifications.append((disk, smart.status, detail))
 
 
 def _find_existing_disk_by_serial_identity(db: Session, reported_serial: str) -> ExternalDisk | None:
@@ -496,34 +483,7 @@ def _disk_detection_cooldown_elapsed(disk: ExternalDisk, observed_at: datetime) 
     previous = disk.last_detection_notified_at
     if previous is None:
         return True
-    return (observed_at - previous).total_seconds() >= get_disk_detection_notify_cooldown_seconds()
-
-
-def _format_disk_detection_description(
-    disk: ExternalDisk,
-    *,
-    matched_planned_disk: bool = False,
-    matched_existing_serial: str | None = None,
-) -> str:
-    parts = [f"Disque: {disk.display_name}"]
-    if disk.model_name:
-        parts.append(f"Modele: {disk.model_name}")
-    if disk.reported_serial_number:
-        parts.append(f"Serie reportee: {disk.reported_serial_number}")
-    parts.append(f"Serie canonique: {disk.canonical_serial_number or canonical_serial_number(disk.serial_number)}")
-    if matched_existing_serial:
-        parts.append(f"Serie existante: {matched_existing_serial}")
-    if disk.mount_path:
-        parts.append(f"Chemin: {disk.mount_path}")
-    if disk.proxmox_usb_mapping:
-        parts.append(f"USB: {disk.proxmox_usb_mapping}")
-    if disk.detection_reason:
-        parts.append(f"Detection: {disk.detection_reason}")
-    parts.append("Disque planifie: oui" if matched_planned_disk else "Disque planifie: non")
-    capacity = disk.usable_capacity_gb or disk.capacity_gb
-    if capacity:
-        parts.append(f"Taille: {capacity} GB")
-    return ". ".join(parts)
+    return (observed_at - previous).total_seconds() >= DISK_DETECTION_COOLDOWN_SECONDS
 
 
 def _preferred_disk_visibility_condition():

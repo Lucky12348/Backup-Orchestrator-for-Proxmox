@@ -6,6 +6,7 @@ import subprocess
 
 from fastapi import APIRouter
 
+from app.api.dependencies import DbSession
 from app.core.config import get_settings
 from app.schemas.system import AutoSyncRead, SystemTimeRead
 from app.services.host_agent import HostAgentError, get_host_agent_client, get_pbs_agent_client
@@ -83,3 +84,11 @@ def _git_sha() -> str | None:
         return subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     except Exception:
         return None
+
+
+@router.get("/about")
+def get_about(db: DbSession, refresh: bool = False) -> dict[str, object]:
+    """Settings › About: versions of PBO and its agents, newer release (cached 6 h)."""
+    from app.services.about import about
+
+    return about(db, refresh=refresh)

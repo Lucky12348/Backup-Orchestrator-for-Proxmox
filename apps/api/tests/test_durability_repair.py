@@ -31,7 +31,7 @@ def _codes(db, run_id):
 def _with_runs(stack, fake, session_factory):
     _flow(stack, fake, session_factory)
     stack.enter_context(patch("app.services.disk_eject._detach_usb_passthrough_from_pbs_vm", lambda disk: "detached"))
-    stack.enter_context(patch("app.services.notifications.notify_unsafe_removal", lambda *a: None))
+    stack.enter_context(patch("app.services.notifications.unsafe_removal", lambda *a: None))
 
 
 def _backed_up(db, session_factory, fake):

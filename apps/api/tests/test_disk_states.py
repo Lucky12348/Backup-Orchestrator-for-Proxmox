@@ -21,7 +21,7 @@ ADMIN = {"username": "admin", "password": "correct horse battery"}
 def _isolated(monkeypatch):
     events.bus.reset()
     run_events.reset_agent_presence()
-    for name in ("notify_new_disk_detected", "notify_known_disk_detected", "handle_disk_detected"):
+    for name in ("handle_disk_detected",):
         monkeypatch.setattr(f"app.services.disks.{name}", lambda *args, **kwargs: None)
     yield
     events.bus.reset()

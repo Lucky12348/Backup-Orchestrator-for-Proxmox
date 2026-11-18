@@ -45,6 +45,30 @@ Never use it for decoration: no tinted backgrounds, tiles or chips. The
 disk colours (`diskProfile.COLOR_CLASS`) are the disks' identity, chosen by
 the operator; they are not theme colours.
 
+### Accents (Settings › Appearance, Phase 5j)
+
+Steel blue is the default. Five predefined alternatives replace `accent`,
+`accent-text` and `focus` (`ui.css`, `[data-accent]`). Every pair is AA:
+white text on the accent ≥ 4.7:1, accent text ≥ 6.8:1, focus ≥ 5.7:1.
+
+| Accent | Light accent / text | Dark accent / text / focus |
+| --- | --- | --- |
+| steel | `#2F5D8A` / `#2B5782` | `#3A6A9E` / `#8DB3DB` / `#5C8CC2` |
+| teal | `#1F6B6B` / `#1C6363` | `#2A7A7A` / `#7CC4C2` / `#4FA3A1` |
+| green | `#2F6B45` / `#2A6340` | `#3A7A52` / `#86C49B` / `#5AA676` |
+| amber | `#8A5A12` / `#7D5210` | `#9A6A1E` / `#E0B36A` / `#C99A4A` |
+| rose | `#A13A55` / `#963550` | `#A84862` / `#EB9AB0` / `#D27891` |
+| violet | `#5E4A9E` / `#574394` | `#6B57AA` / `#B5A6EA` / `#9585D6` |
+
+Other appearance settings, applied as attributes on the `.pbo-ui` root by
+`ui/AppearanceProvider.tsx`:
+
+- **Density** "compact" draws the page content at 90 %
+  (`[data-shell-content]`); the shell keeps its size.
+- **Collapsed menu** shows icons only, with each label as a tooltip.
+- **Reduce animations**: "system" follows the OS, "yes" (`data-motion=reduce`)
+  always, "no" (`data-motion=full`) never.
+
 ## Typography
 
 - **Font**: Geist for everything. Figures are tabular everywhere

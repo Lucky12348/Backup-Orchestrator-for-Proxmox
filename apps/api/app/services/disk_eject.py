@@ -8,13 +8,13 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models import BackupRunStatus, ExternalBackupMode, ExternalBackupRun, ExternalDisk
+from app.services import notifications
 from app.services.disk_handoff import _detach_usb_slot_via_host_agent, _get_qemu_config_usb_map
 from app.services import disk_events
 from app.services.external_backup_agent import AgentCommandError, get_external_backup_agent_bridge
 from app.services.external_backup_execution import build_dedicated_datastore_name
 from app.services.external_backups import append_external_backup_run_log
 from app.services.host_agent import get_host_agent_client
-from app.services.notifications import notify_disk_eject_not_finished, notify_disk_eject_ready
 
 
 logger = logging.getLogger(__name__)
@@ -88,7 +88,6 @@ def eject_dedicated_external_disk(db: Session, disk_id: int) -> ExternalDisk:
         db.add(run)
         db.commit()
         db.refresh(disk)
-        notify_disk_eject_ready(_label(disk))
         return disk
     except AgentCommandError as exc:
         db.refresh(run)
@@ -105,7 +104,7 @@ def eject_dedicated_external_disk(db: Session, disk_id: int) -> ExternalDisk:
                 current_step=EJECT_NOT_FINISHED_STEP,
             )
             logger.warning("Dedicated PBS datastore eject not finished for disk %s: %s", disk.serial_number, exc)
-            notify_disk_eject_not_finished(_label(disk), str(exc))
+            notifications.run_finished(run, disk)
             raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail=EJECT_NOT_FINISHED_MESSAGE) from exc
         _finish_eject_activity_failed(db, run, str(exc), exc.stdout_log, exc.stderr_log, exc.command_summary, exc.execution_cwd, exc.return_code)
         logger.warning("Dedicated PBS datastore eject failed for disk %s: %s", disk.serial_number, exc)
@@ -138,7 +137,7 @@ def eject_disk_within_run(db: Session, disk: ExternalDisk, run: ExternalBackupRu
     except AgentCommandError as exc:
         db.refresh(run)
         if exc.payload.get("error_code") == EJECT_NOT_FINISHED_ERROR_CODE:
-            notify_disk_eject_not_finished(_label(disk), str(exc))
+            notifications.run_finished(run, disk)
             _log_auto_eject_failure(db, run, EJECT_NOT_FINISHED_MESSAGE)
         else:
             _log_auto_eject_failure(db, run, str(exc))
@@ -152,7 +151,6 @@ def eject_disk_within_run(db: Session, disk: ExternalDisk, run: ExternalBackupRu
         _log_auto_eject_failure(db, run, str(exc))
         return False
     append_external_backup_run_log(db, run.id, step="ejected", message=AUTO_EJECTED_MESSAGE)
-    notify_disk_eject_ready(_label(disk))
     return True
 
 
@@ -291,7 +289,6 @@ def _eject_from_host(db: Session, disk: ExternalDisk) -> ExternalDisk:
     db.commit()
     db.refresh(disk)
     disk_events.publish_report_events([], [], [disk])
-    notify_disk_eject_ready(_label(disk))
     return disk
 
 

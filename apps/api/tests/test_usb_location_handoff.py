@@ -150,7 +150,7 @@ def test_non_usb_disk_falls_back_to_serial_matching():
 
 
 def test_report_stores_the_usb_location(db, monkeypatch):
-    for name in ("notify_new_disk_detected", "notify_known_disk_detected", "handle_disk_detected"):
+    for name in ("handle_disk_detected",):
         monkeypatch.setattr(f"app.services.disks.{name}", lambda *a, **k: None)
     payload = AgentDiskReportCreate(
         hostname="pve",

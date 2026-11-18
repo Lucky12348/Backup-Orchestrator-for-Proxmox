@@ -15,7 +15,8 @@ import { LaunchBackupDialog, type LaunchChoice } from "./views/disks/LaunchBacku
 import { ActivityView } from "./views/activity/ActivityView";
 import { PlanningView } from "./views/planning/PlanningView";
 import { IntegrationsView } from "./views/integrations/IntegrationsView";
-import { AgentDiskSettings } from "./views/settings/AgentDiskSettings";
+import { NotificationsView } from "./views/notifications/NotificationsView";
+import { SettingsView } from "./views/settings/SettingsView";
 import { CommandsProvider } from "./views/commands";
 import { ResourcesView } from "./views/resources/ResourcesView";
 import { ProxmoxJobsSection } from "./views/resources/ProxmoxJobsSection";
@@ -25,8 +26,6 @@ import { ErrorBanner } from "./components/ErrorBanner";
 import { LoadingBlock } from "./components/LoadingBlock";
 import { useAppData } from "./hooks/useAppData";
 import { translations, type Language } from "./i18n";
-import { NotificationsPage } from "./pages/NotificationsPage";
-import { SettingsPage } from "./pages/SettingsPage";
 import type { ExternalDisk } from "./types";
 
 interface ConfirmState {
@@ -266,16 +265,8 @@ function AuthenticatedApp() {
             }
             path="/activity"
           />
-          <Route element={<LegacyPage><NotificationsPage language={language} t={t} /></LegacyPage>} path="/notifications" />
-          <Route
-            element={
-              <>
-                <AgentDiskSettings t={t} />
-                <LegacyPage><SettingsPage t={t} /></LegacyPage>
-              </>
-            }
-            path="/settings"
-          />
+          <Route element={<NotificationsView language={language} t={t} />} path="/notifications" />
+          <Route element={<SettingsView language={language} t={t} />} path="/settings" />
         </Routes>
         </CommandsProvider>
 

@@ -1,95 +1,131 @@
-from fastapi import APIRouter
+"""Notification channels, "Send a test", the send journal (Phase 5j).
+
+Secrets are write-only: responses carry `secrets_set` (names of the secrets
+that are stored), never a value. Errors are `{code, field}` translated by the UI.
+"""
+
+from typing import Any
+
+from fastapi import APIRouter, HTTPException, Query, Response, status
+from sqlalchemy import select
 
 from app.api.dependencies import DbSession
-from app.schemas.notifications import (
-    NotificationPreferencesRead,
-    NotificationPreferencesUpdate,
-    NotificationStatusRead,
-    NotificationTestRead,
+from app.models import NotificationChannel, NotificationDelivery
+from app.services import notification_catalog as catalog
+from app.services import notification_engine as engine
+from app.services.notification_channels import (
+    EMAIL_SECURITY,
+    KINDS,
+    ChannelError,
+    apply_payload,
+    channel_view,
+    draft_channel,
+    list_channels,
 )
-from app.services.notifications import (
-    get_notification_preferences,
-    get_notification_service,
-    reset_notification_preferences,
-    update_notification_preferences,
-)
-
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
 
-@router.get("/status", response_model=NotificationStatusRead)
-def get_notifications_status() -> NotificationStatusRead:
-    status = get_notification_service().status()
-    return NotificationStatusRead(
-        enabled=status.enabled,
-        provider=status.provider,
-        configured=status.configured,
-        base_url=status.base_url,
-        topic=status.topic,
-        username=status.username,
-        events=status.events,
-        low_coverage_threshold_percent=status.low_coverage_threshold_percent,
-        environment_enabled=status.environment_enabled,
-        preferences_enabled=status.preferences_enabled,
-        disk_detection_notify_cooldown_seconds=status.disk_detection_notify_cooldown_seconds,
-        sources=status.sources,
-    )
+def _invalid(exc: ChannelError) -> HTTPException:
+    return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail={"code": exc.code, "field": exc.field})
 
 
-@router.get("/preferences", response_model=NotificationPreferencesRead)
-def get_preferences(db: DbSession) -> NotificationPreferencesRead:
-    return _preferences_read(get_notification_preferences(db))
+def _get(db: DbSession, channel_id: int) -> NotificationChannel:
+    channel = db.get(NotificationChannel, channel_id)
+    if channel is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "channel_not_found"})
+    return channel
 
 
-@router.patch("/preferences", response_model=NotificationPreferencesRead)
-def patch_preferences(payload: NotificationPreferencesUpdate, db: DbSession) -> NotificationPreferencesRead:
-    preferences = update_notification_preferences(db, payload.model_dump(exclude_unset=True))
-    return _preferences_read(preferences)
-
-
-@router.post("/preferences/reset", response_model=NotificationPreferencesRead)
-def reset_preferences(db: DbSession) -> NotificationPreferencesRead:
-    return _preferences_read(reset_notification_preferences(db))
-
-
-@router.post("/test", response_model=NotificationTestRead)
-def send_test_notification() -> NotificationTestRead:
-    service = get_notification_service()
-    sent = service.send(
-        "PBO: Notification de test",
-        "Notification de test envoyee depuis Proxmox Backup Orchestrator.",
-        tags=["bell", "white_check_mark"],
-    )
-    return NotificationTestRead(
-        sent=sent,
-        message="Notification envoyee." if sent else "Notification non envoyee. Verifiez la configuration ntfy.",
-    )
-
-
-def _preferences_read(preferences) -> NotificationPreferencesRead:
-    values = {
-        "notifications_enabled_override": preferences.notifications_enabled_override,
-        "low_coverage_threshold_percent": preferences.low_coverage_threshold_percent,
-        "disk_detection_notify_cooldown_seconds": preferences.disk_detection_notify_cooldown_seconds,
-        "updated_at": preferences.updated_at,
-        "source": preferences.source,
+@router.get("/catalog")
+def get_catalog() -> dict[str, Any]:
+    return {
+        "events": [{"key": event.key, "group": event.group, "level": event.level} for event in catalog.EVENTS],
+        "groups": list(catalog.GROUPS),
+        "levels": list(catalog.LEVELS),
+        "kinds": {kind: [{"name": f.name, "secret": f.secret, "required": f.required} for f in fields] for kind, fields in KINDS.items()},
+        "email_security": list(EMAIL_SECURITY),
     }
-    values.update(
-        {
-            "notify_on_backup_success": preferences.events["backup_success"],
-            "notify_on_backup_failure": preferences.events["backup_failure"],
-            "notify_on_disk_eject_ready": preferences.events["disk_eject_ready"],
-            "notify_on_update_result": preferences.events["update_result"],
-            "notify_on_agent_degraded": preferences.events["agent_degraded"],
-            "notify_on_low_coverage": preferences.events["low_coverage"],
-            "notify_on_disk_new_detected": preferences.events["disk_new_detected"],
-            "notify_on_disk_known_detected": preferences.events["disk_known_detected"],
-            "notify_on_planned_disk_detected": preferences.events["planned_disk_detected"],
-            "notify_on_planned_backup_reminder": preferences.events["planned_backup_reminder"],
-            "notify_on_planned_backup_started": preferences.events["planned_backup_started"],
-            "notify_on_planned_confirmation_required": preferences.events["planned_confirmation_required"],
-            "notify_on_planned_backup_missed": preferences.events["planned_backup_missed"],
-        }
-    )
-    return NotificationPreferencesRead(**values)
+
+
+@router.get("/channels")
+def get_channels(db: DbSession) -> list[dict[str, Any]]:
+    return [channel_view(channel) for channel in list_channels(db)]
+
+
+@router.post("/channels", status_code=status.HTTP_201_CREATED)
+def create_channel(payload: dict[str, Any], db: DbSession) -> dict[str, Any]:
+    try:
+        channel = apply_payload(NotificationChannel(), payload, creating=True)
+    except ChannelError as exc:
+        raise _invalid(exc) from None
+    db.add(channel)
+    db.commit()
+    db.refresh(channel)
+    return channel_view(channel)
+
+
+@router.put("/channels/{channel_id}")
+def update_channel(channel_id: int, payload: dict[str, Any], db: DbSession) -> dict[str, Any]:
+    channel = _get(db, channel_id)
+    try:
+        apply_payload(channel, payload, creating=False)
+    except ChannelError as exc:
+        db.rollback()
+        raise _invalid(exc) from None
+    db.commit()
+    db.refresh(channel)
+    return channel_view(channel)
+
+
+@router.delete("/channels/{channel_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_channel(channel_id: int, db: DbSession) -> Response:
+    channel = _get(db, channel_id)
+    engine.cancel_channel_queue(db, channel.id)
+    db.delete(channel)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/channels/{channel_id}/test")
+def test_channel(channel_id: int, db: DbSession) -> dict[str, Any]:
+    return engine.send_test(db, _get(db, channel_id))
+
+
+@router.post("/test")
+def test_draft(payload: dict[str, Any], db: DbSession) -> dict[str, Any]:
+    """Test the form before saving (`channel_id` reuses the stored secrets)."""
+    stored = _get(db, int(payload["channel_id"])) if payload.get("channel_id") else None
+    try:
+        channel = draft_channel(payload, stored)
+    except ChannelError as exc:
+        raise _invalid(exc) from None
+    return engine.send_test(db, channel, record=False)
+
+
+@router.get("/deliveries")
+def get_deliveries(
+    db: DbSession,
+    limit: int = Query(default=100, ge=1, le=500),
+    channel_id: int | None = Query(default=None),
+    status_filter: str | None = Query(default=None, alias="status"),
+) -> list[dict[str, Any]]:
+    query = select(NotificationDelivery).order_by(NotificationDelivery.id.desc()).limit(limit)
+    if channel_id is not None:
+        query = query.where(NotificationDelivery.channel_id == channel_id)
+    if status_filter:
+        query = query.where(NotificationDelivery.status == status_filter)
+    return [engine.delivery_view(item) for item in db.scalars(query)]
+
+
+@router.post("/deliveries/{delivery_id}/retry")
+def retry_delivery(delivery_id: int, db: DbSession) -> dict[str, Any]:
+    delivery = db.get(NotificationDelivery, delivery_id)
+    if delivery is None or delivery.status != "failed":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": "not_retryable"})
+    delivery.status = "pending"
+    delivery.attempts = 0
+    delivery.next_attempt_at = engine._now()
+    db.commit()
+    engine._wake.set()
+    return engine.delivery_view(delivery)

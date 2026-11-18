@@ -140,8 +140,8 @@ def test_settings_endpoint_masks_and_validates(client):
     invalid = client.patch("/api/v1/settings", json={"values": {"PBS_EXECUTION_VM_ID": "abc"}})
     assert invalid.status_code == 422
 
-    # Enabling notifications without topic is refused and nothing is written.
-    refused = client.patch("/api/v1/settings", json={"values": {"NOTIFICATIONS_ENABLED": True, "NTFY_TOPIC": ""}})
+    # A section that breaks a cross-setting rule is refused and nothing is written.
+    refused = client.patch("/api/v1/settings", json={"values": {"DEFAULT_RETENTION_KEEP_LAST": 0, "UI_THEME": "dark"}})
     assert refused.status_code == 422
     items = {item["key"]: item for item in client.get("/api/v1/settings").json()}
-    assert items["NOTIFICATIONS_ENABLED"]["value"] is False
+    assert items["UI_THEME"]["value"] == "system" and items["DEFAULT_RETENTION_KEEP_LAST"]["value"] == 4

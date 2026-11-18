@@ -132,7 +132,7 @@ def test_events_route_streams_with_last_event_id(client, monkeypatch):
 @pytest.fixture(autouse=True)
 def _no_side_effects(monkeypatch):
     # ntfy notifications and planning hooks are out of scope here (and slow).
-    for name in ("notify_new_disk_detected", "notify_known_disk_detected", "handle_disk_detected"):
+    for name in ("handle_disk_detected",):
         monkeypatch.setattr(f"app.services.disks.{name}", lambda *args, **kwargs: None)
 
 

@@ -17,7 +17,7 @@ from app.services.external_backup_agent import AgentCommandError, AgentCompatibi
 from app.services.external_backup_agent import get_external_backup_agent_bridge
 from app.services.external_backup_execution import build_export_target_path, get_external_backup_execution_service
 from app.services import post_sync
-from app.services.notifications import notify_backup_failure, notify_backup_success
+from app.services import notifications
 from app.services.run_log import is_progress_line
 from app.services.pbs_progress import parse_pbs_progress_line, summarize_pbs_failure
 
@@ -384,7 +384,7 @@ def execute_external_backup_run(run_id: int) -> None:
                 line="Disk no longer exists.",
             )
             _finish_run(db, run, BackupRunStatus.FAILED, "Disk no longer exists.", return_code=None)
-            notify_backup_failure(f"Disk {run.disk_id}", "failure", "Disk no longer exists.")
+            notifications.run_finished(run, None)
             return
 
         execution_service = get_external_backup_execution_service()
@@ -675,11 +675,7 @@ def execute_external_backup_run(run_id: int) -> None:
         _close_released_mappings(db, disk)
         db.add(run)
         db.commit()
-        disk_label = _format_disk_notification_label(disk, run.datastore_name)
-        if run.status == BackupRunStatus.SUCCESS:
-            notify_backup_success(disk_label)
-        elif run.status == BackupRunStatus.FAILED:
-            notify_backup_failure(disk_label, run.current_step, run.message)
+        notifications.run_finished(run, disk)
 
 
 INTERRUPTION_MESSAGES = {
@@ -881,18 +877,6 @@ def _finish_run(
     run.last_log_at = datetime.utcnow()
     db.add(run)
     db.commit()
-
-
-def _format_disk_notification_label(disk: ExternalDisk, datastore_name: str | None = None) -> str:
-    label = disk.display_name or disk.serial_number
-    details = [f"serial {disk.serial_number}"]
-    if disk.model_name:
-        details.append(f"model {disk.model_name}")
-    if datastore_name:
-        details.append(f"datastore {datastore_name}")
-    if disk.source:
-        details.append(f"source {disk.source}")
-    return f"{label} ({', '.join(details)})"
 
 
 def _journal_block(db: Session, run: ExternalBackupRun, step: str, text: str | None) -> None:

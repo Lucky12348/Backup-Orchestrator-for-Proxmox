@@ -395,6 +395,9 @@ class PBSApiBackend:
         cleaned = stale_mounts.clean(store, settings=self.settings, log=lambda message: progress("mount_datastore", message))
         if cleaned is None and state == "notmounted":
             progress("mount_datastore", STALE_MOUNTS_UNCHECKED.format(store=store))
+            from app.services import notifications
+
+            notifications.guest_agent_missing()
         elif cleaned and cleaned.get("live_mount"):
             raise GuardViolation(
                 "live_mount_present",

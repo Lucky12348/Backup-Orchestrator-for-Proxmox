@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 
 from app.api.routes import (
+    activity,
     agent,
     agents,
     assets,
@@ -9,12 +10,10 @@ from app.api.routes import (
     events,
     disks,
     external_backups,
-    host_notifications,
     datastores,
     integrations,
     integrations_pbs,
     integrations_proxmox,
-    maintenance,
     notifications,
     overview,
     planning,
@@ -58,10 +57,8 @@ protected_router.include_router(integrations_pbs.router)
 protected_router.include_router(planning.router)
 protected_router.include_router(proxmox.router)
 protected_router.include_router(system.router)
-protected_router.include_router(maintenance.router)
 protected_router.include_router(notifications.router)
-protected_router.include_router(host_notifications.router)
-protected_router.include_router(host_notifications.activity_router)
+protected_router.include_router(activity.router)
 
 api_router = APIRouter()
 api_router.include_router(public_router)

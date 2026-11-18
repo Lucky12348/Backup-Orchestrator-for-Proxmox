@@ -83,8 +83,6 @@ def _flow(stack: ExitStack, fake: FakePBS, session_factory):
         ("app.services.post_sync.get_settings", lambda: settings),
         ("app.services.external_backups.get_settings", lambda: settings),
         ("app.services.disks.get_pbs_agent_client", lambda: backend),
-        ("app.services.external_backups.notify_backup_success", lambda *a, **k: None),
-        ("app.services.external_backups.notify_backup_failure", lambda *a, **k: None),
         ("app.services.disk_profile.record_usage", lambda *a, **k: None),
     ):
         stack.enter_context(patch(target, value))
@@ -278,7 +276,7 @@ def test_unknown_contents_never_refuses(db):
 def test_usage_alerts_at_80_and_90_percent_notify_once(db):
     disk = _disk(db, prepared_as_pbs_datastore=True, filesystem_total_gb=1000, filesystem_used_gb=700)
     sent = []
-    with patch("app.services.notifications.notify_disk_space", lambda *args: sent.append(args)):
+    with patch("app.services.notifications.disk_space", lambda *args: sent.append(args)):
         now = datetime(2026, 11, 1)
         assert disk_profile.record_usage(disk, now=now) is None
         disk.filesystem_used_gb = 820
@@ -324,10 +322,10 @@ def test_agent_report_stores_smart_speed_and_kind(db):
         ],
     )
     sent = []
-    with patch("app.services.disks.notify_disk_health", lambda *args: sent.append(args)), patch("app.services.disks.handle_disk_detected", lambda *a: None):
+    with patch("app.services.disks.notifications.smart_degraded", lambda *args: sent.append(args)), patch("app.services.disks.handle_disk_detected", lambda *a: None):
         (disk,) = ingest_agent_disk_report(db, payload)
     assert (disk.smart_status, disk.smart_details["reallocated"], disk.usb_speed_mbps, disk.kind) == ("danger", 40, 480, "hdd_portable")
-    assert sent == [("Canvio", "danger", "smart_failed")]
+    assert [(d.display_name, status, detail) for d, status, detail in sent] == [("Canvio", "danger", "smart_failed")]
     assert {a["code"] for a in disk_guards.disk_alerts(db)} == {"smart_danger", "usb2_slow"}
 
 
@@ -338,7 +336,7 @@ def _report(db, *serials):
 
     disks = [{"serial_number": s, "display_name": s, "capacity_gb": 2000, "connected": True, "candidate_type": "usb"} for s in serials]
     with patch("app.services.disks.handle_disk_detected", lambda *a: None), patch("app.services.disk_guards.notify_unsafe_removal", create=True), patch(
-        "app.services.notifications.notify_unsafe_removal", lambda *a: None
+        "app.services.notifications.unsafe_removal", lambda *a: None
     ):
         return ingest_agent_disk_report(db, AgentDiskReportCreate(hostname="pve", observed_at=datetime.utcnow(), disks=disks))
 

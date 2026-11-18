@@ -262,7 +262,7 @@ legacy `verify=false` behaviour in that case.
 
 | Agent | Still needed for |
 |---|---|
-| Proxmox host agent (root) | QEMU USB passthrough attach/detach (`qm set`), VM USB config, disk spin-down, disk discovery reports (timer), host ntfy engine, host disk preparation endpoint |
+| Proxmox host agent (root) | QEMU USB passthrough attach/detach (`qm set`), VM USB config, disk spin-down, disk discovery reports (timer), host disk preparation endpoint |
 | PBS agent | Only with `PBS_MODE=agent`: legacy (fstab) datastores, coexistence mode, PBS agent maintenance |
 
 The host agent is installed with the two commands shown by the setup wizard

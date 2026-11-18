@@ -13,8 +13,9 @@ from app.db.init import create_tables, seed_database
 from app.db.migrate import run_migrations
 from app.db.preflight import DatabaseEncodingError, check_database_encoding
 from app.db.session import SessionLocal, engine
+from app.services import daily_tasks, notification_engine
 from app.services import run_events  # registers the run.* SQLAlchemy hooks
-from app.services.notifications import validate_notification_settings
+from app.services.notification_migration import migrate_legacy_ntfy
 from app.services.planning_scheduler import start_planning_scheduler, stop_planning_scheduler
 from app.services.settings_service import activate_settings_store, ensure_pbs_mode, import_settings_from_env
 from app.services.users import bootstrap_admin_from_env
@@ -43,6 +44,7 @@ def initialize_storage() -> None:
         import_settings_from_env(db, os.environ)
         ensure_pbs_mode(db)
         bootstrap_admin_from_env(db, os.environ)
+        migrate_legacy_ntfy(db, os.environ)  # Phase 5j: one channel from the old ntfy settings
     activate_settings_store(SessionLocal)
 
 
@@ -53,11 +55,6 @@ async def lifespan(_: FastAPI):
     if env_settings.dev_seed:
         seed_database()
     settings = get_settings()
-    try:
-        validate_notification_settings(settings)
-    except RuntimeError as exc:
-        # Stored settings are fixable from the UI: report, don't refuse to start.
-        logger.error("Notification settings are invalid: %s", exc)
     try:
         from app.services.disk_presence import clear_mistaken_verify_flags
 
@@ -71,7 +68,15 @@ async def lifespan(_: FastAPI):
     from app.services import passthrough_watch
 
     passthrough_watcher = asyncio.create_task(passthrough_watch.watch(SessionLocal))
+    # Phase 5j: notification queue (retries, quiet hours, daily summaries) and
+    # the daily tasks (history retention, "N days without a backup").
+    notification_engine.set_session_factory(SessionLocal)
+    notification_worker = asyncio.create_task(notification_engine.watch(SessionLocal))
+    daily_worker = asyncio.create_task(daily_tasks.watch(SessionLocal))
     yield
+    daily_worker.cancel()
+    notification_worker.cancel()
+    notification_engine.set_session_factory(None)
     passthrough_watcher.cancel()
     presence_watcher.cancel()
     stop_planning_scheduler()

@@ -8,12 +8,10 @@ services:
     restart: unless-stopped
     env_file:
       - ../../.env
-    # Only bootstrap values here. Proxmox/PBS/agents/ntfy settings live in the
+    # Only bootstrap values here. Proxmox/PBS/agents/notification settings live in the
     # database (setup wizard); a legacy .env is imported once via env_file.
     environment:
       API_PORT: ${API_PORT:-8000}
-      APP_MAINTENANCE_AGENT_BASE_URL: ${APP_MAINTENANCE_AGENT_BASE_URL:-http://host.docker.internal:8092}
-      MAINTENANCE_TIMEOUT_SECONDS: ${MAINTENANCE_TIMEOUT_SECONDS:-300}
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://postgres:postgres@db:5432/proxmox_backup_orchestrator}
       PLANNING_SCHEDULER_ENABLED: ${PLANNING_SCHEDULER_ENABLED:-true}
       PLANNING_SCHEDULER_INTERVAL_SECONDS: ${PLANNING_SCHEDULER_INTERVAL_SECONDS:-60}

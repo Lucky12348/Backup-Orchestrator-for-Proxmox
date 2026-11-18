@@ -437,34 +437,9 @@ export interface AutoSyncResult {
   pbs_triggered: boolean;
 }
 
-export interface MaintenanceCommandResult {
-  command: string;
-  stdout: string | null;
-  stderr: string | null;
-  return_code: number;
-}
 
-export interface MaintenanceComponentStatus {
-  component: string;
-  branch: string | null;
-  local_commit: string | null;
-  remote_commit: string | null;
-  status: "up_to_date" | "update_available" | "error" | string;
-  error: string | null;
-  logs: MaintenanceCommandResult[];
-}
 
-export interface MaintenanceAction {
-  component: string;
-  status: MaintenanceComponentStatus;
-  logs: MaintenanceCommandResult[];
-  action_status: "success" | "error" | string;
-  finished_at: string | null;
-}
 
-export interface MaintenanceStatus {
-  components: MaintenanceComponentStatus[];
-}
 
 export type ScheduledBackupRecurrenceType = "once" | "daily" | "weekly" | "monthly";
 export type ScheduledBackupStartMode = "auto_on_disk_detected" | "manual_confirmation";
@@ -555,107 +530,18 @@ export interface ScheduledBackupCalendarOccurrence {
   auto_eject_after_success: boolean;
 }
 
-export interface NotificationStatus {
-  enabled: boolean;
-  provider: string;
-  configured: boolean;
-  base_url: string | null;
-  topic: string | null;
-  username: string | null;
-  events: Record<string, boolean>;
-  low_coverage_threshold_percent: number;
-  environment_enabled: boolean;
-  preferences_enabled: boolean | null;
-  disk_detection_notify_cooldown_seconds: number;
-  sources: Record<string, string>;
-}
 
-export interface NotificationPreferences {
-  notifications_enabled_override: boolean | null;
-  notify_on_backup_success: boolean;
-  notify_on_backup_failure: boolean;
-  notify_on_disk_eject_ready: boolean;
-  notify_on_update_result: boolean;
-  notify_on_agent_degraded: boolean;
-  notify_on_low_coverage: boolean;
-  notify_on_disk_new_detected: boolean;
-  notify_on_disk_known_detected: boolean;
-  notify_on_planned_disk_detected: boolean;
-  notify_on_planned_backup_reminder: boolean;
-  notify_on_planned_backup_started: boolean;
-  notify_on_planned_confirmation_required: boolean;
-  notify_on_planned_backup_missed: boolean;
-  low_coverage_threshold_percent: number;
-  disk_detection_notify_cooldown_seconds: number;
-  updated_at: string | null;
-  source: string;
-}
 
-export interface NotificationTestResult {
-  sent: boolean;
-  message: string;
-}
 
 // Host-local ntfy engine on the Proxmox host (/etc/ntfy-notif/templates.json).
-export interface HostNotifDefaults {
-  topic: string;
-  click?: string;
-  icon?: string;
-  late_after_sec?: number;
-}
 
-export interface HostNotifEvent {
-  enabled: boolean;
-  priority: number;
-  emoji: string;
-  title: string;
-  message: string;
-  topic?: string;
-  click?: string;
-  icon?: string;
-}
 
-export interface HostNotifTemplates {
-  defaults: HostNotifDefaults;
-  events: Record<string, HostNotifEvent>;
-}
 
-export interface HostNotifTemplatesResponse {
-  path: string | null;
-  modified_at: string | null;
-  backup_path?: string | null;
-  templates: HostNotifTemplates;
-}
 
-export interface HostNotifTestResult {
-  ok: boolean;
-  event: string;
-  return_code: number | null;
-  message: string;
-  stdout_log: string | null;
-  stderr_log: string | null;
-}
 
-export type HostNotifHistoryStatus = "queued" | "sent" | "muted";
 
-export interface HostNotifHistoryEntry {
-  ts: number | null;
-  event: string;
-  status: string;
-  title: string | null;
-  message: string | null;
-}
 
-export interface HostNotifHistory {
-  entries: HostNotifHistoryEntry[];
-  skipped_lines: number;
-}
 
-export interface HostNotifQueue {
-  count: number;
-  oldest_ts: number | null;
-  oldest_age_seconds: number | null;
-}
 
 export interface ActivityEvent {
   id: number;

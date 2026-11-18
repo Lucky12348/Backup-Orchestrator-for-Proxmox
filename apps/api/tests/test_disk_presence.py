@@ -21,9 +21,9 @@ USB = {"port_id": "2-3", "vendor_id": "174c", "product_id": "55aa", "serial": "M
 def _isolated(monkeypatch):
     events.bus.reset()
     run_events.reset_agent_presence()
-    for name in ("notify_new_disk_detected", "notify_known_disk_detected", "handle_disk_detected"):
+    for name in ("handle_disk_detected",):
         monkeypatch.setattr(f"app.services.disks.{name}", lambda *args, **kwargs: None)
-    monkeypatch.setattr("app.services.notifications.notify_unsafe_removal", lambda *a: None)
+    monkeypatch.setattr("app.services.notifications.unsafe_removal", lambda *a: None)
     yield
     events.bus.reset()
 

@@ -13,7 +13,8 @@ from alembic.config import Config
 from sqlalchemy.engine import Engine
 
 ALEMBIC_MANAGED_TABLES = frozenset(
-    {"users", "app_settings", "agents", "agent_pairing_codes", "setup_progress", "pbs_usb_mappings", "agent_updates"}
+    {"users", "app_settings", "agents", "agent_pairing_codes", "setup_progress", "pbs_usb_mappings", "agent_updates",
+     "notification_channels", "notification_deliveries"}
 )
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
 

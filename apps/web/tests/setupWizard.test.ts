@@ -124,12 +124,13 @@ test("every setup error code is translated in French and English", async () => {
 });
 
 
-test("the optional notifications step is prepared but hidden", () => {
+test("the optional notifications step sits between PBS and Done (Phase 5j)", () => {
   assert.deepEqual([...ALL_WIZARD_STEPS], ["admin", "agent", "pve", "pbs", "notifications", "done"]);
-  assert.deepEqual([...WIZARD_STEPS], ["admin", "agent", "pve", "pbs", "done"]);
-  assert.equal(nextStep("pbs"), "done");
-  assert.equal(normalizeStep("notifications"), "pbs", "a stored hidden step resumes on PBS");
-  // Once enabled, it sits between PBS and Done.
+  assert.deepEqual([...WIZARD_STEPS], ["admin", "agent", "pve", "pbs", "notifications", "done"]);
+  assert.equal(nextStep("pbs"), "notifications");
+  // Still switchable: hidden, a stored "notifications" step resumes on PBS.
+  assert.equal(nextStep("pbs", false), "done");
+  assert.equal(normalizeStep("notifications", false), "pbs");
   assert.deepEqual(visibleSteps(true), ["admin", "agent", "pve", "pbs", "notifications", "done"]);
   assert.equal(nextStep("pbs", true), "notifications");
   assert.equal(nextStep("notifications", true), "done");
