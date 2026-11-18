@@ -47,11 +47,12 @@ def due(db: Session, now: datetime) -> bool:
 
 
 def run(db: Session, now: datetime | None = None) -> dict[str, int]:
-    from app.services import notifications, run_retention
+    from app.services import inbox, notifications, run_retention
     from app.services.disk_guards import disk_alerts
 
     now = now or datetime.now(UTC)
     result = run_retention.apply(db, now=now)
+    inbox_deleted = inbox.purge(db, now)
     reminders = 0
     for alert in disk_alerts(db, now=now.replace(tzinfo=None)):
         if alert.get("code") != "rotation_stale":
@@ -64,8 +65,11 @@ def run(db: Session, now: datetime | None = None) -> dict[str, int]:
     row.value = now.astimezone(_zone()).date().isoformat()
     db.add(row)
     db.commit()
-    logger.info("Daily tasks: %s runs deleted, %s journals cleared, %s stale reminders", len(result.runs), len(result.logs), reminders)
-    return {"runs_deleted": len(result.runs), "logs_cleared": len(result.logs), "stale_reminders": reminders}
+    logger.info(
+        "Daily tasks: %s runs deleted, %s journals cleared, %s inbox lines deleted, %s stale reminders",
+        len(result.runs), len(result.logs), inbox_deleted, reminders,
+    )
+    return {"runs_deleted": len(result.runs), "logs_cleared": len(result.logs), "inbox_deleted": inbox_deleted, "stale_reminders": reminders}
 
 
 def _tick(session_factory: Callable[[], Session]) -> None:

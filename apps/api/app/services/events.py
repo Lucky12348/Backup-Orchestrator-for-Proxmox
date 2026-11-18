@@ -38,6 +38,7 @@ EVENT_TYPES = frozenset(
         "run.progress",
         "run.log",
         "run.finished",
+        "inbox.updated",
     }
 )
 BUFFER_SIZE = 500

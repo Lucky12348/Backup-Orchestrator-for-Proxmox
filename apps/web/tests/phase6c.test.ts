@@ -67,8 +67,10 @@ test("planning form: sensible defaults and first occurrence computed", () => {
 });
 
 test("planning form: automatic name, live sentence, wait window", () => {
-  assert.equal(autoTitle(form(), FR, "fr"), "Rotation hebdo · dimanche 09:00");
-  assert.equal(autoTitle(form({ preset: "biweekly", weekdays: [0, 3] }), FR, "fr"), "Rotation toutes les 2 semaines · lundi et jeudi 09:00");
+  assert.equal(autoTitle(form(), FR, "fr"), "Rotation chaque dimanche à 09:00");
+  assert.equal(autoTitle(form({ preset: "biweekly", weekdays: [0, 3] }), FR, "fr"), "Rotation un lundi et jeudi sur 2 à 09:00");
+  // B55: a custom schedule every 1 week reads naturally, never « tous les 1 ».
+  assert.equal(autoTitle(form({ preset: "custom", unit: "weekly", interval: 1, weekdays: [2], hour: 19, minute: 37 }), FR, "fr"), "Rotation chaque mercredi à 19:37");
   assert.equal(
     planSentence(form({ diskSerials: ["a", "b"] }), ["WD 4 To", "Toshiba 3 To"], FR, "fr"),
     "Chaque dimanche à 09:00, sur WD 4 To puis Toshiba 3 To en alternance · Toutes vos sauvegardes (datastore main)",
@@ -86,7 +88,7 @@ test("planning form: inline validation", () => {
 
 test("planning form: payload, and an edit keeps the first occurrence while the schedule is unchanged", () => {
   const created = planPayload(form({ diskSerials: ["WD-A", "TOSH-B"], weekdays: [0, 3] }), FR, "fr", NOW, PARIS);
-  assert.equal(created.title, "Rotation hebdo · lundi et jeudi 09:00");
+  assert.equal(created.title, "Rotation chaque lundi et jeudi à 09:00");
   assert.deepEqual(created.recurrence_config, { interval: 1, weekdays: [0, 3] });
   assert.equal(created.window_starts_at, "2026-11-19T08:00:00.000Z");
   assert.deepEqual([created.disk_serial, created.vm_groups, created.start_mode, created.auto_eject_after_success], ["WD-A", [], "auto_on_disk_detected", true]);

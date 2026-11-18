@@ -141,25 +141,58 @@ def emit(
         return 0
 
 
+def _json_value(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        return {str(k): _json_value(v) for k, v in value.items()}
+    return str(value)
+
+
+def render_delivery(delivery: NotificationDelivery, language: str) -> tuple[str, str]:
+    """Title and body in `language` (B55); the stored text for old rows and tests."""
+    if delivery.params is not None and delivery.event in catalog.EVENTS_BY_KEY:
+        title, body, _path = catalog.message(delivery.event, language, delivery.params)
+        return title[:255], body
+    if delivery.event == "test":
+        return catalog.TEST_MESSAGE[language]
+    spec = catalog.EVENTS_BY_KEY.get(delivery.event)
+    if spec is not None and set(_PLACEHOLDER.findall(spec.title["en"])) <= {"kind"}:
+        # A row from before B55 (no parameters): its title needs none, so it
+        # follows the language too; the body keeps the text it was sent with.
+        return catalog.message(delivery.event, language, {})[0][:255], delivery.body
+    return delivery.title, delivery.body
+
+
+_PLACEHOLDER = re.compile(r"\{(\w+)\}")
+
+
 def _emit(db: Session, event: str, params: dict[str, Any], level: str | None, disk: Any, dedup: str | None) -> int:
+    from app.services import inbox
+
     spec = catalog.EVENTS_BY_KEY[event]
     level = level or spec.level
+    values = {key: _json_value(value) for key, value in params.items()}
+    if disk is not None:
+        values.setdefault("disk_id", getattr(disk, "id", None))
+        values.setdefault("disk", catalog.disk_param(getattr(disk, "display_name", None) or getattr(disk, "serial_number", None), getattr(disk, "color", None)))
+    path = catalog.link_path(event, values)
+    key = f"{event}:{dedup if dedup is not None else values.get('disk_id', '')}"[:255]
+    now = _now()
+    # The inbox gets every event, whatever the channels (B55).
+    inbox.record_event(db, event, level, values, key, path, now)
     channels = [
         channel
         for channel in db.scalars(select(NotificationChannel).where(NotificationChannel.enabled.is_(True)))
         if event in (channel.events or []) and catalog.level_allows(level, channel.min_level)
     ]
     if not channels:
+        db.commit()
+        inbox._publish()
         return 0
     language = admin_language(db)
-    values = dict(params)
-    if disk is not None:
-        values.setdefault("disk_id", getattr(disk, "id", None))
-        values.setdefault("disk", catalog.disk_label(getattr(disk, "display_name", None) or getattr(disk, "serial_number", None), getattr(disk, "color", None), language))
-    title, body, path = catalog.message(event, language, values)
+    title, body, _path = catalog.message(event, language, values)
     link = public_link(path)
-    key = f"{event}:{dedup if dedup is not None else values.get('disk_id', '')}"[:255]
-    now = _now()
     zone = _zone()
     created = 0
     for channel in channels:
@@ -174,6 +207,7 @@ def _emit(db: Session, event: str, params: dict[str, Any], level: str | None, di
             title=title[:255],
             body=body,
             link=link,
+            params=values,
             status="pending",
             next_attempt_at=now,
             created_at=now,
@@ -188,6 +222,7 @@ def _emit(db: Session, event: str, params: dict[str, Any], level: str | None, di
         db.add(delivery)
         created += 1
     db.commit()
+    inbox._publish()
     if created:
         _wake.set()
     return created
@@ -232,13 +267,28 @@ def _apprise_notify(url: str, title: str, body: str, notify_type: str) -> tuple[
     return False, last[:500]
 
 
-def send_to_channel(channel: NotificationChannel, *, title: str, body: str, level: str, link: str | None, event: str) -> tuple[bool, str | None]:
+# PBO's icon for the channels that show one (ntfy, Discord), served by PUBLIC_URL.
+ICON_PATH = "/favicon/web-app-manifest-192x192.png"
+OPEN_LABEL = {"en": "Open", "fr": "Ouvrir"}
+
+
+def send_to_channel(
+    channel: NotificationChannel, *, title: str, body: str, level: str, link: str | None, event: str, language: str = "en"
+) -> tuple[bool, str | None]:
     secrets = read_secrets(channel)
     try:
-        url = apprise_url(channel, secrets, level=level, link=link, extras={"event": event, "level": level, "link": link or ""})
+        url = apprise_url(
+            channel,
+            secrets,
+            level=level,
+            link=link,
+            extras={"event": event, "level": level, "link": link or ""},
+            icon=public_link(ICON_PATH),
+            open_label=OPEN_LABEL.get(language, "Open"),
+        )
     except (ChannelError, KeyError) as exc:
         return False, f"invalid_channel: {exc}"
-    body_text = f"{body}\n{link}" if link and channel.kind not in ("ntfy", "webhook") else body
+    body_text = f"{body}\n{link}" if link and channel.kind not in ("ntfy", "webhook", "discord") else body
     try:
         ok, error = _apprise_notify(url, title, body_text, NOTIFY_TYPE["success" if event in ("run_success", "repair_completed") else level])
     except Exception as exc:  # noqa: BLE001 — report, never crash the worker
@@ -251,7 +301,7 @@ def send_test(db: Session, channel: NotificationChannel, *, record: bool = True)
     language = admin_language(db)
     title, body = catalog.TEST_MESSAGE[language]
     link = public_link("/notifications")
-    ok, error = send_to_channel(channel, title=title, body=body, level="info", link=link, event="test")
+    ok, error = send_to_channel(channel, title=title, body=body, level="info", link=link, event="test", language=language)
     if record and channel.id is not None:
         now = _now()
         db.add(
@@ -280,7 +330,12 @@ def _attempt(db: Session, delivery: NotificationDelivery, channel: NotificationC
         delivery.status = "cancelled"
         delivery.next_attempt_at = None
         return
-    ok, error = send_to_channel(channel, title=delivery.title, body=delivery.body, level=delivery.level, link=delivery.link, event=delivery.event)
+    # Rendered again: PBO's language may have changed since the event (B55).
+    language = admin_language(db)
+    delivery.title, delivery.body = render_delivery(delivery, language)
+    ok, error = send_to_channel(
+        channel, title=delivery.title, body=delivery.body, level=delivery.level, link=delivery.link, event=delivery.event, language=language
+    )
     delivery.attempts += 1
     if ok:
         delivery.status = "sent"
@@ -309,8 +364,10 @@ def _send_digest(db: Session, channel: NotificationChannel, now: datetime) -> No
         return
     language = admin_language(db)
     title = catalog.render(catalog.DIGEST_TITLE[language], {"count": len(held)})
+    for item in held:
+        item.title, item.body = render_delivery(item, language)
     lines = [f"• {item.title} — {item.body}" + (f" (×{item.duplicates + 1})" if item.duplicates else "") for item in held]
-    ok, error = send_to_channel(channel, title=title, body="\n".join(lines), level="info", link=public_link("/notifications"), event="digest")
+    ok, error = send_to_channel(channel, title=title, body="\n".join(lines), level="info", link=public_link("/notifications"), event="digest", language=language)
     for item in held:
         item.attempts += 1
         item.status = "sent" if ok else "pending"
@@ -352,21 +409,51 @@ def process_queue(db: Session, now: datetime | None = None) -> int:
     return len(due)
 
 
+def reschedule_channel(db: Session, channel: NotificationChannel, now: datetime | None = None) -> int:
+    """B55: the channel's quiet hours or summary changed: what waits for it is
+    placed again at once (sent now when nothing holds it any more). Messages
+    waiting for a retry keep their delay. Returns the messages moved."""
+    now = now or _now()
+    zone = _zone()
+    moved = 0
+    waiting = db.scalars(
+        select(NotificationDelivery).where(
+            NotificationDelivery.channel_id == channel.id,
+            NotificationDelivery.status.in_(("pending", "digest")),
+            NotificationDelivery.attempts == 0,
+        )
+    )
+    for delivery in waiting:
+        status, at = "pending", now
+        if delivery.level != "error":
+            if channel.digest:
+                status, at = "digest", None
+            else:
+                at = quiet_until(channel, now, zone) or now
+        if (delivery.status, _aware(delivery.next_attempt_at)) != (status, at):
+            delivery.status, delivery.next_attempt_at = status, at
+            moved += 1
+    db.commit()
+    _wake.set()
+    return moved
+
+
 def cancel_channel_queue(db: Session, channel_id: int) -> None:
     for delivery in db.scalars(select(NotificationDelivery).where(NotificationDelivery.channel_id == channel_id, NotificationDelivery.status.in_(("pending", "digest")))):
         delivery.status = "cancelled"
         delivery.next_attempt_at = None
 
 
-def delivery_view(delivery: NotificationDelivery) -> dict[str, Any]:
+def delivery_view(delivery: NotificationDelivery, language: str | None = None) -> dict[str, Any]:
+    title, body = render_delivery(delivery, language) if language else (delivery.title, delivery.body)
     return {
         "id": delivery.id,
         "channel_id": delivery.channel_id,
         "channel_name": delivery.channel_name,
         "event": delivery.event,
         "level": delivery.level,
-        "title": delivery.title,
-        "body": delivery.body,
+        "title": title,
+        "body": body,
         "link": delivery.link,
         "status": delivery.status,
         "attempts": delivery.attempts,

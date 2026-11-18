@@ -52,6 +52,12 @@ before(async () => {
         'export { ChooseDatastoreDialog } from "./src/views/datastores/ChooseDatastoreDialog";',
         'export { PlanningDialog } from "./src/views/planning/PlanningDialog";',
         'export { UserMenu } from "./src/shell/AppShellV2";',
+        'export { ChannelWizard } from "./src/views/notifications/ChannelWizard";',
+        'export { ServiceGrid, EventsPicker, WhenFields } from "./src/views/notifications/ChannelForm";',
+        'export { ChannelLogo } from "./src/views/notifications/ChannelLogo";',
+        'export { InboxButton } from "./src/shell/Inbox";',
+        'export { PaletteButton } from "./src/shell/CommandPalette";',
+        'export { CancelRunButton } from "./src/runs/CancelRun";',
         'export { DiskAvatar, AlertBadges, PbsConfigNotice, DamagedVersions } from "./src/views/disks/DiskBits";',
         'export { ContentsCard } from "./src/views/disks/DiskSheetView";',
         'export { UsageChart } from "./src/views/disks/UsageChart";',
@@ -834,4 +840,42 @@ test("Settings and Notifications pages render their loading state (data comes fr
   assert.ok(settings.includes("Réglages") && settings.includes("Chargement des réglages"));
   const notifications = html(inApp(createElement(ui.NotificationsView, { language: "en", t: translations.en })));
   assert.ok(notifications.includes("Notifications") && notifications.includes("Add a channel") && notifications.includes("Sending journal"));
+});
+
+
+// --- B55 / B56 / B57 -------------------------------------------------------------------------
+
+test("channel assistant: service grid with monochrome logos, presets, levels", () => {
+  const grid = html(createElement(ui.ServiceGrid, { value: "ntfy", onChoose: () => undefined, t: translations.fr }));
+  for (const kind of ["ntfy", "gotify", "discord", "telegram", "email", "webhook", "apprise"]) assert.ok(grid.includes(`data-service="${kind}"`), kind);
+  assert.match(grid, /data-logo="discord"[^>]*>|<svg[^>]*data-logo="discord"/);
+  assert.ok(grid.includes("fill-current"), "Simple Icons follow the theme (currentColor)");
+  assert.ok(grid.includes('aria-checked="true"') && grid.includes("Un bot vous écrit"));
+  const events = html(createElement(ui.EventsPicker, { draft: channelDraft("ntfy", { events: ["run_failed"] }), onChange: () => undefined, catalog: CATALOG, t: translations.fr }));
+  assert.ok(events.includes('data-preset="essential"') && events.includes("Essentiel") && events.includes("Personnalisé") && events.includes("<details"));
+  assert.ok(events.includes("1/1"), "chosen / total per group");
+  const when = html(createElement(ui.WhenFields, { draft: channelDraft("ntfy"), onChange: () => undefined, t: translations.en }));
+  assert.ok(when.includes("Errors only.") && when.includes("Quiet hours") && when.includes("Daily summary"));
+  // Radix renders the open dialog in a portal (client only): the server render must just not throw.
+  html(inApp(createElement(ui.ChannelWizard, { open: true, catalog: CATALOG, channel: null, initialStep: "service", onClose: () => undefined, onSaved: () => undefined, t: translations.fr })));
+});
+
+test("inbox button and palette button render; cancel button only for a run that can stop", () => {
+  const inbox = html(inApp(createElement(ui.InboxButton, { t: translations.fr, language: "fr" })));
+  assert.ok(inbox.includes("Boîte de réception") && !inbox.includes("data-inbox-badge"), "no badge at 0");
+  const palette = html(inApp(createElement(ui.PaletteButton, { t: translations.en })));
+  assert.ok(palette.includes("data-palette-open") && palette.includes("Search or run a command") && /⌘K|Ctrl K/.test(palette));
+  const run = { id: 4, disk_id: 1, status: "running", cancellable: true, cancel_requested: false };
+  const button = html(inApp(createElement(ui.CancelRunButton, { run, t: translations.fr })));
+  assert.ok(button.includes('data-run-cancel="4"') && button.includes("Annuler la sauvegarde"));
+  const verify = html(inApp(createElement(ui.CancelRunButton, { run: { ...run, verify_only: true }, t: translations.en })));
+  assert.ok(verify.includes("Cancel the verification"));
+  const stopping = html(inApp(createElement(ui.CancelRunButton, { run: { ...run, cancel_requested: true }, t: translations.fr })));
+  assert.ok(stopping.includes("Arrêt en cours") && !stopping.includes("data-run-cancel"));
+  assert.ok(!html(inApp(createElement(ui.CancelRunButton, { run: { ...run, cancellable: false }, t: translations.fr }))).includes("data-run-cancel"));
+});
+
+test("settings page: centred at a readable width, also while loading (B57)", () => {
+  const settings = html(inApp(createElement(ui.AuthProvider, null, createElement(ui.SettingsView, { language: "fr", t: translations.fr }))));
+  assert.ok(settings.includes("data-settings-layout") && settings.includes("mx-auto") && settings.includes("max-w-[1120px]"));
 });

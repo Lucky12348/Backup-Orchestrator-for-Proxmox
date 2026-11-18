@@ -245,6 +245,11 @@ export function runKind(run: RunLike): "backup" | "eject" | "verify" | "repair" 
   return run.current_step && EJECT_STEPS.has(run.current_step) && !run.auto_eject_after_success ? "eject" : "backup";
 }
 
+/** B56: ended by the operator's Cancel (failed + step "cancelled"). */
+export function isCancelledRun(run: { status: string; current_step?: string | null }): boolean {
+  return run.status === "failed" && run.current_step === "cancelled";
+}
+
 export function diskHistory(disk: DiskLike, runs: readonly RunLike[], limit = 8): HistoryItem[] {
   return runs
     .filter((run) => run.disk_id === disk.id)
@@ -253,9 +258,10 @@ export function diskHistory(disk: DiskLike, runs: readonly RunLike[], limit = 8)
     .map((run) => ({
       id: run.id,
       kind: runKind(run),
-      tone: isActiveRun(run) ? "run" : run.status === "success" ? "ok" : run.status === "failed" ? "err" : "off",
+      // B56: a run the operator cancelled is not a failure.
+      tone: isActiveRun(run) ? "run" : run.status === "success" ? "ok" : isCancelledRun(run) ? "off" : run.status === "failed" ? "err" : "off",
       at: run.finished_at ?? run.started_at,
-      status: run.status,
+      status: isCancelledRun(run) ? "cancelled" : run.status,
     }));
 }
 

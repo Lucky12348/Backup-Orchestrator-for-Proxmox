@@ -11,6 +11,7 @@ import { cn } from "../../components/ui/utils";
 import { StatusIcon } from "../../ui/StatusIcon";
 import type { Language, TranslationDictionary } from "../../i18n";
 import { openRunModal } from "../../runs/openRun";
+import { CancelRunButton } from "../../runs/CancelRun";
 import type { AgentStatus, ExternalBackupRun, ExternalDisk, Overview, ScheduledBackupEvent, ScheduledBackupRun } from "../../types";
 import { PageTitle } from "../../ui/PageTitle";
 import { runKind } from "../disks/diskModel";
@@ -197,10 +198,11 @@ export function DashboardView(props: DashboardViewProps) {
             </div>
           </div>
           {current ? (
+            <div className="flex items-center border-0 border-t border-solid border-border">
             <button
               type="button"
               onClick={() => openRunModal(current.run.id)}
-              className={cn(rowLink, "flex-wrap gap-3.5 border-0 border-t border-solid border-border bg-transparent px-7 py-4 text-left")}
+              className={cn(rowLink, "min-w-0 flex-1 flex-wrap gap-3.5 border-0 bg-transparent px-7 py-4 text-left")}
             >
               {current.active ? (
                 <>
@@ -233,6 +235,8 @@ export function DashboardView(props: DashboardViewProps) {
                 </>
               )}
             </button>
+            {current.active ? <CancelRunButton run={current.run} t={t} className="mr-6" /> : null}
+            </div>
           ) : null}
           <div className="flex flex-wrap items-center gap-4 border-t border-solid border-border px-7 py-3.5 text-[13px] text-muted">
             {links.items.map((item) => (
@@ -420,7 +424,7 @@ export function DashboardView(props: DashboardViewProps) {
                 data-run={run.id}
                 data-tone={tone}
               >
-                <StatusIcon kind={tone === "ok" ? "success" : tone === "err" ? "failed" : "running"} progress={tone === "run" ? runPercent(run as never) : undefined} />
+                <StatusIcon kind={tone === "ok" ? "success" : tone === "err" ? "failed" : tone === "off" ? "skipped" : "running"} progress={tone === "run" ? runPercent(run as never) : undefined} />
                 <span className="flex min-w-0 flex-1 items-center truncate text-sm">
                   {withDisk(
                     runKind(run) === "eject" ? text.runEject : runKind(run) === "verify" ? text.runVerify : runKind(run) === "repair" ? text.runRepair : text.runBackup,

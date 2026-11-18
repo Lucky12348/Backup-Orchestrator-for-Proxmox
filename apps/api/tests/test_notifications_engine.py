@@ -89,7 +89,7 @@ def test_channel_specific_urls(db, secret_key):
     ntfy = _channel(db, "ntfy")
     url = apprise_url(ntfy, read_secrets(ntfy), level="error", link="https://pbo.lan/x")
     assert url.startswith("ntfys://ntfy.example.org/pbo-alerts?") and "token=tk_0123456789" in url and "priority=max" in url and "click=" in url
-    assert apprise_url(_channel(db, "discord"), {"webhook_url": "https://discord.com/api/webhooks/123456/abc_DEF-ghi"}) == "discord://123456/abc_DEF-ghi"
+    assert apprise_url(_channel(db, "discord"), {"webhook_url": "https://discord.com/api/webhooks/123456/abc_DEF-ghi"}) == "discord://PBO@123456/abc_DEF-ghi?avatar=no"
     telegram = _channel(db, "telegram")
     assert apprise_url(telegram, read_secrets(telegram)).startswith("tgram://123456%3AABC")
     email = _channel(db, "email")
@@ -182,9 +182,10 @@ def test_emit_filters_by_event_and_level_with_disk_name_colour_and_link(db, sent
     assert engine.emit("disk_new", disk=disk, db=db) == 0  # event not chosen
     _channel(db, "gotify", events=["disk_new"], min_level="warning")
     assert engine.emit("disk_new", disk=disk, db=db) == 0  # info < warning
-    assert engine.emit("run_failed", disk=disk, params={"detail": "PBS refused"}, db=db, dedup="run:1") == 1
+    assert engine.emit("run_failed", disk=disk, params={"detail": catalog.FAILED_STAGES["sync"]}, db=db, dedup="run:1") == 1
     [delivery] = db.query(NotificationDelivery).all()
-    assert delivery.title == "Backup failed" and delivery.body == "🔵 Rotation A: PBS refused" and delivery.link == f"https://pbo.lan/disks/{disk.id}"
+    assert delivery.title == "Backup failed" and delivery.link == f"https://pbo.lan/disks/{disk.id}"
+    assert delivery.body == "🔵 Rotation A: failed during the copy. Details in the run journal."
     assert engine.process_queue(db, NOW) == 1
     assert sent.calls[0][3] == "failure"
 
@@ -287,11 +288,11 @@ def test_catalog_has_both_languages_and_every_placeholder_is_known():
 def test_routes_test_a_draft_and_list_the_journal(client, sent, session_factory):
     client.post("/api/v1/setup/admin", json={"username": "admin", "password": "correct-horse-battery"})
     draft = client.post("/api/v1/notifications/test", json={"kind": "discord", "config": {}, "secrets": {"webhook_url": "https://discord.com/api/webhooks/1/abc"}})
-    assert draft.json() == {"ok": True, "error": None} and sent.calls[0][0] == "discord://1/abc"
+    assert draft.json() == {"ok": True, "error": None} and sent.calls[0][0].startswith("discord://PBO@1/abc?")
     created = client.post("/api/v1/notifications/channels", json={"name": "D", "kind": "discord", "secrets": {"webhook_url": "https://discord.com/api/webhooks/1/abc"}}).json()
     assert client.post(f"/api/v1/notifications/channels/{created['id']}/test").json()["ok"] is True
     journal = client.get("/api/v1/notifications/deliveries").json()
-    assert [row["event"] for row in journal] == ["test"]
+    assert [row["event"] for row in journal["items"]] == ["test"] and journal["total"] == 1
     catalog_body = client.get("/api/v1/notifications/catalog").json()
     assert {event["key"] for event in catalog_body["events"]} == set(catalog.EVENT_KEYS) and "webhook" in catalog_body["kinds"]
     assert client.delete(f"/api/v1/notifications/channels/{created['id']}").status_code == 204

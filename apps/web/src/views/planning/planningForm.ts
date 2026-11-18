@@ -140,7 +140,8 @@ export function planFormFromEvent(event: EventLike, tz: string): PlanForm {
 }
 
 export interface FormTexts {
-  autoTitle: { weekly: string; biweekly: string; monthly: string; daily: string; every: string };
+  /** "Rotation {when}": {when} = the schedule sentence ("every Wednesday at 19:37"). */
+  autoTitle: string;
   sentence: { daily: string; dailyN: string; weekly: string; weeklyN: string; monthly: string; monthlyN: string; onDisk: string; rotation: string; then: string };
   and: string;
   allGuests: string;
@@ -155,30 +156,31 @@ export function daysText(weekdays: readonly number[], lang: Lang, and: string): 
   return `${names.slice(0, -1).join(", ")}${and}${names[names.length - 1]}`;
 }
 
-/** « Rotation hebdo · dimanche 09:00 » */
-export function autoTitle(form: PlanForm, texts: FormTexts, lang: Lang): string {
-  const { unit, interval } = effective(form);
-  const time = `${pad(form.hour)}:${pad(form.minute)}`;
-  const kind =
-    form.preset === "custom" ? texts.autoTitle.every.replace("{n}", String(interval)) : texts.autoTitle[form.preset];
-  if (unit === "monthly") return `${kind} · ${form.monthDay} · ${time}`;
-  if (unit === "daily") return `${kind} · ${time}`;
-  return `${kind} · ${daysText(form.weekdays, lang, texts.and)} ${time}`;
-}
-
-/** « Chaque dimanche à 09:00, sur WD 4 To puis Toshiba 3 To en alternance · toutes vos sauvegardes (main) » */
-export function planSentence(form: PlanForm, diskNames: readonly string[], texts: FormTexts, lang: Lang): string {
+/** « Chaque dimanche à 09:00 » — the schedule alone, in words. */
+function scheduleSentence(form: PlanForm, texts: FormTexts, lang: Lang): string {
   const { unit, interval } = effective(form);
   const s = texts.sentence;
   const time = `${pad(form.hour)}:${pad(form.minute)}`;
   const days = daysText(form.weekdays, lang, texts.and);
-  const base = (
+  return (
     unit === "daily" ? (interval > 1 ? s.dailyN : s.daily) : unit === "monthly" ? (interval > 1 ? s.monthlyN : s.monthly) : interval > 1 ? s.weeklyN : s.weekly
   )
     .replace("{time}", time)
     .replace("{weekday}", days)
     .replace("{n}", String(interval))
     .replace("{day}", String(form.monthDay));
+}
+
+/** « Rotation chaque dimanche à 09:00 » (B55: never « tous les 1 »). */
+export function autoTitle(form: PlanForm, texts: FormTexts, lang: Lang): string {
+  const when = scheduleSentence(form, texts, lang);
+  return texts.autoTitle.replace("{when}", when.charAt(0).toLocaleLowerCase(lang) + when.slice(1));
+}
+
+/** « Chaque dimanche à 09:00, sur WD 4 To puis Toshiba 3 To en alternance · toutes vos sauvegardes (main) » */
+export function planSentence(form: PlanForm, diskNames: readonly string[], texts: FormTexts, lang: Lang): string {
+  const s = texts.sentence;
+  const base = scheduleSentence(form, texts, lang);
   const disks = !diskNames.length ? "" : diskNames.length === 1 ? s.onDisk.replace("{disk}", diskNames[0]) : s.rotation.replace("{disks}", diskNames.join(s.then));
   const what = form.allGuests ? texts.allGuests.replace("{datastore}", form.datastore) : texts.someGuests.replace("{n}", String(form.vmGroups.length));
   return `${base}${disks} · ${what}`;

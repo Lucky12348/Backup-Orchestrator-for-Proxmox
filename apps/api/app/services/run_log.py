@@ -92,6 +92,7 @@ PBO_MESSAGES: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
         ("target_path_requested", r"^Requested target path: (?P<path>\S+)$"),
         ("target_path_actual", r"^Actual datastore path: (?P<path>\S+)$"),
         ("cancel_requested", r"^Cancellation requested by (?P<user>\S+)\.$"),
+        ("run_cancelled", r"^Cancelled by the operator\.$"),
         # Phase 5f: cleanup, contents, verification, guards.
         ("cleanup_retention", r"^Applying retention on `(?P<store>[^`]+)`: (?P<options>.+?) \(POST"),
         ("cleanup_gc", r"^Garbage collection on `(?P<store>[^`]+)`"),

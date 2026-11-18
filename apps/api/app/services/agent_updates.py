@@ -344,7 +344,7 @@ def _report(db: Session, row: AgentUpdate, agent: RegisteredAgent) -> None:
     if row.status in {"rolled_back", "failed", "too_old"}:
         from app.services import notifications
 
-        notifications.agent_update_failed(agent.role, agent.hostname, row.message or row.status)
+        notifications.agent_update_failed(agent.role, agent.hostname, row.status)
 
 
 def update_all(db: Session, *, trigger: str, wait: bool = True) -> list[AgentUpdate]:

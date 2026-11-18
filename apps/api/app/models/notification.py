@@ -64,6 +64,9 @@ class NotificationDelivery(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False)
     link: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Event parameters (B55, 0016): rendered in PBO's current language when
+    # sent and when shown; title/body keep the text of the last rendering.
+    params: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     status: Mapped[str] = mapped_column(String(12), nullable=False, default="pending", index=True)
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     duplicates: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -71,3 +74,31 @@ class NotificationDelivery(Base):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class InboxItem(Base):
+    """One line of the top-bar inbox (services/inbox.py, B55 / 0016_inbox).
+
+    source "event": a notification event (same catalog, stored whatever the
+    channels), rendered from `event` + `params` in PBO's current language.
+    source "toast": an alert toast of the web UI, stored as its text.
+    An identical event inside its dedup window bumps `count` and is unread
+    again. Kept as long as Settings › Retention says (services/inbox.py).
+    """
+
+    __tablename__ = "inbox_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source: Mapped[str] = mapped_column(String(8), nullable=False, default="event")
+    event: Mapped[str] = mapped_column(String(64), nullable=False)
+    level: Mapped[str] = mapped_column(String(8), nullable=False)
+    dedup_key: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    params: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    link: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    disk_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, index=True)

@@ -157,18 +157,26 @@ def eject_disk_within_run(db: Session, disk: ExternalDisk, run: ExternalBackupRu
 RELEASED_MESSAGE = "Disk released: unmounted on PBS and detached from the PBS VM. It is connected to the Proxmox host again."
 
 
-def release_disk_within_run(db: Session, disk: ExternalDisk, run: ExternalBackupRun) -> bool:
+def release_disk_within_run(db: Session, disk: ExternalDisk, run: ExternalBackupRun, *, datastore_may_be_missing: bool = False) -> bool:
     """B45: end of a verification. Unmount the datastore on PBS and detach the
     disk from the PBS VM — no spin-down, not "ejected": the disk is back on
-    the host, connected, ready for a backup or an eject. Never raises."""
+    the host, connected, ready for a backup or an eject. Never raises.
+
+    `datastore_may_be_missing` (cancelled run, B56): the run may have stopped
+    before the disk had a datastore on PBS; the USB device is still removed."""
     datastore_name, mount_path = _eject_target(disk)
     try:
         append_external_backup_run_log(db, run.id, step="release", message="Releasing the disk: unmounting its datastore on PBS.")
-        result = get_external_backup_agent_bridge().eject_dedicated_pbs_datastore(
-            serial=disk.serial_number, datastore_name=datastore_name, mount_path=mount_path, run_id=run.id
-        )
+        try:
+            result = get_external_backup_agent_bridge().eject_dedicated_pbs_datastore(
+                serial=disk.serial_number, datastore_name=datastore_name, mount_path=mount_path, run_id=run.id
+            )
+        except AgentCommandError as exc:
+            if not (datastore_may_be_missing and (getattr(exc, "payload", None) or {}).get("error_code") == "datastore_missing"):
+                raise
+            result = None
         db.refresh(run)
-        if not result.ok:
+        if result is not None and not result.ok:
             raise AgentCommandError(result.message, stdout_log=result.stdout_log, stderr_log=result.stderr_log)
         slot = disk.pbs_handoff_slot
         _detach_usb_passthrough_from_pbs_vm(disk)

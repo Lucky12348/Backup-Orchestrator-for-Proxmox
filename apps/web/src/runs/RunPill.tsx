@@ -4,13 +4,15 @@ import { useRunMonitor } from "./RunMonitor";
 import { isRunning, RUN_STEPS, runPercent, stepIndex, type JournalEntry } from "./runModel";
 import { StatusIcon } from "../ui/StatusIcon";
 import { DiskMark } from "../views/disks/DiskTag";
+import { CancelRunButton } from "./CancelRun";
+import { cn } from "../components/ui/utils";
 
 function fill(template: string, values: Record<string, string>): string {
   return template.replace(/\{(\w+)\}/g, (whole, key: string) => values[key] ?? whole);
 }
 
 /** Top-bar "task in progress" pill: visible on every page while a run runs; reopens the modal. */
-export function RunPill({ t }: { t: TranslationDictionary }) {
+export function RunPill({ t, className }: { t: TranslationDictionary; className?: string }) {
   const monitor = useRunMonitor();
   const run = monitor.activeRun;
   if (!run || !isRunning(run) || monitor.state.open) return null;
@@ -22,6 +24,7 @@ export function RunPill({ t }: { t: TranslationDictionary }) {
   const kind = run.repair ? t.runModal.kind.repair : run.verify_only ? t.runModal.kind.verify : ejecting ? t.runModal.kind.eject : t.runModal.kind.backup;
   const label = fill(t.runModal.pill, { kind, disk });
   return (
+    <span className={cn("flex items-center gap-1", className)}>
     <button
       type="button"
       onClick={() => monitor.openRun(run.id)}
@@ -36,5 +39,8 @@ export function RunPill({ t }: { t: TranslationDictionary }) {
       </span>
       <span className="whitespace-nowrap text-xs text-muted">{percent} %</span>
     </button>
+    {/* B56: cancel from any page, confirmed first. */}
+    <CancelRunButton run={run} t={t} onDone={monitor.refresh} compact />
+    </span>
   );
 }

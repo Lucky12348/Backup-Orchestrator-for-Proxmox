@@ -13,7 +13,6 @@ from app.models.external_disk import ExternalDisk
 from app.services import run_log
 from app.services.external_backups import append_external_backup_run_log
 from app.services.pbs_progress import parse_pbs_progress_line
-from app.services.settings_service import update_settings
 
 ROOT = Path(__file__).resolve().parents[3]
 FIXTURES = ROOT / "docs" / "design" / "fixtures"
@@ -176,29 +175,40 @@ def test_log_route_and_source_target(client, session_factory):
     assert body["summary"]["no_new_data"] is True
     assert any(entry["code"] == "datastore_reused" for entry in body["entries"])
     detail = client.get(f"/api/v1/external-backups/runs/{run_id}").json()
-    assert (detail["source_datastore"], detail["target_datastore"], detail["cancellable"]) == ("main", "pbo-pbotesta", False)
+    # B56: a running backup can be cancelled at any step.
+    assert (detail["source_datastore"], detail["target_datastore"], detail["cancellable"]) == ("main", "pbo-pbotesta", True)
 
 
-def test_cancel_route(client, session_factory, monkeypatch):
+def test_cancel_route(client, session_factory):
+    """B56: the request is recorded (once) whatever the step; the run's thread
+    stops itself. A run releasing or ejecting the disk cannot be cancelled."""
+    from app.services import run_control
+
     assert client.post("/api/v1/setup/admin", json=ADMIN).status_code == 201
     with session_factory() as db:
         run = _run(db)
+        run.current_step = "handoff_disk"
+        db.commit()
         run_id = run.id
+    try:
+        response = client.post(f"/api/v1/external-backups/runs/{run_id}/cancel")
+        assert response.status_code == 202 and run_control.is_requested(run_id)
+        assert client.post(f"/api/v1/external-backups/runs/{run_id}/cancel").status_code == 202  # idempotent
+        detail = client.get(f"/api/v1/external-backups/runs/{run_id}").json()
+        assert detail["cancel_requested"] is True and detail["cancellable"] is False
+        with session_factory() as db:
+            assert db.get(ExternalBackupRun, run_id).stdout_log.count("Cancellation requested by admin.") == 1
+    finally:
+        run_control.clear(run_id)
+    with session_factory() as db:
+        db.get(ExternalBackupRun, run_id).current_step = "release"
+        db.commit()
     response = client.post(f"/api/v1/external-backups/runs/{run_id}/cancel")
     assert response.status_code == 409 and response.json()["detail"]["code"] == "cancel_not_supported"
-
-    stopped = []
-    monkeypatch.setattr("app.services.pbs_client.PBSClient.stop_task", lambda self, upid: stopped.append(upid))
     with session_factory() as db:
-        update_settings(db, {"PBS_MODE": "api"})
-        db.get(ExternalBackupRun, run_id).pbs_task_upid = "UPID:localhost:1"
+        db.get(ExternalBackupRun, run_id).status = BackupRunStatus.SUCCESS
         db.commit()
-    monkeypatch.setattr("app.api.routes.external_backups.get_settings", lambda: SimpleNamespace(pbs_mode="api"))
-    monkeypatch.setattr("app.services.pbs_client.PBSClient.__init__", lambda self, settings=None: None)
-    response = client.post(f"/api/v1/external-backups/runs/{run_id}/cancel")
-    assert response.status_code == 202 and stopped == ["UPID:localhost:1"]
-    with session_factory() as db:
-        assert "Cancellation requested by admin." in db.get(ExternalBackupRun, run_id).stdout_log
+    assert client.post(f"/api/v1/external-backups/runs/{run_id}/cancel").json()["detail"]["code"] == "run_not_running"
 
 
 def test_every_pbo_message_code_is_translated_by_the_ui():

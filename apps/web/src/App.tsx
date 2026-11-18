@@ -18,6 +18,7 @@ import { IntegrationsView } from "./views/integrations/IntegrationsView";
 import { NotificationsView } from "./views/notifications/NotificationsView";
 import { SettingsView } from "./views/settings/SettingsView";
 import { CommandsProvider } from "./views/commands";
+import { CommandPalette } from "./shell/CommandPalette";
 import { ResourcesView } from "./views/resources/ResourcesView";
 import { ProxmoxJobsSection } from "./views/resources/ProxmoxJobsSection";
 import { expectRunModal, openRunModal } from "./runs/openRun";
@@ -163,6 +164,8 @@ function AuthenticatedApp() {
         <NoticeToasts notices={notices} onShown={dismissNotice} t={t} />
 
         <CommandsProvider value={{ backup: handleExternalBackupRequest, eject: handleDiskEjectRequest, refresh }}>
+        {/* B55: ⌘K, inside the commands (back up / eject a disk from the palette). */}
+        <CommandPalette t={t} language={language} onLanguageChange={handleLanguageChange} disks={data.disks} vms={data.vms} runs={data.externalBackupRuns} />
         <Routes>
           <Route
             element={

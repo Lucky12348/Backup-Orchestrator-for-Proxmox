@@ -32,6 +32,7 @@ export const PERIODS = [1, 7, 30, 90, 366] as const;
 
 export function activityState(item: ActivityLike): ActivityState {
   if (item.status === "pending" || item.status === "running") return "running";
+  if (item.status === "failed" && item.step === "cancelled") return "info"; // B56: the operator's choice, not a failure
   if (item.status === "success") return "ok";
   if (item.status === "failed" || item.status === "missed") return "failed";
   return "info";
@@ -100,12 +101,15 @@ export interface SummaryTexts {
   missed: string;
   cancelled: string;
   to_confirm: string;
+  /** B56: a backup / verification / repair cancelled by the operator. */
+  runCancelled: string;
 }
 
 /** One line per entry; failure reasons are the step code's translation when known. */
 export function activitySummary(item: ActivityLike, texts: SummaryTexts, lang: Lang, stepTexts: Record<string, string> = {}): string {
   const reason = (item.step && stepTexts[item.step]) || item.message || "";
   const state = activityState(item);
+  if (item.step === "cancelled" && item.status === "failed" && item.type !== "planning" && item.type !== "detection") return texts.runCancelled;
   if (item.type === "detection") {
     if (item.status === "unsafe_removal") return texts.unsafeRemoval;
     return item.status === "replugged" ? texts.replugged : item.status === "plugged" ? texts.plugged : texts.unplugged;

@@ -383,6 +383,7 @@ export interface ExternalBackupRun {
   target_datastore?: string | null;
   /** The running PBS task can be stopped (API mode). */
   cancellable?: boolean;
+  cancel_requested?: boolean;
   mode: ExternalBackupMode;
   created_at: string;
 }

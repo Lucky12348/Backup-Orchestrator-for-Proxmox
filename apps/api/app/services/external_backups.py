@@ -17,7 +17,7 @@ from app.services.external_backup_agent import AgentCommandError, AgentCompatibi
 from app.services.external_backup_agent import get_external_backup_agent_bridge
 from app.services.external_backup_execution import build_export_target_path, get_external_backup_execution_service
 from app.services import post_sync
-from app.services import notifications
+from app.services import notifications, run_control
 from app.services.run_log import is_progress_line
 from app.services.pbs_progress import parse_pbs_progress_line, summarize_pbs_failure
 
@@ -202,9 +202,12 @@ class RunInterrupted(RuntimeError):
 
 
 def check_interrupted(db: Session, run: ExternalBackupRun) -> None:
+    """Checkpoint between two steps: disk pulled out (B44) or run cancelled (B56)."""
     db.refresh(run, attribute_names=["interrupted", "status"])
     if run.interrupted:
         raise RunInterrupted(run.interrupted)
+    if run_control.is_requested(run.id):
+        raise run_control.RunCancelled()
 
 
 def run_external_backup(
@@ -367,6 +370,14 @@ def _verify_only_reasons(disk: ExternalDisk) -> list[dict[str, str]]:
 
 
 def execute_external_backup_run(run_id: int) -> None:
+    with run_control.bound(run_id):
+        try:
+            _execute_external_backup_run(run_id)
+        finally:
+            run_control.clear(run_id)
+
+
+def _execute_external_backup_run(run_id: int) -> None:
     with SessionLocal() as db:
         run = db.get(ExternalBackupRun, run_id)
         if run is None:
@@ -401,6 +412,7 @@ def execute_external_backup_run(run_id: int) -> None:
         prepare_result = None
         export_result = None
         try:
+            check_interrupted(db, run)
             append_external_backup_run_log(
                 db,
                 run.id,
@@ -615,6 +627,8 @@ def execute_external_backup_run(run_id: int) -> None:
             )
         except RunInterrupted:
             pass  # status, step and message were set when the removal was detected
+        except run_control.RunCancelled:
+            pass  # finished below (_finish_cancelled), once no PBS task runs any more
         except post_sync.VerifyFailed as exc:
             run.status = BackupRunStatus.FAILED
             run.finished_at = datetime.utcnow()
@@ -672,6 +686,8 @@ def execute_external_backup_run(run_id: int) -> None:
         if run.interrupted:
             db.refresh(run, attribute_names=["stdout_log", "stderr_log"])  # the journal as written, not a stale merge
             _apply_interruption(run)
+        elif run_control.is_requested(run.id) and run.status != BackupRunStatus.SUCCESS:
+            _finish_cancelled(db, run, disk)
         _close_released_mappings(db, disk)
         db.add(run)
         db.commit()
@@ -683,6 +699,43 @@ INTERRUPTION_MESSAGES = {
     # B46: a copy is finished only once its datastore is unmounted.
     "after_sync": "Interrupted: the disk was pulled out before its datastore was unmounted. The copy is not guaranteed: a verification is required.",
 }
+
+
+CANCELLED_MESSAGE = "Cancelled by the operator."
+# Steps from which the run may have written versions on the disk.
+_WRITING_STEPS = frozenset({"sync_job", "run_export", "cleanup", "prune", "gc", "contents", "verify", "repair"})
+
+
+def _finish_cancelled(db: Session, run: ExternalBackupRun, disk: ExternalDisk) -> None:
+    """B56: the operator cancelled the run. Its PBS task is already stopped
+    (wait_for_task); release the disk (unmount on PBS, USB removed from the
+    VM) so it is back on the host, then end the run as cancelled. A clean
+    unmount leaves a consistent datastore (sync-level=file; finished versions
+    are kept, PBS drops the one it was copying): no verification is required.
+    Only a failed release after something was written recommends one."""
+    from app.services import disk_eject
+
+    db.refresh(run)
+    db.refresh(disk)
+    wrote = bool(run.pbs_task_upid) or (run.current_step or "") in _WRITING_STEPS
+    released = True
+    if disk.pbs_handoff_slot:
+        released = disk_eject.release_disk_within_run(db, disk, run, datastore_may_be_missing=True)
+        db.refresh(run)
+        db.refresh(disk)
+    if not released and wrote:
+        disk.verify_recommended = True
+        db.add(disk)
+    run.status = BackupRunStatus.FAILED
+    run.current_step = run_control.CANCELLED_STEP
+    run.message = CANCELLED_MESSAGE
+    run.progress_message = CANCELLED_MESSAGE
+    run.finished_at = datetime.utcnow()
+    run.last_log_at = datetime.utcnow()
+    db.add(run)
+    db.commit()
+    append_external_backup_run_log(db, run.id, step=run_control.CANCELLED_STEP, message=CANCELLED_MESSAGE)
+    db.refresh(run)
 
 
 def _apply_interruption(run: ExternalBackupRun) -> None:

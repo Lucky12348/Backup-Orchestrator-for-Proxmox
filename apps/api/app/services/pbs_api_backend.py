@@ -38,6 +38,7 @@ from typing import Any
 from sqlalchemy import or_, select
 
 from app.core.config import Settings, get_settings
+from app.services import run_control
 from app.services.disk_contents import snapshot_key
 from app.services.disk_events import min_disk_size_gib
 from app.services.disk_identity import (
@@ -433,6 +434,7 @@ class PBSApiBackend:
         progress = self._progress(run_id)
         lines: list[str] = []
 
+        run_control.checkpoint()  # B56: cancelled while the datastore was being prepared
         self._ensure_mounted(target, progress, lines)
         if source not in {str(cfg.get("name")) for cfg in self.client.list_datastores()}:
             raise GuardViolation("source_missing", f"Source datastore `{source}` does not exist on PBS.")
@@ -471,6 +473,7 @@ class PBSApiBackend:
                 upid,
                 timeout_seconds=self.settings.pbs_task_timeout_seconds,
                 on_line=lambda line: (lines.append(line), progress("sync_job", None, line)),
+                cancellable=True,
             )
         finally:
             try:
@@ -581,6 +584,7 @@ class PBSApiBackend:
                 self.client.prune_datastore(store, keep=keep),
                 timeout_seconds=self.settings.pbs_task_timeout_seconds,
                 on_line=on_line,
+                cancellable=True,
             )
         except (PBSApiError, PBSTaskError, PBSTaskTimeout) as exc:
             raise GuardViolation("prune_failed", f"the prune failed: {exc}") from exc
@@ -597,6 +601,7 @@ class PBSApiBackend:
                 self.client.start_garbage_collection(store),
                 timeout_seconds=self.settings.pbs_task_timeout_seconds,
                 on_line=on_gc_line,
+                cancellable=True,
             )
         except (PBSApiError, PBSTaskError, PBSTaskTimeout) as exc:
             raise GuardViolation("gc_failed", f"the prune succeeded, the garbage collection failed: {exc}") from exc
@@ -640,6 +645,7 @@ class PBSApiBackend:
                     self.client.verify(store, ignore_verified=False),
                     timeout_seconds=self.settings.pbs_task_timeout_seconds,
                     on_line=on_line,
+                    cancellable=True,
                 )
             else:
                 progress("verify", f"Verifying {len(keys)} copied snapshot(s) on `{store}`.")
@@ -652,6 +658,7 @@ class PBSApiBackend:
                             self.client.verify(store, backup_type=kind, backup_id=ident, backup_time=int(when), ignore_verified=False),
                             timeout_seconds=self.settings.pbs_task_timeout_seconds,
                             on_line=on_line,
+                            cancellable=True,
                         )
                     except PBSTaskError:
                         failed_tasks.append(key)

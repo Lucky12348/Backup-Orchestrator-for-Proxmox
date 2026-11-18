@@ -315,8 +315,19 @@ NTFY_PRIORITY = {"info": "default", "warning": "high", "error": "max"}
 GOTIFY_PRIORITY = {"info": "normal", "warning": "high", "error": "emergency"}
 
 
-def apprise_url(channel: NotificationChannel, secrets: dict[str, str], *, level: str = "info", link: str | None = None, extras: dict[str, str] | None = None) -> str:
-    """The Apprise URL of a channel for one message (priority, click link, JSON extras)."""
+def apprise_url(
+    channel: NotificationChannel,
+    secrets: dict[str, str],
+    *,
+    level: str = "info",
+    link: str | None = None,
+    extras: dict[str, str] | None = None,
+    icon: str | None = None,
+    open_label: str = "Open",
+) -> str:
+    """The Apprise URL of a channel for one message: priority by level, click
+    link and "Open" action, PBO's icon (`icon`, served by PUBLIC_URL; B55)
+    instead of Apprise's, JSON extras for the webhook."""
     config = channel.config or {}
     kind = channel.kind
     if kind == "ntfy":
@@ -329,6 +340,9 @@ def apprise_url(channel: NotificationChannel, secrets: dict[str, str], *, level:
             auth = _q(config["username"]) + (":" + _q(secrets["password"]) if secrets.get("password") else "") + "@"
         if link:
             params["click"] = link
+            params["actions"] = f"view, {open_label}, {link}, clear=true"
+        # Never Apprise's own icon: PBO's, or none.
+        params.update({"image": "yes", "avatar_url": icon} if icon else {"image": "no"})
         return f"{'ntfys' if secure else 'ntfy'}://{auth}{host}{path}/{_q(config['topic'])}?{_query(params)}"
     if kind == "gotify":
         secure, host, path = _host_part(config["server_url"])
@@ -338,9 +352,14 @@ def apprise_url(channel: NotificationChannel, secrets: dict[str, str], *, level:
         match = _DISCORD.match(secrets["webhook_url"])
         if not match:
             raise ChannelError("invalid_discord_webhook", "webhook_url")
-        return f"discord://{match.group(1)}/{match.group(2)}"
+        # Posted as "PBO" with PBO's icon; the title opens the screen.
+        params = {"avatar": "yes", "avatar_url": icon} if icon else {"avatar": "no"}
+        if link:
+            params["href"] = link
+        return f"discord://PBO@{match.group(1)}/{match.group(2)}?{_query(params)}"
     if kind == "telegram":
-        return f"tgram://{_q(secrets['bot_token'])}/{_q(config['chat_id'])}"
+        # The bot's own picture is set in BotFather; Apprise's image is not sent.
+        return f"tgram://{_q(secrets['bot_token'])}/{_q(config['chat_id'])}?{_query({'image': 'no', 'preview': 'no'})}"
     if kind == "email":
         security = config.get("security") or "starttls"
         auth = ""

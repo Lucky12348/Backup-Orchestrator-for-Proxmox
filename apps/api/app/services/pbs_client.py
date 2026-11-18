@@ -20,6 +20,7 @@ import httpx
 
 from app.core.config import Settings, get_settings
 from app.core.tls import build_tls_verify
+from app.services import run_control
 
 # PBS answers on its own node as "localhost" ("Node name (or 'localhost')").
 PBS_NODE = "localhost"
@@ -395,8 +396,13 @@ class PBSClient:
         timeout_seconds: float,
         poll_interval: float = 2.0,
         on_line: Callable[[str], None] | None = None,
+        cancellable: bool = False,
     ) -> dict:
         """Poll the task until it stops, streaming new log lines to `on_line`.
+
+        `cancellable` (sync, prune, GC, verify — never a wipe or a datastore
+        creation): when the run of this thread is cancelled (B56), stop the
+        task, wait until PBS has finished it and raise RunCancelled.
 
         Raises PBSTaskTimeout (task still running, NOT stopped by us) or
         PBSTaskError (stopped with an exit status other than OK / WARNINGS).
@@ -417,6 +423,9 @@ class PBSClient:
                     return
 
         while True:
+            if cancellable and run_control.current_cancelled():
+                self._stop_and_wait(upid, drain)
+                raise run_control.RunCancelled()
             status = self.task_status(upid)
             drain()
             if str(status.get("status", "")).lower() == "stopped":
@@ -437,6 +446,22 @@ class PBSClient:
                     log_lines=lines,
                 )
             self._sleep(poll_interval)
+
+    def _stop_and_wait(self, upid: str, drain: Callable[[], None], timeout_seconds: float = 120.0) -> None:
+        """Abort a task and wait for PBS to end it (the datastore is busy until then)."""
+        try:
+            self.stop_task(upid)
+        except PBSApiError:
+            pass  # already stopped: the status check below says so
+        deadline = self._monotonic() + timeout_seconds
+        while self._monotonic() < deadline:
+            try:
+                if str(self.task_status(upid).get("status", "")).lower() == "stopped":
+                    drain()
+                    return
+            except PBSApiError:
+                return
+            self._sleep(1.0)
 
 
 def _flag(value: bool) -> int:

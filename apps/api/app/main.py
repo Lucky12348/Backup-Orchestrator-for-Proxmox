@@ -17,6 +17,7 @@ from app.services import daily_tasks, notification_engine
 from app.services import run_events  # registers the run.* SQLAlchemy hooks
 from app.services.notification_migration import migrate_legacy_ntfy
 from app.services.planning_scheduler import start_planning_scheduler, stop_planning_scheduler
+from app.services.planning_titles import rename_legacy_titles
 from app.services.settings_service import activate_settings_store, ensure_pbs_mode, import_settings_from_env
 from app.services.users import bootstrap_admin_from_env
 from app.web_static import mount_frontend, resolve_dist_dir
@@ -45,6 +46,7 @@ def initialize_storage() -> None:
         ensure_pbs_mode(db)
         bootstrap_admin_from_env(db, os.environ)
         migrate_legacy_ntfy(db, os.environ)  # Phase 5j: one channel from the old ntfy settings
+        rename_legacy_titles(db)  # B55: "Rotation tous les 1 · …" → a sentence
     activate_settings_store(SessionLocal)
 
 

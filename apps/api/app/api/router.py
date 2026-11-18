@@ -58,6 +58,7 @@ protected_router.include_router(planning.router)
 protected_router.include_router(proxmox.router)
 protected_router.include_router(system.router)
 protected_router.include_router(notifications.router)
+protected_router.include_router(notifications.inbox_router)
 protected_router.include_router(activity.router)
 
 api_router = APIRouter()

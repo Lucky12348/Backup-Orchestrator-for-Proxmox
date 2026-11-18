@@ -84,3 +84,24 @@ export function retentionPolicy(draft: Values): { mode: string; days: number; ke
     log_detail_days: int(draft.RUN_LOG_DETAIL_DAYS) || 0,
   };
 }
+
+
+// --- B57: section menu ------------------------------------------------------------------
+
+/**
+ * Scroll-spy: the last section whose top went above `offset` px from the top
+ * of the window; the last one once the page is scrolled to the bottom.
+ */
+export function activeSection(tops: { key: SectionKey; top: number }[], offset: number, atBottom = false): SectionKey {
+  if (!tops.length) return "general";
+  if (atBottom) return tops[tops.length - 1].key;
+  let current = tops[0].key;
+  for (const item of tops) if (item.top - offset <= 0) current = item.key;
+  return current;
+}
+
+/** "#appearance" or "#settings-appearance" → "appearance". */
+export function sectionFromHash(hash: string): SectionKey | null {
+  const key = hash.replace(/^#/, "").replace(/^settings-/, "");
+  return (SECTIONS as string[]).includes(key) ? (key as SectionKey) : null;
+}

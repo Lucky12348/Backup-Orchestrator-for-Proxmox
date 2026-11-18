@@ -4,7 +4,7 @@ import { ExternalLink, EyeOff, HardDrive, Shield } from "lucide-react";
 import { getProxmoxApiUrl } from "../../api";
 import { ActionMenuArea, ActionMenuButton, type MenuAction } from "../../ui/ActionMenu";
 import { DiskTag } from "../disks/DiskTag";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 
 import { useNow } from "../../ui/useNow";
 import { Search } from "lucide-react";
@@ -66,7 +66,13 @@ export function ResourcesView({ vms, jobs, language, t, onIgnore, onJobSelection
   const now = useNow(fixedNow);
   const text = t.resourcesV2;
   const { toast } = useToast();
-  const [filters, setFilters] = useState<ResourceFilters>({ query: "", type: "", protection: "", node: "" });
+  const location = useLocation();
+  const [filters, setFilters] = useState<ResourceFilters>({ query: new URLSearchParams(location.search).get("q") ?? "", type: "", protection: "", node: "" });
+  // B55: the ⌘K palette opens a VM/CT as /assets?q=<name>.
+  useEffect(() => {
+    const query = new URLSearchParams(location.search).get("q");
+    if (query !== null) setFilters((current) => ({ ...current, query }));
+  }, [location.search]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [jobId, setJobId] = useState("");
   const [busy, setBusy] = useState(false);

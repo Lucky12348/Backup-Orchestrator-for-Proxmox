@@ -33,7 +33,8 @@ Treat these areas as sensitive:
 - `external_backup*`: removable-media orchestration, progress callbacks, cleanup, run status.
 - `disk_*`, `disks.py`, `disk_handoff.py`, `disk_preparation_agent.py`: destructive or hardware-adjacent workflows.
 - `planning*`: scheduler behavior, reminders, planning assumptions.
-- `notifications*`: production alerting and env-gated delivery behavior.
+- `notifications*`: one Apprise engine (catalog, channels, queue, inbox); messages only from catalog terms, in the admin language (B55).
+- `run_control.py` / `external_backups.py`: a cancel is honoured at safe points only (PBS waits marked cancellable, checkpoints), then the disk is released (B56).
 - `proxmox_*` and `pbs_*`: external system integration and sync state.
 
 Verify environment assumptions before changing behavior:
@@ -48,8 +49,8 @@ Prefer these tests when touching backend orchestration:
 - `apps/api/tests/test_external_backup_conflicts_progress.py`
 - `apps/api/tests/test_disk_handoff.py`
 - `apps/api/tests/test_disks.py`
-- `apps/api/tests/test_notifications.py`
-- `apps/api/tests/test_notification_preferences.py`
+- `apps/api/tests/test_notifications_engine.py`, `test_notifications_b55.py` (every event in both languages, inbox)
+- `apps/api/tests/test_run_cancel.py` (B56: cancel at any step, disk released)
 - `apps/api/tests/test_planning_events.py`
 - `apps/api/tests/test_pbs_coverage.py`
 

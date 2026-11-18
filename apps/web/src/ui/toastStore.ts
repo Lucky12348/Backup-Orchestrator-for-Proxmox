@@ -28,7 +28,15 @@ export type ToastInput = Omit<Toast, "id" | "duration" | "tone" | "seq"> & {
   id?: string;
   tone?: ToastTone;
   duration?: number;
+  /** B55: kept in the inbox too. Default: warnings and errors (alerts);
+   *  false for a form message or what the server already put there. */
+  inbox?: boolean;
 };
+
+/** An alert toast goes to the inbox (warning / error, unless the caller said no). */
+export function isInboxAlert(input: Pick<ToastInput, "tone" | "inbox">): boolean {
+  return input.inbox ?? (input.tone === "warning" || input.tone === "danger");
+}
 
 /** At most three stacked (the oldest non-error ones go first). */
 export const MAX_TOASTS = 3;

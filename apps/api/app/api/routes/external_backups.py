@@ -128,26 +128,22 @@ def get_run_log(run_id: int, db: DbSession) -> dict[str, object]:
 
 @router.post("/runs/{run_id}/cancel", status_code=status.HTTP_202_ACCEPTED)
 def cancel_run(run_id: int, db: DbSession, username: CurrentUser) -> dict[str, object]:
-    """Stop the running PBS sync task (API mode). Snapshots already copied stay
-    valid; the run then fails and the disk is left attached (eject it after)."""
-    from app.services.pbs_client import PBSClient
+    """B56: cancel a backup, verification or repair at any step. The run's
+    thread stops itself at the next safe point (services/run_control.py): the
+    PBS task is stopped, the disk released (unmount + USB removed from the
+    VM) and the run ends as "cancelled". Idempotent while the run stops."""
+    from app.services import run_control
 
     run = get_external_backup_run(db, run_id)
     if run.status not in (BackupRunStatus.PENDING, BackupRunStatus.RUNNING):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": "run_not_running", "message": "This run is not running."})
-    settings = get_settings()
-    if settings.pbs_mode != "api" or not run.pbs_task_upid:
+    if not _cancellable(run, db.get(ExternalDisk, run.disk_id), ignore_request=True):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "cancel_not_supported", "message": "This run cannot be cancelled now (no PBS task to stop yet, or PBS_MODE=agent)."},
+            detail={"code": "cancel_not_supported", "message": "This run is releasing or ejecting the disk: it can no longer be cancelled."},
         )
-    append_external_backup_run_log(db, run.id, step=run.current_step, message=f"Cancellation requested by {username}.")
-    try:
-        PBSClient(settings).stop_task(run.pbs_task_upid)
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY, detail={"code": "cancel_failed", "message": f"PBS refused to stop the task: {exc}"}
-        ) from exc
+    if run_control.request(run.id):
+        append_external_backup_run_log(db, run.id, step=run.current_step, message=f"Cancellation requested by {username}.")
     return {"run_id": run.id, "cancel_requested": True}
 
 
@@ -243,9 +239,26 @@ def _build_summary(run, disk_name: str, disk=None) -> ExternalBackupRunSummaryRe
 def _run_extras(run, disk) -> dict[str, object]:  # noqa: ANN001
     from app.services.run_log import datastore_pair, run_kind
 
-    running = run.status in (BackupRunStatus.PENDING, BackupRunStatus.RUNNING)
+    from app.services import run_control
+
     return {
         **datastore_pair(run, disk),
         "kind": run_kind(run, disk),
-        "cancellable": bool(running and run.pbs_task_upid and get_settings().pbs_mode == "api"),
+        "cancellable": _cancellable(run, disk),
+        "cancel_requested": run_control.is_requested(run.id),
     }
+
+
+# The end of a run (release, eject) is never interrupted: the disk is leaving.
+FINISHING_STEPS = frozenset({"release", "released", "eject", "eject_flush", "ejected", "success"})
+
+
+def _cancellable(run, disk, *, ignore_request: bool = False) -> bool:  # noqa: ANN001
+    from app.services import run_control
+    from app.services.run_log import run_kind
+
+    if run.status not in (BackupRunStatus.PENDING, BackupRunStatus.RUNNING):
+        return False
+    if run_kind(run, disk) == "eject" or (run.current_step or "") in FINISHING_STEPS:
+        return False
+    return ignore_request or not run_control.is_requested(run.id)

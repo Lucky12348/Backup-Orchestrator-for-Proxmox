@@ -38,6 +38,11 @@ const API_BASE_PATH = "/api/v1";
 // Custom event to signal 401 to the app (triggers logout)
 export const AUTH_EXPIRED_EVENT = "pbo:auth-expired";
 
+/** The account's UI language: also the language of PBO's notifications (B55). */
+export function updateAccountLanguage(language: "en" | "fr") {
+  return request<{ username: string; language: string | null }>("/auth/me/preferences", { method: "PUT", body: JSON.stringify({ language }) });
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -942,8 +947,58 @@ export function testNotificationDraft(payload: NotificationChannelInput) {
   return request<NotificationTestResult>("/notifications/test", { method: "POST", body: JSON.stringify(payload) });
 }
 
-export function getNotificationDeliveries(limit = 100) {
-  return request<NotificationDelivery[]>(`/notifications/deliveries?limit=${limit}`);
+export interface DeliveryPage {
+  items: NotificationDelivery[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
+/** The send journal: `query` = filters + page (views/notifications/notificationsModel.journalQuery). */
+export function getNotificationDeliveries(query = "limit=25") {
+  return request<DeliveryPage>(`/notifications/deliveries?${query}`);
+}
+
+// --- Inbox (B55) ------------------------------------------------------------------------------
+
+export type InboxFilter = "all" | "unread" | "urgent";
+
+export interface InboxItem {
+  id: number;
+  source: "event" | "toast";
+  event: string;
+  group: string;
+  level: NotificationLevel;
+  title: string;
+  body: string;
+  link: string | null;
+  disk_id: number | null;
+  count: number;
+  read: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InboxCounts {
+  unread: number;
+  urgent_unread: number;
+}
+
+export function getInbox(filter: InboxFilter = "all", before?: number) {
+  return request<InboxCounts & { items: InboxItem[]; has_more: boolean }>(`/inbox?filter=${filter}${before ? `&before=${before}` : ""}`);
+}
+
+export function getInboxCounts() {
+  return request<InboxCounts>("/inbox/counts");
+}
+
+/** `ids` absent = mark everything as read. */
+export function markInboxRead(ids?: number[]) {
+  return request<InboxCounts>("/inbox/read", { method: "POST", body: JSON.stringify(ids ? { ids } : {}) });
+}
+
+export function recordInboxToast(toast: { level: "warning" | "error"; title: string; body?: string; link?: string; disk_id?: number }) {
+  return request<InboxCounts>("/inbox/toasts", { method: "POST", body: JSON.stringify(toast) });
 }
 
 export function retryNotificationDelivery(id: number) {

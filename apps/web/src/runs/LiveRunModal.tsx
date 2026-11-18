@@ -5,7 +5,7 @@ import { DiskTag } from "../views/disks/DiskTag";
 import { CloseButton } from "../ui/CloseButton";
 import { StatusIcon, type StatusKind } from "../ui/StatusIcon";
 
-import { cancelExternalBackupRun } from "../api";
+import { CancelRunButton, canCancel, cancelKind, isStopping, useCancelRun } from "./CancelRun";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../components/ui/dialog";
 import { cn } from "../components/ui/utils";
 import type { Language, TranslationDictionary } from "../i18n";
@@ -87,7 +87,9 @@ export function RunView({ run, t, language }: { run: RunLike; t: TranslationDict
   const [filter, setFilter] = useState<LogFilter>("all");
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const { cancel: cancelRun } = useCancelRun(t, monitor.refresh);
   const running = isRunning(run);
+  const cancelled = run.status === "failed" && run.current_step === "cancelled";
 
   useEffect(() => {
     if (!running) return;
@@ -117,7 +119,9 @@ export function RunView({ run, t, language }: { run: RunLike; t: TranslationDict
         ? text.title.ejectRunning
         : text.title.ejectSuccess
     : run.status === "failed"
-      ? run.current_step === "disk_pulled"
+      ? cancelled
+        ? text.title.cancelled
+        : run.current_step === "disk_pulled"
         ? text.title.interrupted
         : run.repair
           ? text.title.repairFailed
@@ -144,7 +148,7 @@ export function RunView({ run, t, language }: { run: RunLike; t: TranslationDict
                 ? text.title.cleanup
                 : text.title.running;
 
-  const headerKind: StatusKind = running ? "running" : run.status === "success" ? "success" : "failed";
+  const headerKind: StatusKind = running ? "running" : run.status === "success" ? "success" : cancelled ? "skipped" : "failed";
 
   const statsLine = [
     summary
@@ -170,7 +174,7 @@ export function RunView({ run, t, language }: { run: RunLike; t: TranslationDict
       : [
           fill(text.stepOf, { n: focus + 1, total: steps.length }),
           text.steps[focusKey],
-          run.status === "failed" ? text.stepFailed : (text.stepSub as Record<string, string>)[focusKey],
+          run.status === "failed" ? (cancelled ? text.stepCancelled : text.stepFailed) : (text.stepSub as Record<string, string>)[focusKey],
           run.status === "failed" ? null : focusDuration,
         ]
           .filter(Boolean)
@@ -189,11 +193,7 @@ export function RunView({ run, t, language }: { run: RunLike; t: TranslationDict
   async function doCancel() {
     setCancelling(true);
     try {
-      await cancelExternalBackupRun(run.id);
-      toast({ tone: "warning", title: text.cancelRequested });
-      monitor.refresh();
-    } catch (error) {
-      toast({ tone: "danger", title: text.cancelFailed, description: error instanceof Error ? error.message : undefined });
+      await cancelRun(run);
     } finally {
       setCancelling(false);
       setConfirmCancel(false);
@@ -289,8 +289,8 @@ export function RunView({ run, t, language }: { run: RunLike; t: TranslationDict
         </div>
       </div>
 
-      {confirmCancel ? (
-        <div className="flex flex-wrap items-center gap-3 border-0 border-t border-solid border-border bg-danger/10 px-6 py-3">
+      {confirmCancel && canCancel(run) ? (
+        <div className="flex flex-wrap items-center gap-3 border-0 border-t border-solid border-border bg-danger/10 px-6 py-3" role="alertdialog" aria-label={text.cancelTitle[cancelKind(run)]}>
           <span className="flex-1 text-[13px] text-danger-text">{text.cancelConfirm}</span>
           <button type="button" onClick={() => setConfirmCancel(false)} className="rounded-lg border border-border bg-surface px-3 py-1.5 text-[13px] font-medium hover:bg-subtle">
             {text.keepGoing}
@@ -320,14 +320,17 @@ export function RunView({ run, t, language }: { run: RunLike; t: TranslationDict
         ) : null}
         {running ? (
           <>
-            {run.cancellable ? (
+            {canCancel(run) ? (
               <button
                 type="button"
                 onClick={() => setConfirmCancel(true)}
+                data-run-cancel={run.id}
                 className="rounded-md border border-solid border-border bg-transparent px-3 py-1.5 text-[13px] font-medium text-danger-text hover:bg-hover"
               >
-                {text.cancel}
+                {text.cancelKind[cancelKind(run)]}
               </button>
+            ) : isStopping(run) ? (
+              <CancelRunButton run={run} t={t} />
             ) : null}
             <button type="button" onClick={monitor.minimize} className="rounded-md border-0 bg-accent px-3 py-1.5 text-[13px] font-medium text-accent-fg hover:bg-accent/90">
               {text.minimizeContinue}

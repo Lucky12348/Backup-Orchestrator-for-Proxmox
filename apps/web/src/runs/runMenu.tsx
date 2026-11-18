@@ -1,4 +1,4 @@
-import { Download, Eye, RotateCcw } from "lucide-react";
+import { Download, Eye, RotateCcw, Square } from "lucide-react";
 
 import { getRunJournal, repairDisk, startDiskVerify } from "../api";
 import type { Language, TranslationDictionary } from "../i18n";
@@ -8,6 +8,7 @@ import { useToast } from "../ui/toast";
 import { useCommands } from "../views/commands";
 import { useDiskDirectory } from "../views/disks/DiskTag";
 import { runKind } from "../views/disks/diskModel";
+import { canCancel, cancelConfirmOptions, cancelKind, useCancelRun } from "./CancelRun";
 import { openRunModal } from "./openRun";
 import { journalText, type JournalEntry } from "./runModel";
 
@@ -22,6 +23,8 @@ interface RunRef {
   started_at: string;
   finished_at?: string | null;
   progress_percent?: number | null;
+  cancellable?: boolean;
+  cancel_requested?: boolean;
 }
 
 /** Saves the run journal as a text file, every time in PBO's time zone. */
@@ -42,6 +45,7 @@ export function useRunMenu(run: RunRef | undefined, t: TranslationDictionary, la
   const commands = useCommands();
   const disks = useDiskDirectory();
   const { toast } = useToast();
+  const { cancel } = useCancelRun(t, () => void commands.refresh());
   if (!run) return [];
   const text = t.menu.run;
   const disk = disks.find((item) => item.id === run.disk_id);
@@ -68,6 +72,10 @@ export function useRunMenu(run: RunRef | undefined, t: TranslationDictionary, la
   };
   return [
     { key: "open", label: active ? text.follow : text.open, icon: Eye, onSelect: () => openRunModal(run.id) },
+    // B56: cancel a running backup / verification / repair (confirmed by the menu).
+    ...(canCancel(run)
+      ? [{ key: "cancel", label: t.runModal.cancelKind[cancelKind(run)], icon: Square, danger: true, confirm: cancelConfirmOptions(run, t), onSelect: () => cancel(run) }]
+      : []),
     {
       key: "download",
       label: text.download,

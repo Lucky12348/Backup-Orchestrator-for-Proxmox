@@ -226,3 +226,102 @@ export function channelTarget(channel: Pick<NotificationChannel, "kind" | "confi
       return "";
   }
 }
+
+// --- B55: the channel assistant -------------------------------------------------------------
+
+export type WizardStep = "service" | "connection" | "events" | "when" | "summary";
+export const WIZARD_STEPS: WizardStep[] = ["service", "connection", "events", "when", "summary"];
+
+/** "Essential": what needs the operator (errors, a disk to look at), not the routine. */
+export const ESSENTIAL_EVENTS = [
+  "run_failed",
+  "run_interrupted",
+  "verify_failed",
+  "unsafe_removal",
+  "disk_to_plug",
+  "rotation_missed",
+  "disk_space",
+  "smart_degraded",
+  "agent_offline",
+  "agent_update_failed",
+  "pve_unreachable",
+  "pbs_unreachable",
+];
+
+export type EventPreset = "essential" | "all" | "custom";
+
+export function eventsForPreset(preset: Exclude<EventPreset, "custom">, all: string[]): string[] {
+  return preset === "all" ? [...all] : all.filter((key) => ESSENTIAL_EVENTS.includes(key));
+}
+
+export function presetOf(events: string[], all: string[]): EventPreset {
+  const chosen = new Set(events);
+  const same = (list: string[]) => list.length === chosen.size && list.every((key) => chosen.has(key));
+  if (same(all)) return "all";
+  if (same(eventsForPreset("essential", all))) return "essential";
+  return "custom";
+}
+
+/** What the connection step depends on: a test is due again when it changes. */
+export function connectionKey(draft: ChannelDraft): string {
+  return JSON.stringify([draft.kind, draft.values, draft.clearSecrets, draft.headers.map((row) => [row.name, row.value])]);
+}
+
+/** Errors that keep the operator on a step. */
+export function stepErrors(step: WizardStep, draft: ChannelDraft): Record<string, string> {
+  const all = draftErrors(draft);
+  if (step === "connection") return Object.fromEntries(Object.entries(all).filter(([field]) => field !== "events" && field !== "quiet"));
+  if (step === "events") return all.events ? { events: all.events } : {};
+  if (step === "when") return all.quiet ? { quiet: all.quiet } : {};
+  return {};
+}
+
+/** A new channel: kind chosen on the first step, events = Essential, named after the service. */
+export function draftForKind(kind: NotificationKind, allEvents: string[], name: string): ChannelDraft {
+  return { ...emptyDraft(kind, eventsForPreset("essential", allEvents)), name };
+}
+
+// --- B55: the journal ----------------------------------------------------------------------
+
+export type JournalPeriod = "all" | "24h" | "7d" | "30d";
+export const JOURNAL_PERIODS: JournalPeriod[] = ["all", "24h", "7d", "30d"];
+export const JOURNAL_PAGE = 25;
+
+export interface JournalFilters {
+  channelId: number | null;
+  status: NotificationDelivery["status"] | "";
+  level: NotificationLevel | "";
+  period: JournalPeriod;
+  q: string;
+}
+
+export const NO_FILTERS: JournalFilters = { channelId: null, status: "", level: "", period: "all", q: "" };
+
+const PERIOD_HOURS: Record<Exclude<JournalPeriod, "all">, number> = { "24h": 24, "7d": 24 * 7, "30d": 24 * 30 };
+
+/** Query string of GET /notifications/deliveries. */
+export function journalQuery(filters: JournalFilters, page: number, now: Date): string {
+  const params = new URLSearchParams({ limit: String(JOURNAL_PAGE), offset: String(Math.max(0, page) * JOURNAL_PAGE) });
+  if (filters.channelId !== null) params.set("channel_id", String(filters.channelId));
+  if (filters.status) params.set("status", filters.status);
+  if (filters.level) params.set("level", filters.level);
+  if (filters.period !== "all") params.set("since", new Date(now.getTime() - PERIOD_HOURS[filters.period] * 3_600_000).toISOString());
+  if (filters.q.trim()) params.set("q", filters.q.trim());
+  return params.toString();
+}
+
+export function pageCount(total: number): number {
+  return Math.max(1, Math.ceil(total / JOURNAL_PAGE));
+}
+
+/**
+ * How a delivery waits (B55): "scheduled" (quiet hours: a clock and the time it
+ * leaves), "retry" (failed once, next attempt at…), "digest", or "sending" (due now).
+ */
+export function waitingState(delivery: Pick<NotificationDelivery, "status" | "attempts" | "next_attempt_at">, now: Date): "scheduled" | "retry" | "digest" | "sending" | null {
+  if (delivery.status === "digest") return "digest";
+  if (delivery.status !== "pending") return null;
+  const at = delivery.next_attempt_at ? Date.parse(delivery.next_attempt_at.endsWith("Z") || /[+-]\d\d:\d\d$/.test(delivery.next_attempt_at) ? delivery.next_attempt_at : `${delivery.next_attempt_at}Z`) : NaN;
+  if (!Number.isFinite(at) || at <= now.getTime() + 20_000) return "sending";
+  return delivery.attempts > 0 ? "retry" : "scheduled";
+}

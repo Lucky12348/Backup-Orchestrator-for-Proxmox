@@ -163,6 +163,8 @@ def _notify_unreachable(target: str, exc: Exception) -> None:
     text = str(exc)
     if "not configured" in text.lower():
         return
+    from app.core.config import get_settings
     from app.services import notifications
 
-    notifications.integration_unreachable(target, text)
+    settings = get_settings()
+    notifications.integration_unreachable(target, settings.pve_api_url if target == "pve" else settings.pbs_api_url)

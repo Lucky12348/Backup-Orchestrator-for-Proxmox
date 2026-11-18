@@ -14,7 +14,7 @@ from sqlalchemy.engine import Engine
 
 ALEMBIC_MANAGED_TABLES = frozenset(
     {"users", "app_settings", "agents", "agent_pairing_codes", "setup_progress", "pbs_usb_mappings", "agent_updates",
-     "notification_channels", "notification_deliveries"}
+     "notification_channels", "notification_deliveries", "inbox_items"}
 )
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
 

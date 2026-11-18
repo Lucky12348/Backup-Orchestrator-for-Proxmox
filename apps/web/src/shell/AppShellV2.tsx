@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   Activity,
@@ -12,7 +12,6 @@ import {
   Monitor,
   Moon,
   Plug,
-  Search,
   Server,
   SlidersHorizontal,
   Sun,
@@ -40,6 +39,8 @@ import { DiskAvatar } from "../views/disks/DiskBits";
 import { DiskDirectoryProvider } from "../views/disks/DiskTag";
 import { useEvents } from "../useEvents";
 import { newDiskCount } from "./shellModel";
+import { InboxButton, recordAlertToast } from "./Inbox";
+import { PaletteButton } from "./CommandPalette";
 
 type NavKey = keyof TranslationDictionary["nav"];
 
@@ -127,6 +128,7 @@ function ShellRoot({ children, language, onLanguageChange, t, disks, vms }: AppS
             const disk = disks.find((item) => item.id === diskId);
             return disk ? <DiskAvatar disk={disk} t={t} size="sm" /> : null;
           }}
+          onAlert={recordAlertToast}
         >
           <ConfirmProvider defaultCancelLabel={t.confirmDialogs.cancel}>
             <RunMonitorProvider diskNames={diskNames} groupNames={groupNames}>
@@ -180,20 +182,9 @@ function ShellLayout({
   const location = useLocation();
   const { username, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const searchRef = useRef<HTMLInputElement | null>(null);
   const ThemeIcon = themePreference === "system" ? Monitor : themePreference === "light" ? Sun : Moon;
 
   useEffect(() => setMobileOpen(false), [location.pathname]);
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        searchRef.current?.focus();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
 
   const current = [...OVERVIEW, ...CONFIGURATION].find((item) => (item.to === "/" ? location.pathname === "/" : location.pathname.startsWith(item.to)));
   const label = (key: NavKey | "resources") => (key === "resources" ? t.shell.resources : t.nav[key]);
@@ -258,17 +249,10 @@ function ShellLayout({
             <span className="text-faint">/</span>
             <span className="font-medium">{current ? label(current.key) : ""}</span>
           </nav>
-          <label className="hidden h-[34px] w-60 items-center gap-2 rounded-lg border border-border bg-subtle pl-2.5 pr-2 text-faint md:flex" title={t.shell.searchSoon}>
-            <Search className="h-3.5 w-3.5" />
-            <input
-              ref={searchRef}
-              aria-label={t.shell.search}
-              placeholder={t.shell.search}
-              className="min-w-0 flex-1 bg-transparent text-[13px] text-fg outline-none placeholder:text-faint"
-            />
-            <kbd className="rounded border border-border-strong px-[5px] font-mono text-[11px]">⌘K</kbd>
-          </label>
-          <RunPill t={t} />
+          {/* B55: ⌘K palette (search + actions); a magnifier on mobile. */}
+          <PaletteButton t={t} />
+          {/* Small screens: the running task gets its own line, under the icons. */}
+          <RunPill t={t} className="order-last w-full sm:order-none sm:w-auto [&>button]:min-w-0 [&>button]:flex-1 sm:[&>button]:flex-none" />
           <button
             type="button"
             aria-label={t.shell.theme[themePreference]}
@@ -278,14 +262,8 @@ function ShellLayout({
           >
             <ThemeIcon className="h-4 w-4" />
           </button>
-          <NavLink
-            to="/notifications"
-            aria-label={t.shell.notifications}
-            title={t.shell.notifications}
-            className="flex h-[34px] w-[34px] items-center justify-center rounded-lg border border-border text-muted hover:bg-subtle"
-          >
-            <Bell className="h-4 w-4" />
-          </NavLink>
+          {/* B55: the inbox replaces the bell. */}
+          <InboxButton t={t} language={language} />
         </header>
         {/* B27: fluid content, side padding, a wide cap centred only beyond it. */}
         <div
@@ -464,6 +442,7 @@ function DiskEventToasts({ language }: { language: Language }) {
       title: item.message,
       diskId: (event.data as { id?: number }).id,
       action: item.action ? { label: item.action.label, href: diskPageUrl(item.action.diskId) } : undefined,
+      inbox: item.inbox,
     });
   });
   return null;

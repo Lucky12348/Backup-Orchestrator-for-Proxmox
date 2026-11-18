@@ -276,8 +276,8 @@ should reach them — and every call is additionally protected with an
   modal reads `GET /external-backups/runs/{id}` + `/log`; "Minimize" turns it
   into the top-bar pill. Any long action opens it: `openRunModal(runId)` when
   the id is known, `expectRunModal()` before an action whose run arrives over
-  SSE (eject). Cancel = `POST /external-backups/runs/{id}/cancel` (API mode,
-  stops the PBS task; `cancellable` on the run).
+  SSE (eject). Cancel = `POST /external-backups/runs/{id}/cancel` at any step
+  but the final release/eject (B56, see below; `cancellable` on the run).
 - Run journal (B22/B23, `apps/api/app/services/run_log.py`): progress lines
   are not journal lines (also not stored any more:
   `append_external_backup_run_log`), consecutive duplicates collapse, PBO
@@ -746,7 +746,7 @@ should reach them — and every call is additionally protected with an
   until the end, errors bypass), daily summary (`digest` channels hold
   non-errors), queue worker (15 s or woken, retries 1 / 5 / 15 / 60 min then
   `failed` with a redacted readable error), journal (`notification_deliveries`,
-  30 days). Alembic `0015`. Code calls the hooks in `services/notifications.py`
+  30 days). Alembic `0015` (+ `0016`: delivery params, inbox). Code calls the hooks in `services/notifications.py`
   (`run_finished`, `unsafe_removal`, `disk_space`, `smart_degraded`,
   `disk_new`, `disk_to_plug`, `rotation_missed`, `backup_stale`,
   `agent_offline`, `agent_update_failed`, `integration_unreachable`,
@@ -785,6 +785,62 @@ should reach them — and every call is additionally protected with an
   `services/daily_tasks.py` runs it once a day after 03:30 (PBO time zone,
   marker `meta.daily_tasks`) with the "N days without backup" reminders.
 
+## Notification language, cancel, inbox, ⌘K, settings menu (B55–B57)
+
+- **Language (B55)**: every notification follows the admin account's language
+  (`users.language`, Settings › General — saved with an awaited
+  `PUT /auth/me/preferences`). Hook parameters are numbers, names or
+  `notification_catalog.term(en, fr)` (`RUN_KINDS`, `STOP_REASONS`,
+  `FAILED_STAGES`, `SMART_STATES`, `AGENT_ROLES`, `UPDATE_RESULTS`) — **never
+  free English text** from PVE/PBS/agents (a failed run says its stage via
+  `notifications.failure_stage`; the error stays in the run journal).
+  `notification_deliveries.params` (Alembic `0016`) lets the engine render a
+  message again when it is sent and when the journal shows it
+  (`render_delivery`). `tests/test_notifications_b55.py` renders every event in
+  both languages and fails on English words in French (and the reverse).
+- Saving a channel calls `notification_engine.reschedule_channel` (quiet hours
+  / summary changed → what waits is placed again; retries keep their delay).
+  ntfy and Discord get PBO's icon (`ICON_PATH` under `PUBLIC_URL`), ntfy an
+  `actions` "Open" button and a priority by level; Apprise's icon is never sent.
+- Planning names: the form writes `autoTitle` = "Rotation " + the schedule
+  sentence; `services/planning_titles.rename_legacy_titles` rewrites the old
+  generated names once at startup (marker `meta.planning_titles_natural`).
+- **Cancel (B56)**: `services/run_control.py`. The route only records the
+  request (in memory, one process); the run thread stops itself:
+  `PBSClient.wait_for_task(cancellable=True)` (sync, prune, GC, verify — never
+  wipe / datastore creation / unmount) stops the PBS task, waits for its end
+  and raises `RunCancelled`; `check_interrupted` is also a cancel checkpoint
+  (and `_run_external_export` checks before mounting). The thread then runs
+  `_finish_cancelled`: `release_disk_within_run(datastore_may_be_missing=True)`
+  (unmount + USB off the VM), run FAILED with `current_step="cancelled"`
+  (journal `run_cancelled`), no verification flag unless the release failed
+  after something was written (`verify_recommended`). `cancellable` = running,
+  not an eject run, step not in `FINISHING_STEPS` (release/eject), not already
+  asked; `cancel_requested` = stopping. Web: `runs/CancelRun.tsx` (modal, top
+  pill, ⋯ run menu, dashboard), pure `runs/cancelModel.ts`.
+- **Inbox**: `services/inbox.py`, table `inbox_items` (`0016`). `emit()` records
+  every event (whatever the channels), dedup like the channels (≥ 10 min);
+  alert toasts come from `ToastProvider.onAlert` (`toastStore.isInboxAlert`:
+  warning/danger unless `inbox: false` — use it for form messages and for
+  toasts the server already records). Retention follows `RUN_HISTORY_*`
+  (`inbox.purge` in the daily task). SSE type `inbox.updated`. Web:
+  `shell/Inbox.tsx`, `shell/inboxModel.ts`.
+- **⌘K palette**: `shell/CommandPalette.tsx` (rendered in `App.tsx` inside
+  `CommandsProvider`), pure search in `shell/paletteModel.ts`;
+  `openCommandPalette()` from anywhere. Targets: pages, disks (`/disks/:id`),
+  VM/CT (`/assets?q=`), runs (`openRunModal`), settings (`/settings#<section>`),
+  actions (backup/eject/verify a disk, `#new-channel` on Notifications, theme,
+  language).
+- **Channel assistant**: `views/notifications/ChannelWizard.tsx` (service →
+  connection + test required, skippable with a confirmation → events presets
+  Essential/All/Custom → when → summary; editing opens on the step chosen).
+  Logos `ChannelLogo.tsx`: Simple Icons 13.21.0 paths (CC0) for ntfy, Discord,
+  Telegram, lucide for the rest, `currentColor`. Journal filters/pages:
+  `notificationsModel.journalQuery`, `waitingState`.
+- **Settings (B57)**: centred (`max-w-[1120px]`), sticky section menu with
+  scroll-spy (`settingsModel.activeSection`), a list on small screens,
+  `#<section>` / `#settings-<section>` opens a section.
+
 ## Disk ↔ USB port (Phase 4.4, read before touching the USB passthrough)
 
 - The host agent reports, for each USB disk, its physical USB location read
@@ -818,7 +874,7 @@ should reach them — and every call is additionally protected with an
   stream `GET /api/v1/events` (session cookie, `: ping` every 15 s, stream
   closed after 1 h so the browser reconnects). Event types are a closed set
   (`EVENT_TYPES`): `disk.added|removed|updated`, `agent.online|offline`,
-  `run.progress|log|finished`.
+  `run.progress|log|finished`, `inbox.updated`.
 - `disk.*` are published by `ingest_agent_disk_report` after the commit
   (`services/disk_events.py`: payload, `reject_reason` = `zero_size` |
   `too_small`, hot-plug history in `activity_events`, category `disk`).

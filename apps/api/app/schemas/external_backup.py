@@ -55,10 +55,11 @@ class ExternalBackupRunRead(UTCDateTimeModel):
     # "main → pbo-pbotesta" (eject runs only know the target).
     source_datastore: str | None = None
     target_datastore: str | None = None
-    # The running PBS task can be stopped (API mode, task known).
+    # B56: the run can be cancelled now; cancel_requested = it is stopping.
     # "backup" | "eject" (services/run_log.run_kind).
     kind: str | None = None
     cancellable: bool = False
+    cancel_requested: bool = False
     # Phase 5f
     verify_after_backup: bool | None = None
     verify_only: bool | None = None
@@ -105,10 +106,11 @@ class ExternalBackupRunSummaryRead(UTCDateTimeModel):
     # "main → pbo-pbotesta" (eject runs only know the target).
     source_datastore: str | None = None
     target_datastore: str | None = None
-    # The running PBS task can be stopped (API mode, task known).
+    # B56: the run can be cancelled now; cancel_requested = it is stopping.
     # "backup" | "eject" (services/run_log.run_kind).
     kind: str | None = None
     cancellable: bool = False
+    cancel_requested: bool = False
     # Phase 5f
     verify_after_backup: bool | None = None
     verify_only: bool | None = None

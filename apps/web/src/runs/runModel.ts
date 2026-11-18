@@ -26,6 +26,7 @@ export interface RunLike {
   source_datastore?: string | null;
   target_datastore?: string | null;
   cancellable?: boolean;
+  cancel_requested?: boolean;
   /** Phase 5f: PBS verify after the sync; verify-only run (no copy). */
   verify_after_backup?: boolean | null;
   verify_only?: boolean | null;

@@ -448,7 +448,7 @@ function IdentityPanel({
 
   async function save() {
     if (!name.trim()) {
-      toast({ tone: "warning", title: text.errors.disk_name_required });
+      toast({ tone: "warning", title: text.errors.disk_name_required, inbox: false });
       return;
     }
     setBusy(true);
@@ -466,7 +466,7 @@ function IdentityPanel({
   async function upload(file: File | undefined) {
     if (!file) return;
     if (file.size > 5 * 1024 * 1024) {
-      toast({ tone: "warning", title: text.errors.photo_too_large });
+      toast({ tone: "warning", title: text.errors.photo_too_large, inbox: false });
       return;
     }
     setBusy(true);

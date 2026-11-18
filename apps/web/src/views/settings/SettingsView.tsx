@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { ExternalLink, Loader2, RefreshCw } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ChevronRight, ExternalLink, Loader2, RefreshCw } from "lucide-react";
 import { Link } from "react-router-dom";
 
-import { getAbout, getSettingsGroups, patchSettings, previewRetention, type AboutInfo, type RetentionPreview } from "../../api";
+import { getAbout, getSettingsGroups, patchSettings, previewRetention, updateAccountLanguage, type AboutInfo, type RetentionPreview } from "../../api";
 import { useAuth } from "../../AuthContext";
 import { cn } from "../../components/ui/utils";
 import type { Language, TranslationDictionary } from "../../i18n";
@@ -13,9 +13,80 @@ import { PageTitle } from "../../ui/PageTitle";
 import { StatusDot } from "../../ui/StatusDot";
 import { useToast } from "../../ui/toast";
 import { fill } from "../format";
-import { HISTORY_DAYS, LOG_DAYS, SECTIONS, changed, retentionPolicy, sectionErrors, typedValues, valuesOf, type SectionKey, type Values } from "./settingsModel";
+import {
+  HISTORY_DAYS,
+  LOG_DAYS,
+  SECTIONS,
+  activeSection,
+  changed,
+  retentionPolicy,
+  sectionErrors,
+  sectionFromHash,
+  typedValues,
+  valuesOf,
+  type SectionKey,
+  type Values,
+} from "./settingsModel";
 
 const card = "flex flex-col gap-4 rounded-lg border border-solid border-border bg-surface p-5 scroll-mt-6";
+// B57: the section nearest the top of the window (scroll-spy) is highlighted.
+const SPY_OFFSET = 120;
+
+/**
+ * `ready`: the sections are rendered. The section the operator chose (menu,
+ * "#appearance" from the ⌘K palette) stays highlighted until they scroll
+ * themselves; otherwise the section nearest the top is (scroll-spy).
+ */
+function useScrollSpy(ready: boolean): [SectionKey, (key: SectionKey) => void] {
+  const [active, setActive] = useState<SectionKey>("general");
+  const chosen = useRef<SectionKey | null>(null);
+  useEffect(() => {
+    if (!ready) return undefined;
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
+      if (chosen.current) return;
+      const tops = SECTIONS.map((key) => ({ key, top: document.getElementById(`settings-${key}`)?.getBoundingClientRect().top ?? Number.POSITIVE_INFINITY }));
+      const atBottom = window.scrollY > 0 && window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4;
+      setActive(activeSection(tops, SPY_OFFSET, atBottom));
+    };
+    const schedule = () => {
+      if (!frame) frame = window.requestAnimationFrame(measure);
+    };
+    // The operator scrolls: the spy follows again.
+    const release = () => {
+      chosen.current = null;
+    };
+    const target = sectionFromHash(window.location.hash);
+    if (target) {
+      chosen.current = target;
+      setActive(target);
+      document.getElementById(`settings-${target}`)?.scrollIntoView({ block: "start" });
+    } else {
+      measure();
+    }
+    // Late content (About, retention preview) changes the page height.
+    const resize = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(schedule);
+    resize?.observe(document.body);
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    for (const type of ["wheel", "touchmove", "keydown"]) window.addEventListener(type, release, { passive: true });
+    return () => {
+      resize?.disconnect();
+      window.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+      for (const type of ["wheel", "touchmove", "keydown"]) window.removeEventListener(type, release);
+      if (frame) window.cancelAnimationFrame(frame);
+    };
+  }, [ready]);
+  const go = (key: SectionKey) => {
+    chosen.current = key;
+    setActive(key);
+    document.getElementById(`settings-${key}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.history.replaceState(null, "", `#settings-${key}`);
+  };
+  return [active, go];
+}
 const input = "rounded-md border border-solid border-border-strong bg-bg px-2.5 py-1.5 text-sm text-fg outline-none focus:border-accent";
 const primary =
   "flex w-fit items-center justify-center gap-1.5 rounded-md border-0 bg-accent px-3 py-1.5 text-[13px] font-medium text-accent-fg hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50";
@@ -71,6 +142,7 @@ export function SettingsView({ language, t }: { language: Language; t: Translati
   const [about, setAbout] = useState<AboutInfo | null>(null);
   const [aboutBusy, setAboutBusy] = useState(false);
   const zones = useMemo(() => supportedTimeZones(), []);
+  const [active, goTo] = useScrollSpy(saved !== null);
 
   async function load() {
     const values = valuesOf(await getSettingsGroups(["general", "appearance", "backups", "retention", "agents"]));
@@ -105,7 +177,12 @@ export function SettingsView({ language, t }: { language: Language; t: Translati
     setBusy(section);
     try {
       if (Object.keys(values).length) await patchSettings(values);
-      if (languageChanged) auth.setLanguage(lang);
+      if (languageChanged) {
+        // B55: the account's language is what notifications are written in:
+        // saved for sure (an error is shown), not fire-and-forget.
+        await updateAccountLanguage(lang);
+        auth.setLanguage(lang);
+      }
       if (section === "general" || section === "appearance" || section === "backups") await appearance.reload();
       await load();
       toast({ tone: "success", title: fill(text.sectionSaved, { section: text.sections[section] }) });
@@ -127,7 +204,7 @@ export function SettingsView({ language, t }: { language: Language; t: Translati
 
   if (!saved) {
     return (
-      <div className="flex flex-col gap-6">
+      <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-6" data-settings-layout>
         <PageTitle tip={text.info}>{text.title}</PageTitle>
         <p className="m-0 flex items-center gap-2 text-[13px] text-faint">
           <Loader2 className="h-4 w-4 animate-spin" />
@@ -151,23 +228,48 @@ export function SettingsView({ language, t }: { language: Language; t: Translati
     );
   };
   const prefs = prefsFromValues(draft);
+  const dirtySections = saved
+    ? SECTIONS.filter((key) => key !== "about" && (Object.keys(changed(key, saved, draft)).length > 0 || (key === "general" && lang !== auth.language)))
+    : [];
   const general = sectionErrors("general", draft);
   const backups = sectionErrors("backups", draft);
   const retention = sectionErrors("retention", draft);
 
   return (
-    <div className="flex flex-col gap-6">
+    // B57: centred, a readable width; sticky section menu on the left (lg+),
+    // a list of sections on small screens.
+    <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-6" data-settings-layout>
       <PageTitle tip={text.info}>{text.title}</PageTitle>
-      <div className="grid gap-6 lg:grid-cols-[200px_minmax(0,1fr)]">
-        <nav aria-label={text.title} className="flex gap-1 overflow-x-auto lg:sticky lg:top-6 lg:flex-col lg:self-start">
-          {SECTIONS.map((section) => (
-            <a key={section} href={`#settings-${section}`} className="whitespace-nowrap rounded-md px-2.5 py-1.5 text-[13px] text-muted no-underline hover:bg-hover hover:text-fg">
-              {text.sections[section]}
-            </a>
-          ))}
+      <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-8">
+        <nav aria-label={text.sectionsNav} className="lg:sticky lg:top-6 lg:self-start" data-settings-nav>
+          <ul className="m-0 flex list-none flex-col divide-y divide-border overflow-hidden rounded-lg border border-solid border-border bg-surface p-0 lg:divide-y-0 lg:border-0 lg:bg-transparent">
+            {SECTIONS.map((section) => (
+              <li key={section}>
+                <a
+                  href={`#settings-${section}`}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    goTo(section);
+                  }}
+                  aria-current={active === section ? "location" : undefined}
+                  data-active={active === section ? "" : undefined}
+                  className={cn(
+                    "flex items-center gap-2 px-3.5 py-3 text-[13px] no-underline lg:rounded-md lg:px-3 lg:py-1.5",
+                    active === section
+                      ? "font-medium text-fg lg:bg-subtle lg:shadow-[inset_2px_0_0_rgb(var(--pbo-accent))]"
+                      : "text-muted hover:bg-hover hover:text-fg",
+                  )}
+                >
+                  <span className="flex-1">{text.sections[section]}</span>
+                  {dirtySections.includes(section) ? <span className="h-1.5 w-1.5 rounded-full bg-warning" aria-label={text.unsaved} /> : null}
+                  <ChevronRight className="h-4 w-4 text-faint lg:hidden" aria-hidden />
+                </a>
+              </li>
+            ))}
+          </ul>
         </nav>
 
-        <div className="flex min-w-0 max-w-[880px] flex-col gap-6">
+        <div className="flex min-w-0 flex-col gap-6">
           <section id="settings-general" className={card} aria-labelledby="settings-general-title" data-section="general">
             <h2 id="settings-general-title" className="m-0 text-[15px] font-semibold">{text.sections.general}</h2>
             <Field label={text.language}>

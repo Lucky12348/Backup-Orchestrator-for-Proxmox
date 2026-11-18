@@ -372,6 +372,24 @@ settings (B9 duplicates) are migrated once to a channel. Settings page in
 sections (General, Appearance, Backups, Retention, Agents, About) with a
 daily history retention. See docs/NOTIFICATIONS.md and AGENTS.md.
 
+### 1.8 Notification fixes, cancel, inbox, ⌘K — Done — 2026-11-18 (B55, B56, B57)
+
+B55: messages entirely in PBO's language (parameters too), re-rendered when
+sent and shown; the queue placed again when quiet hours change; waiting
+messages with a clock and their time; planning names as a sentence (old
+generated names rewritten once); ntfy/Discord with PBO's icon, priority and
+an "Open" link. Channel assistant in five steps (logos, a test before going
+on, event presets, when, summary), filtered and paged journal, top-bar inbox
+(stored events + alert toasts), ⌘K palette. B56: cancel a backup,
+verification or repair at any step but the final release/eject (PBS task
+stopped, disk released, run "cancelled", no verification). B57: Settings
+centred with a sticky section menu and scroll-spy.
+
+Known limits: in `PBS_MODE=agent` the copy cannot be stopped mid-way (the
+cancel takes effect when the step ends); a preparation (wipe, datastore
+creation) always finishes first. Journal lines from before B55 keep the text
+they were written with.
+
 ## 2. CI/CD — Not started
 
 - No `.github/workflows` exists. Add a pipeline that at minimum lints and tests

@@ -221,7 +221,7 @@ export function rotationDisks(disks: readonly DiskLike[], runs: readonly RunLike
     .slice(0, limit);
 }
 
-export type RunTone = "ok" | "err" | "run";
+export type RunTone = "ok" | "err" | "run" | "off";
 
 export function recentRuns<R extends DashboardRun>(runs: readonly R[], limit = 5): { run: R; tone: RunTone }[] {
   return [...runs]
@@ -229,7 +229,7 @@ export function recentRuns<R extends DashboardRun>(runs: readonly R[], limit = 5
     .slice(0, limit)
     .map((run) => ({
       run,
-      tone: run.status === "pending" || run.status === "running" ? "run" : run.status === "success" ? "ok" : "err",
+      tone: run.status === "pending" || run.status === "running" ? "run" : run.status === "success" ? "ok" : run.current_step === "cancelled" ? "off" : "err",
     }));
 }
 

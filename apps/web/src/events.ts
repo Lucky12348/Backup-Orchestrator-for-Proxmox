@@ -13,7 +13,8 @@ export type AppEventType =
   | "agent.offline"
   | "run.progress"
   | "run.log"
-  | "run.finished";
+  | "run.finished"
+  | "inbox.updated";
 
 export const APP_EVENT_TYPES: AppEventType[] = [
   "disk.added",
@@ -24,6 +25,7 @@ export const APP_EVENT_TYPES: AppEventType[] = [
   "run.progress",
   "run.log",
   "run.finished",
+  "inbox.updated",
 ];
 
 export interface DiskEventData {

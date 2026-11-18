@@ -99,13 +99,39 @@ Messages:
 - They are short, in the account's language (English or French).
 - They name the disk with its colour as a dot, e.g. « 🔵 Rotation A ».
 
-### Links
+### Language
+
+Every message follows PBO's language: the language of the admin account
+(Settings › General). Titles, texts and their parameters are all
+translated: a run step, a SMART state, an agent role or why a run stopped
+are words of the catalog (`term()` in `notification_catalog.py`), never
+English text from PVE, PBS or an agent. A failed backup says at which stage
+it failed; the exact error stays in the run journal.
+
+A message is rendered again in the current language when it is sent and
+when the journal shows it (its parameters are stored), so changing the
+language also changes what is still waiting.
+
+### Links and appearance
 
 Set the **public address of PBO** in Settings › General (for example
 `https://pbo.example.lan`). Each message then carries a link to the screen
-concerned: the disk sheet, Planning or Integrations. ntfy uses it as the
-click action, the webhook as `link`, and the other channels add it to the
-text. With no public address, messages have no link.
+concerned: the disk sheet, Planning or Integrations. With no public address,
+messages have no link.
+
+| Channel | Link | Icon | Priority |
+| --- | --- | --- | --- |
+| ntfy | click on the message + an **Open** button | PBO's icon | by level (low → max) |
+| Discord | the title opens the screen; posted as "PBO" | PBO's icon | — |
+| Telegram | in the text (no preview card) | the bot's picture (BotFather) | — |
+| Gotify | in the text | — | by level |
+| e-mail, Apprise URL | in the text | — | — |
+| webhook | `link` in the JSON | — | `level` in the JSON |
+
+PBO's icon is served by PBO itself (`/favicon/web-app-manifest-192x192.png`
+under the public address). The ntfy app and Discord download it: with a
+self-signed certificate or an address they cannot reach, they show their
+default icon instead. Apprise's own icon is never sent.
 
 ## Reliability
 
@@ -123,6 +149,27 @@ text. With no public address, messages have no link.
   kept 30 days.
 - **Disabled channel**: its messages wait until it is enabled again.
   Deleting a channel cancels its waiting messages.
+- **Quiet hours changed**: saving a channel places what waits for it again
+  at once. Quiet hours removed: held messages leave now; a shorter range:
+  they leave at its new end; the daily summary switched on or off: they
+  move into or out of it. Messages waiting for a retry keep their delay.
+- **Waiting messages** show a clock and the time they will leave (quiet
+  hours) or of the next attempt (retry), apart from a message being sent.
+
+## Inbox
+
+The inbox in the top bar (it replaces the bell) lists PBO's events whatever
+the channels: every event of the catalog is stored (`inbox_items`, Alembic
+`0016`), rendered in PBO's current language. An identical event inside its
+window does not add a line: it counts (×N) and is unread again. The alert
+toasts of the web UI (warnings and errors) are kept there too, except form
+messages and what the server already recorded.
+
+Badge: the number of unread lines; red when one of them is urgent (error).
+Filters All / Unread / Urgent, "Mark all as read", a click opens the screen
+concerned. Lines are kept as Settings › Retention says for the run history
+("keep everything": kept; "delete after N days": N days; "keep the last N
+per disk": one year), trimmed by the daily task.
 
 ## Secrets
 
@@ -148,8 +195,14 @@ All routes need a session.
 | `PUT` / `DELETE /api/v1/notifications/channels/{id}` | Update / delete |
 | `POST /api/v1/notifications/channels/{id}/test` | Test a stored channel |
 | `POST /api/v1/notifications/test` | Test the form before saving; `channel_id` reuses the stored secrets |
-| `GET /api/v1/notifications/deliveries` | The journal |
+| `GET /api/v1/notifications/deliveries` | The journal: `channel_id`, `status`, `level`, `since`, `q` (search), `limit` / `offset`; returns `{items, total}` |
 | `POST /api/v1/notifications/deliveries/{id}/retry` | Re-queue a failed message |
+| `GET /api/v1/inbox?filter=all\|unread\|urgent&before=` | Inbox lines, newest first, with the counts |
+| `GET /api/v1/inbox/counts` | `{unread, urgent_unread}` |
+| `POST /api/v1/inbox/read` | `{ids}` or `{}` (everything) |
+| `POST /api/v1/inbox/toasts` | An alert toast of the web UI (`warning` / `error`) |
+
+The SSE stream publishes `inbox.updated` when the inbox changes.
 
 Errors are `{"code", "field"}` objects, translated by the UI.
 

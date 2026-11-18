@@ -4,13 +4,16 @@ Secrets are write-only: responses carry `secrets_set` (names of the secrets
 that are stored), never a value. Errors are `{code, field}` translated by the UI.
 """
 
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
-from sqlalchemy import select
+from pydantic import BaseModel, Field
+from sqlalchemy import func, or_, select
 
 from app.api.dependencies import DbSession
 from app.models import NotificationChannel, NotificationDelivery
+from app.services import inbox
 from app.services import notification_catalog as catalog
 from app.services import notification_engine as engine
 from app.services.notification_channels import (
@@ -75,6 +78,9 @@ def update_channel(channel_id: int, payload: dict[str, Any], db: DbSession) -> d
         raise _invalid(exc) from None
     db.commit()
     db.refresh(channel)
+    # B55: new quiet hours / summary / state apply to what already waits.
+    engine.reschedule_channel(db, channel)
+    db.refresh(channel)
     return channel_view(channel)
 
 
@@ -106,16 +112,39 @@ def test_draft(payload: dict[str, Any], db: DbSession) -> dict[str, Any]:
 @router.get("/deliveries")
 def get_deliveries(
     db: DbSession,
-    limit: int = Query(default=100, ge=1, le=500),
+    limit: int = Query(default=25, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     channel_id: int | None = Query(default=None),
     status_filter: str | None = Query(default=None, alias="status"),
-) -> list[dict[str, Any]]:
-    query = select(NotificationDelivery).order_by(NotificationDelivery.id.desc()).limit(limit)
+    level: str | None = Query(default=None),
+    since: datetime | None = Query(default=None),
+    q: str | None = Query(default=None, max_length=120),
+) -> dict[str, Any]:
+    """The send journal, newest first: filters (channel, state, level, since
+    a date), a text search (title, message, channel, error) and pages."""
+    query = select(NotificationDelivery)
     if channel_id is not None:
         query = query.where(NotificationDelivery.channel_id == channel_id)
     if status_filter:
         query = query.where(NotificationDelivery.status == status_filter)
-    return [engine.delivery_view(item) for item in db.scalars(query)]
+    if level:
+        query = query.where(NotificationDelivery.level == level)
+    if since is not None:
+        query = query.where(NotificationDelivery.created_at >= since)
+    if q and q.strip():
+        pattern = f"%{q.strip()}%"
+        query = query.where(
+            or_(
+                NotificationDelivery.title.ilike(pattern),
+                NotificationDelivery.body.ilike(pattern),
+                NotificationDelivery.channel_name.ilike(pattern),
+                NotificationDelivery.last_error.ilike(pattern),
+            )
+        )
+    total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
+    rows = db.scalars(query.order_by(NotificationDelivery.id.desc()).offset(offset).limit(limit))
+    language = engine.admin_language(db)
+    return {"items": [engine.delivery_view(item, language) for item in rows], "total": int(total), "offset": offset, "limit": limit}
 
 
 @router.post("/deliveries/{delivery_id}/retry")
@@ -128,4 +157,50 @@ def retry_delivery(delivery_id: int, db: DbSession) -> dict[str, Any]:
     delivery.next_attempt_at = engine._now()
     db.commit()
     engine._wake.set()
-    return engine.delivery_view(delivery)
+    return engine.delivery_view(delivery, engine.admin_language(db))
+
+
+# --- inbox (B55) ---------------------------------------------------------------------------------
+
+
+class InboxRead(BaseModel):
+    ids: list[int] | None = Field(default=None, max_length=500)
+
+
+class InboxToast(BaseModel):
+    level: str = Field(pattern="^(warning|error)$")
+    title: str = Field(min_length=1, max_length=255)
+    body: str | None = Field(default=None, max_length=2000)
+    link: str | None = Field(default=None, max_length=255)
+    disk_id: int | None = None
+
+
+inbox_router = APIRouter(prefix="/inbox", tags=["inbox"])
+
+
+@inbox_router.get("")
+def get_inbox(
+    db: DbSession,
+    filter_: str = Query(default="all", alias="filter", pattern="^(all|unread|urgent)$"),
+    before: int | None = Query(default=None),
+    limit: int = Query(default=inbox.PAGE_SIZE, ge=1, le=200),
+) -> dict[str, Any]:
+    return inbox.list_items(db, engine.admin_language(db), which=filter_, before=before, limit=limit)
+
+
+@inbox_router.get("/counts")
+def get_inbox_counts(db: DbSession) -> dict[str, int]:
+    return inbox.counts(db)
+
+
+@inbox_router.post("/read")
+def read_inbox(payload: InboxRead, db: DbSession) -> dict[str, int]:
+    """`ids` absent = "Mark all as read"."""
+    return inbox.mark_read(db, payload.ids)
+
+
+@inbox_router.post("/toasts", status_code=status.HTTP_201_CREATED)
+def add_toast(payload: InboxToast, db: DbSession) -> dict[str, int]:
+    """An alert toast shown by the web UI is kept in the inbox too."""
+    inbox.record_toast(db, level=payload.level, title=payload.title, body=payload.body, link=payload.link, disk_id=payload.disk_id)
+    return inbox.counts(db)

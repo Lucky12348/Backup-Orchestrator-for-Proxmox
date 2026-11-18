@@ -84,6 +84,8 @@ export interface DiskToast {
   tone: "info" | "warning" | "neutral";
   message: string;
   action?: { label: string; diskId: number };
+  /** B55: false when the server already put the same alert in the inbox. */
+  inbox?: boolean;
 }
 
 export function toastForDiskEvent(event: AppEvent, lang: Lang): DiskToast | null {
@@ -130,6 +132,7 @@ export function toastForDiskEvent(event: AppEvent, lang: Lang): DiskToast | null
           ? `Disque retiré sans éjection${sep}${name} — PBO l’a détaché de PBS ; la dernière copie est peut-être incomplète. Rebranchez-le puis lancez une vérification.`
           : `Disk removed without eject${sep}${name} — PBO detached it from PBS; the last copy may be incomplete. Plug it back in, then run a verification.`,
       action: { label: lang === "fr" ? "Voir" : "See", diskId: data.id },
+      inbox: false, // the "unsafe_removal" event is in the inbox already
     };
   }
   if (event.type === "disk.removed") {

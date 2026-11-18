@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 
 import { cn } from "../components/ui/utils";
 import { StatusIcon } from "./StatusIcon";
-import { addToast, makeToast, remainingAfter, removeToast, type Toast, type ToastInput } from "./toastStore";
+import { addToast, isInboxAlert, makeToast, remainingAfter, removeToast, type Toast, type ToastInput } from "./toastStore";
 
 type ToastFn = (input: ToastInput) => string;
 
@@ -18,6 +18,7 @@ export function ToastProvider({
   closeLabel,
   viewLabel,
   renderDisk,
+  onAlert,
 }: {
   children: ReactNode;
   closeLabel: string;
@@ -25,15 +26,20 @@ export function ToastProvider({
   viewLabel: string;
   /** The disk of a toast (colour, photo or icon), from the disk directory. */
   renderDisk?: (diskId: number) => ReactNode;
+  /** B55: an alert toast (toastStore.isInboxAlert) is also kept in the inbox. */
+  onAlert?: (toast: Toast) => void;
 }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const navigate = useNavigate();
 
   const dismiss = useCallback((id: string) => setToasts((current) => removeToast(current, id)), []);
 
+  const alertRef = useRef(onAlert);
+  alertRef.current = onAlert;
   const toast = useCallback<ToastFn>((input) => {
     const next = makeToast(input);
     setToasts((current) => addToast(current, next));
+    if (isInboxAlert(input)) alertRef.current?.(next);
     return next.id;
   }, []);
 
